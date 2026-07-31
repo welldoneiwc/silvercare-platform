@@ -32,6 +32,8 @@ export default function AddHealthRecordModal({
   if (!open) return null;
 
   const handleSave = () => {
+    console.log("===== handleSave =====");
+
     if (
       !date ||
       !height ||
@@ -44,6 +46,8 @@ export default function AddHealthRecordModal({
       return;
     }
 
+    console.log("準備呼叫 onSave");
+
     onSave({
       date,
       height: Number(height),
@@ -52,6 +56,8 @@ export default function AddHealthRecordModal({
       diastolic: Number(diastolic),
       pulse: Number(pulse),
     });
+
+    console.log("onSave 已呼叫");
 
     setDate("");
     setHeight("");
@@ -111,8 +117,7 @@ export default function AddHealthRecordModal({
             onChange={(e) => setHeight(e.target.value)}
             style={inputStyle}
           />
-
-          <input
+                    <input
             type="number"
             placeholder="體重(kg)"
             value={weight}
@@ -171,7 +176,6 @@ export default function AddHealthRecordModal({
     </div>
   );
 }
-
 const inputStyle = {
   padding: "10px",
   borderRadius: "8px",

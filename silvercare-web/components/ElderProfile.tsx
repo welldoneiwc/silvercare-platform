@@ -1,8 +1,27 @@
 "use client";
 
-import AddHealthRecordModal from "./AddHealthRecordModal";
+import {
+  useEffect,
+  useMemo,
+  useState,
+} from "react";
 
-import { useState } from "react";
+import AddHealthRecordModal from "./AddHealthRecordModal";
+import HealthRecordTable from "./HealthRecordTable";
+
+import { colors } from "../styles/theme";
+import { radius } from "../styles/radius";
+import { shadow } from "../styles/shadow";
+
+export type HealthRecord = {
+  id: number;
+  date: string;
+  systolic: number;
+  diastolic: number;
+  pulse: number;
+  height: number;
+  weight: number;
+};
 
 type Elder = {
   id: number;
@@ -11,300 +30,374 @@ type Elder = {
   birthday: string;
   phone: string;
 };
-function calculateAge(birthday: string): number {
-  const birth = new Date(birthday);
-  const today = new Date();
 
-  let age = today.getFullYear() - birth.getFullYear();
-
-  const month = today.getMonth() - birth.getMonth();
-
-  if (
-    month < 0 ||
-    (month === 0 && today.getDate() < birth.getDate())
-  ) {
-    age--;
-  }
-
-  return age;
-}
-type HealthRecord = {
-  id: number;
-  date: string;
-
-  systolic: number;
-  diastolic: number;
-  pulse: number;
-
-  height: number;
-  weight: number;
-};
 type Props = {
-  elder: Elder;
-  onBack: () => void;
+  elder: Elder | null;
 };
 
 export default function ElderProfile({
   elder,
-  onBack,
 }: Props) {
-  const [openHealthModal, setOpenHealthModal] =
-  useState(false);
-  const [records, setRecords] = useState<HealthRecord[]>([]);
-  return (
-    <div
-      style={{
-        background: "#ffffff",
-        borderRadius: "16px",
-        padding: "32px",
-        boxShadow: "0 8px 24px rgba(0,0,0,0.08)",
-      }}
-    >
+  const [records, setRecords] =
+    useState<HealthRecord[]>([]);
+
+  const [openModal, setOpenModal] =
+    useState(false);
+
+  /**
+   * 固定目前長者的 LocalStorage Key
+   * 之後所有讀寫都使用同一個 key
+   */
+  const storageKey = useMemo(() => {
+  console.log("elder =", elder);
+
+  if (!elder) return null;
+
+  console.log(
+    "storageKey =",
+    `health-records-${elder.id}`
+  );
+
+  return `health-records-${elder.id}`;
+}, [elder?.id]);
+
+  /**
+   * 長者切換時
+   * 只讀一次 LocalStorage
+   */
+  useEffect(() => {
+    if (!storageKey) {
+      setRecords([]);
+      return;
+    }
+
+    try {
+      const saved =
+        localStorage.getItem(storageKey);
+
+      if (!saved) {
+        setRecords([]);
+        return;
+      }
+
+      const parsed =
+        JSON.parse(saved) as HealthRecord[];
+
+      setRecords(parsed);
+    } catch (error) {
+      console.error(error);
+      setRecords([]);
+    }
+  }, [storageKey]);
+
+  /**
+   * records 改變才寫入
+   */
+  useEffect(() => {
+    if (!storageKey) return;
+
+    localStorage.setItem(
+      storageKey,
+      JSON.stringify(records)
+    );
+  }, [records, storageKey]);
+
+  const latestRecord = useMemo(() => {
+    if (records.length === 0) return null;
+
+    return [...records].sort(
+      (a, b) =>
+        new Date(b.date).getTime() -
+        new Date(a.date).getTime()
+    )[0];
+  }, [records]);
+
+  const age = useMemo(() => {
+    if (!elder) return "-";
+
+    const today = new Date();
+
+    const birthday = new Date(
+      elder.birthday
+    );
+
+    let years =
+      today.getFullYear() -
+      birthday.getFullYear();
+
+    const month =
+      today.getMonth() -
+      birthday.getMonth();
+
+    if (
+      month < 0 ||
+      (month === 0 &&
+        today.getDate() <
+          birthday.getDate())
+    ) {
+      years--;
+    }
+
+    return years;
+  }, [elder]);
+
+  const bmi = useMemo(() => {
+    if (!latestRecord) return "-";
+
+    const height =
+      latestRecord.height / 100;
+
+    if (height <= 0) return "-";
+
+    return (
+      latestRecord.weight /
+      (height * height)
+    ).toFixed(1);
+  }, [latestRecord]);
+
+  if (!elder) {
+    return (
       <div
         style={{
+          flex: 1,
+          background: "#fff",
+          borderRadius: radius.lg,
+          boxShadow: shadow.md,
           display: "flex",
-          justifyContent: "space-between",
+          justifyContent: "center",
           alignItems: "center",
-          marginBottom: "30px",
+          color: colors.textLight,
+          fontSize: 16,
         }}
       >
-        <div>
-          <h2
-            style={{
-              margin: 0,
-              fontSize: "28px",
-              color: "#163A43",
-            }}
-          >
-            長者詳細資料
-          </h2>
-
-          <p
-            style={{
-              marginTop: "8px",
-              color: "#666",
-              fontSize: "15px",
-            }}
-          >
-            檢視長者基本資訊
-          </p>
-        </div>
-
-        <button
-          onClick={onBack}
-          style={{
-            background: "#163A43",
-            color: "#fff",
-            border: "none",
-            borderRadius: "8px",
-            padding: "10px 18px",
-            cursor: "pointer",
-            fontSize: "15px",
-          }}
-        >
-          返回列表
-        </button>
+        請先選擇一位長者
       </div>
-
+    );
+  }
+    return (
+    <>
       <div
-    
         style={{
-          display: "grid",
-          gridTemplateColumns: "180px 1fr",
-          rowGap: "18px",
-          columnGap: "20px",
+          flex: 1,
+          background: "#fff",
+          borderRadius: radius.lg,
+          boxShadow: shadow.md,
+          padding: 24,
+          display: "flex",
+          flexDirection: "column",
+          gap: 24,
+          overflowY: "auto",
         }}
       >
-        <div style={{ fontWeight: 600, color: "#555" }}>
-          姓名
-        </div>
-        <div>{elder.name}</div>
-
-        <div style={{ fontWeight: 600, color: "#555" }}>
-          性別
-        </div>
-        <div>{elder.gender}</div>
-
-        <div style={{ fontWeight: 600, color: "#555" }}>
-  生日
-</div>
-<div>{elder.birthday}</div>
-
-<div style={{ fontWeight: 600, color: "#555" }}>
-  年齡
-</div>
-<div>{calculateAge(elder.birthday)} 歲</div>
-
-
-<div style={{ fontWeight: 600, color: "#555" }}>
-  電話
-</div>
-<div>{elder.phone}</div>
-      </div>
-
-      <hr
-        style={{
-          margin: "40px 0",
-          border: "none",
-          borderTop: "1px solid #e5e7eb",
-        }}
-      />
-
-      <div>
         <div
           style={{
             display: "flex",
             justifyContent: "space-between",
-            alignItems: "center",
-            marginBottom: "20px",
+            alignItems: "flex-start",
           }}
         >
-          <h3
-            style={{
-              margin: 0,
-              color: "#163A43",
-            }}
-          >
-            健康量測
-          </h3>
+          <div>
+            <h2
+              style={{
+                margin: 0,
+                color: colors.primary,
+                fontSize: 32,
+                fontWeight: 700,
+              }}
+            >
+              {elder.name}
+            </h2>
+
+            <div
+              style={{
+                marginTop: 8,
+                color: colors.textLight,
+                fontSize: 14,
+                lineHeight: 1.8,
+              }}
+            >
+              <div>性別：{elder.gender}</div>
+              <div>生日：{elder.birthday}</div>
+              <div>年齡：{age} 歲</div>
+              <div>電話：{elder.phone}</div>
+            </div>
+          </div>
 
           <button
-          
-  onClick={() => setOpenHealthModal(true)}
-  
+            onClick={() => setOpenModal(true)}
             style={{
-              background: "#163A43",
+              background: colors.primary,
               color: "#fff",
               border: "none",
-              borderRadius: "8px",
-              padding: "8px 16px",
+              borderRadius: radius.md,
+              padding: "10px 18px",
               cursor: "pointer",
-              fontSize: "14px",
               fontWeight: 600,
             }}
           >
-            ＋ 新增量測
+            ＋ 新增健康紀錄
           </button>
         </div>
 
-        {records.length === 0 ? (
-  <div
-    style={{
-      border: "1px dashed #d1d5db",
-      borderRadius: "12px",
-      padding: "24px",
-      textAlign: "center",
-      color: "#888",
-      background: "#fafafa",
-    }}
-  >
-    目前尚無健康量測資料
-  </div>
-) : (
-  <table
-    style={{
-      width: "100%",
-      borderCollapse: "collapse",
-    }}
-  >
-    <thead>
-      <tr>
-        <th>日期</th>
-        <th>血壓</th>
-        <th>脈搏</th>
-        <th>身高</th>
-        <th>體重</th>
-      </tr>
-    </thead>
-
-    <tbody>
-      {records.map((item) => (
-        <tr key={item.id}>
-          <td>{item.date}</td>
-          <td>
-            {item.systolic}/{item.diastolic}
-          </td>
-          <td>{item.pulse}</td>
-          <td>{item.height} cm</td>
-          <td>{item.weight} kg</td>
-        </tr>
-      ))}
-    </tbody>
-  </table>
-)}
-      </div>
-
-      <hr
-        style={{
-          margin: "40px 0",
-          border: "none",
-          borderTop: "1px solid #e5e7eb",
-        }}
-      />
-
-      <div>
-        <h3
-          style={{
-            color: "#163A43",
-            marginBottom: "12px",
-          }}
-        >
-          課程參與紀錄
-        </h3>
-
         <div
           style={{
-            color: "#888",
-            fontSize: "15px",
+            display: "grid",
+            gridTemplateColumns: "repeat(4, 1fr)",
+            gap: 16,
           }}
         >
-          尚未建立課程紀錄。
-        </div>
-      </div>
+          <div
+            style={{
+              background: "#F7FAFC",
+              borderRadius: radius.md,
+              padding: 18,
+            }}
+          >
+            <div
+              style={{
+                color: colors.textLight,
+                fontSize: 13,
+              }}
+            >
+              身高
+            </div>
 
-      <hr
-        style={{
-          margin: "40px 0",
-          border: "none",
-          borderTop: "1px solid #e5e7eb",
+            <div
+              style={{
+                marginTop: 10,
+                fontSize: 28,
+                fontWeight: 700,
+                color: colors.primary,
+              }}
+            >
+              {latestRecord
+                ? `${latestRecord.height} cm`
+                : "-"}
+            </div>
+          </div>
+
+          <div
+            style={{
+              background: "#F7FAFC",
+              borderRadius: radius.md,
+              padding: 18,
+            }}
+          >
+            <div
+              style={{
+                color: colors.textLight,
+                fontSize: 13,
+              }}
+            >
+              體重
+            </div>
+
+            <div
+              style={{
+                marginTop: 10,
+                fontSize: 28,
+                fontWeight: 700,
+                color: colors.primary,
+              }}
+            >
+              {latestRecord
+                ? `${latestRecord.weight} kg`
+                : "-"}
+            </div>
+          </div>
+
+          <div
+            style={{
+              background: "#F7FAFC",
+              borderRadius: radius.md,
+              padding: 18,
+            }}
+          >
+            <div
+              style={{
+                color: colors.textLight,
+                fontSize: 13,
+              }}
+            >
+              BMI
+            </div>
+
+            <div
+              style={{
+                marginTop: 10,
+                fontSize: 28,
+                fontWeight: 700,
+                color: colors.primary,
+              }}
+            >
+              {bmi}
+            </div>
+          </div>
+
+          <div
+            style={{
+              background: "#F7FAFC",
+              borderRadius: radius.md,
+              padding: 18,
+            }}
+          >
+            <div
+              style={{
+                color: colors.textLight,
+                fontSize: 13,
+              }}
+            >
+              最新血壓
+            </div>
+
+            <div
+              style={{
+                marginTop: 10,
+                fontSize: 24,
+                fontWeight: 700,
+                color: colors.primary,
+              }}
+            >
+              {latestRecord
+                ? `${latestRecord.systolic}/${latestRecord.diastolic}`
+                : "-"}
+            </div>
+
+            <div
+              style={{
+                marginTop: 6,
+                color: colors.textLight,
+                fontSize: 13,
+              }}
+            >
+              {latestRecord
+                ? `脈搏 ${latestRecord.pulse} bpm`
+                : ""}
+            </div>
+          </div>
+        </div>
+
+        <HealthRecordTable
+          records={records}
+        />
+      </div>
+            <AddHealthRecordModal
+        open={openModal}
+        onClose={() => setOpenModal(false)}
+        onSave={(record) => {
+          const newRecord: HealthRecord = {
+            id: Date.now(),
+            ...record,
+          };
+
+          setRecords((prev) => [
+            newRecord,
+            ...prev,
+          ]);
+
+          setOpenModal(false);
         }}
       />
-
-            <div>
-        <h3
-          style={{
-            color: "#163A43",
-            marginBottom: "12px",
-          }}
-        >
-          照護備註
-        </h3>
-
-        <div
-          style={{
-            color: "#888",
-            fontSize: "15px",
-          }}
-        >
-          尚未建立照護備註。
-        </div>
-      </div>
-
-      <AddHealthRecordModal
-  open={openHealthModal}
-  onClose={() => setOpenHealthModal(false)}
-  onSave={(record) => {
-    setRecords((prev) => [
-      {
-        id: Date.now(),
-        ...record,
-      },
-      ...prev,
-    ]);
-
-    setOpenHealthModal(false);
-  }}
-/>
-    </div>
+    </>
   );
 }

@@ -45,17 +45,21 @@ const DEFAULT_ELDERS: Elder[] = [
     phone: "0934-567-890",
   },
 ];
+
 function calculateAge(birthday: string): number {
   const birth = new Date(birthday);
   const today = new Date();
 
-  let age = today.getFullYear() - birth.getFullYear();
+  let age =
+    today.getFullYear() - birth.getFullYear();
 
-  const month = today.getMonth() - birth.getMonth();
+  const month =
+    today.getMonth() - birth.getMonth();
 
   if (
     month < 0 ||
-    (month === 0 && today.getDate() < birth.getDate())
+    (month === 0 &&
+      today.getDate() < birth.getDate())
   ) {
     age--;
   }
@@ -69,9 +73,11 @@ export default function ElderList({
   const [elders, setElders] =
     useState<Elder[]>(DEFAULT_ELDERS);
 
-  const [keyword, setKeyword] = useState("");
+  const [keyword, setKeyword] =
+    useState("");
 
-  const [open, setOpen] = useState(false);
+  const [open, setOpen] =
+    useState(false);
 
   const [isEditing, setIsEditing] =
     useState(false);
@@ -86,9 +92,15 @@ export default function ElderList({
     if (!saved) return;
 
     try {
-      setElders(JSON.parse(saved));
+      const parsed =
+        JSON.parse(saved) as Elder[];
+
+      setElders(parsed);
     } catch (error) {
-      console.error("讀取長者資料失敗：", error);
+      console.error(
+        "讀取長者資料失敗：",
+        error
+      );
     }
   }, []);
 
@@ -98,65 +110,82 @@ export default function ElderList({
       JSON.stringify(elders)
     );
   }, [elders]);
-
-  const handleAddElder = (elder: {
+    const handleAddElder = (elder: {
     name: string;
     gender: string;
     birthday: string;
     phone: string;
   }) => {
-    setElders((prev) => [
-      ...prev,
-      {
-        id: Date.now(),
-        ...elder,
-      },
-    ]);
+    setElders((prev) => {
+      const nextId =
+        prev.length === 0
+          ? 1
+          : Math.max(...prev.map((e) => e.id)) + 1;
+
+      return [
+        ...prev,
+        {
+          id: nextId,
+          ...elder,
+        },
+      ];
+    });
   };
 
-  const handleUpdateElder = (elder: Elder) => {
+  const handleUpdateElder = (
+    elder: Elder
+  ) => {
     setElders((prev) =>
       prev.map((item) =>
-        item.id === elder.id ? elder : item
+        item.id === elder.id
+          ? elder
+          : item
       )
     );
   };
 
-  const handleDeleteElder = (id: number) => {
-    const confirmDelete = window.confirm(
-      "確定要刪除此長者嗎？"
-    );
+  const handleDeleteElder = (
+    id: number
+  ) => {
+    const confirmDelete =
+      window.confirm(
+        "確定要刪除此長者嗎？"
+      );
 
     if (!confirmDelete) return;
 
     setElders((prev) =>
-      prev.filter((item) => item.id !== id)
+      prev.filter(
+        (item) => item.id !== id
+      )
     );
   };
 
-  const filteredElders = useMemo(() => {
-    return elders.filter((elder) => {
-      return (
-        elder.name.includes(keyword) ||
-        elder.phone.includes(keyword) ||
-        elder.gender.includes(keyword)
-      );
-    });
-  }, [elders, keyword]);
+  const filteredElders =
+    useMemo(() => {
+      return elders.filter((elder) => {
+        return (
+          elder.name.includes(keyword) ||
+          elder.phone.includes(keyword) ||
+          elder.gender.includes(keyword)
+        );
+      });
+    }, [elders, keyword]);
 
   return (
     <div
       style={{
         background: colors.card,
         padding: "30px",
-        borderRadius: radius.large,
-        boxShadow: shadow.card,
+        borderRadius: radius.lg,
+        boxShadow: shadow.md,
       }}
     >
       <div
         style={{
           display: "flex",
-          justifyContent: "space-between",
+          justifyContent:
+            "space-between",
           alignItems: "center",
           marginBottom: "20px",
           flexWrap: "wrap",
@@ -190,27 +219,31 @@ export default function ElderList({
             placeholder="搜尋姓名 / 電話"
             value={keyword}
             onChange={(e) =>
-              setKeyword(e.target.value)
+              setKeyword(
+                e.target.value
+              )
             }
             style={{
               width: "220px",
               padding: "10px",
               borderRadius: "8px",
-              border: "1px solid #ddd",
+              border:
+                "1px solid #ddd",
             }}
           />
 
           <button
             onClick={() => {
-              setEditingElder(null);
               setIsEditing(false);
+              setEditingElder(null);
               setOpen(true);
             }}
             style={{
               background: "#163A43",
-              color: "white",
+              color: "#fff",
               border: "none",
-              padding: "10px 18px",
+              padding:
+                "10px 18px",
               borderRadius: "10px",
               cursor: "pointer",
               fontSize: "16px",
@@ -225,35 +258,61 @@ export default function ElderList({
       <table
         style={{
           width: "100%",
-          borderCollapse: "collapse",
+          borderCollapse:
+            "collapse",
         }}
       >
         <thead>
           <tr>
-            <th style={{ textAlign: "left", padding: "12px" }}>
+            <th
+              style={{
+                textAlign: "left",
+                padding: "12px",
+              }}
+            >
               姓名
             </th>
 
-            <th style={{ textAlign: "center", padding: "12px" }}>
+            <th
+              style={{
+                textAlign: "center",
+                padding: "12px",
+              }}
+            >
               性別
             </th>
 
-            <th style={{ textAlign: "center", padding: "12px" }}>
+            <th
+              style={{
+                textAlign: "center",
+                padding: "12px",
+              }}
+            >
               年齡
             </th>
 
-            <th style={{ textAlign: "left", padding: "12px" }}>
+            <th
+              style={{
+                textAlign: "left",
+                padding: "12px",
+              }}
+            >
               電話
             </th>
 
-            <th style={{ textAlign: "center", padding: "12px" }}>
+            <th
+              style={{
+                textAlign: "center",
+                padding: "12px",
+              }}
+            >
               操作
             </th>
           </tr>
         </thead>
 
         <tbody>
-          {filteredElders.map((elder) => (
+                    {filteredElders.map((elder) => (
             <tr key={elder.id}>
               <td style={{ padding: "12px" }}>
                 {elder.name}
@@ -274,7 +333,7 @@ export default function ElderList({
                   padding: "12px",
                 }}
               >
-               {calculateAge(elder.birthday)} 歲
+                {calculateAge(elder.birthday)} 歲
               </td>
 
               <td style={{ padding: "12px" }}>
@@ -316,8 +375,8 @@ export default function ElderList({
                     padding: "6px 12px",
                     borderRadius: "6px",
                     border: "1px solid #ccc",
-                    cursor: "pointer",
                     background: "#fff",
+                    cursor: "pointer",
                   }}
                 >
                   編輯

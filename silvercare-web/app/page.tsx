@@ -184,14 +184,11 @@ export default function Home() {
             onSelectElder={setSelectedElder}
           />
 
-          {selectedElder && (
-            <ElderProfile
-              elder={selectedElder}
-              onBack={() =>
-                setSelectedElder(null)
-              }
-            />
-          )}
+         {selectedElder && (
+  <ElderProfile
+    elder={selectedElder}
+  />
+)}
         </div>
       </main>
     </div>
