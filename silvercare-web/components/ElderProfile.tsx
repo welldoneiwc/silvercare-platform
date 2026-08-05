@@ -13,6 +13,8 @@ import { colors } from "../styles/theme";
 import { radius } from "../styles/radius";
 import { shadow } from "../styles/shadow";
 
+import { notifyStorageChanged } from "../utils/storageEvents";
+
 export type HealthRecord = {
   id: number;
   date: string;
@@ -44,66 +46,73 @@ export default function ElderProfile({
   const [openModal, setOpenModal] =
     useState(false);
 
+  const [editingRecord, setEditingRecord] =
+    useState<HealthRecord | null>(null);
+
   /**
    * 固定目前長者的 LocalStorage Key
-   * 之後所有讀寫都使用同一個 key
    */
-  const storageKey = useMemo(() => {
+ const storageKey = useMemo(() => {
+  console.log("==========");
   console.log("elder =", elder);
+  console.log("elder.id =", elder?.id);
+  console.log("storageKey =", `health-records-${elder?.id}`);
 
   if (!elder) return null;
 
-  console.log(
-    "storageKey =",
-    `health-records-${elder.id}`
-  );
-
   return `health-records-${elder.id}`;
-}, [elder?.id]);
+}, [elder]);
 
   /**
-   * 長者切換時
-   * 只讀一次 LocalStorage
+   * 載入 LocalStorage
    */
-  useEffect(() => {
-    if (!storageKey) {
-      setRecords([]);
-      return;
-    }
+ useEffect(() => {
+  console.log("===== READ EFFECT =====");
+  console.log("elder =", elder);
+  console.log("storageKey =", storageKey);
 
-    try {
-      const saved =
-        localStorage.getItem(storageKey);
+  if (!storageKey) {
+    console.log("NO STORAGE KEY");
+    setRecords([]);
+    return;
+  }
 
-      if (!saved) {
-        setRecords([]);
-        return;
-      }
+  const saved = localStorage.getItem(storageKey);
 
-      const parsed =
-        JSON.parse(saved) as HealthRecord[];
+  console.log("saved =", saved);
 
-      setRecords(parsed);
-    } catch (error) {
-      console.error(error);
-      setRecords([]);
-    }
-  }, [storageKey]);
+  if (!saved) {
+    setRecords([]);
+    return;
+  }
+
+  const parsed = JSON.parse(saved);
+
+  console.log("parsed =", parsed);
+
+  setRecords(parsed);
+}, [storageKey]);
 
   /**
-   * records 改變才寫入
+   * records 改變才寫回 LocalStorage
    */
-  useEffect(() => {
-    if (!storageKey) return;
+useEffect(() => {
+  if (!storageKey) return;
 
-    localStorage.setItem(
-      storageKey,
-      JSON.stringify(records)
-    );
-  }, [records, storageKey]);
+  console.log("WRITE", storageKey);
+  console.log(records);
+  console.trace();
+
+  localStorage.setItem(
+    storageKey,
+    JSON.stringify(records)
+  );
+}, [records, storageKey]);
 
   const latestRecord = useMemo(() => {
-    if (records.length === 0) return null;
+    if (records.length === 0) {
+      return null;
+    }
 
     return [...records].sort(
       (a, b) =>
@@ -142,18 +151,43 @@ export default function ElderProfile({
   }, [elder]);
 
   const bmi = useMemo(() => {
-    if (!latestRecord) return "-";
+    if (!latestRecord) {
+      return "-";
+    }
 
     const height =
       latestRecord.height / 100;
 
-    if (height <= 0) return "-";
+    if (height <= 0) {
+      return "-";
+    }
 
     return (
       latestRecord.weight /
       (height * height)
     ).toFixed(1);
   }, [latestRecord]);
+
+  const handleDelete = (
+    id: number
+  ) => {
+    const updated =
+      records.filter(
+        (record) =>
+          record.id !== id
+      );
+
+    setRecords(updated);
+
+    notifyStorageChanged();
+  };
+
+  const handleEdit = (
+    record: HealthRecord
+  ) => {
+    setEditingRecord(record);
+    setOpenModal(true);
+  };
 
   if (!elder) {
     return (
@@ -174,7 +208,8 @@ export default function ElderProfile({
       </div>
     );
   }
-    return (
+
+  return (
     <>
       <div
         style={{
@@ -192,7 +227,8 @@ export default function ElderProfile({
         <div
           style={{
             display: "flex",
-            justifyContent: "space-between",
+            justifyContent:
+              "space-between",
             alignItems: "flex-start",
           }}
         >
@@ -200,7 +236,8 @@ export default function ElderProfile({
             <h2
               style={{
                 margin: 0,
-                color: colors.primary,
+                color:
+                  colors.primary,
                 fontSize: 32,
                 fontWeight: 700,
               }}
@@ -211,26 +248,48 @@ export default function ElderProfile({
             <div
               style={{
                 marginTop: 8,
-                color: colors.textLight,
+                color:
+                  colors.textLight,
                 fontSize: 14,
                 lineHeight: 1.8,
               }}
             >
-              <div>性別：{elder.gender}</div>
-              <div>生日：{elder.birthday}</div>
-              <div>年齡：{age} 歲</div>
-              <div>電話：{elder.phone}</div>
+              <div>
+                性別：
+                {elder.gender}
+              </div>
+
+              <div>
+                生日：
+                {elder.birthday}
+              </div>
+
+              <div>
+                年齡：
+                {age} 歲
+              </div>
+
+              <div>
+                電話：
+                {elder.phone}
+              </div>
             </div>
           </div>
 
           <button
-            onClick={() => setOpenModal(true)}
+            onClick={() => {
+              setEditingRecord(null);
+              setOpenModal(true);
+            }}
             style={{
-              background: colors.primary,
+              background:
+                colors.primary,
               color: "#fff",
               border: "none",
-              borderRadius: radius.md,
-              padding: "10px 18px",
+              borderRadius:
+                radius.md,
+              padding:
+                "10px 18px",
               cursor: "pointer",
               fontWeight: 600,
             }}
@@ -238,11 +297,11 @@ export default function ElderProfile({
             ＋ 新增健康紀錄
           </button>
         </div>
-
-        <div
+                <div
           style={{
             display: "grid",
-            gridTemplateColumns: "repeat(4, 1fr)",
+            gridTemplateColumns:
+              "repeat(4, 1fr)",
             gap: 16,
           }}
         >
@@ -379,22 +438,47 @@ export default function ElderProfile({
 
         <HealthRecordTable
           records={records}
+          onEdit={handleEdit}
+          onDelete={handleDelete}
         />
       </div>
             <AddHealthRecordModal
         open={openModal}
-        onClose={() => setOpenModal(false)}
+        editingRecord={editingRecord}
+        onClose={() => {
+          setOpenModal(false);
+          setEditingRecord(null);
+        }}
         onSave={(record) => {
-          const newRecord: HealthRecord = {
-            id: Date.now(),
-            ...record,
-          };
+          let updatedRecords: HealthRecord[];
 
-          setRecords((prev) => [
-            newRecord,
-            ...prev,
-          ]);
+          if (editingRecord) {
+            updatedRecords = records.map(
+              (item) =>
+                item.id === editingRecord.id
+                  ? {
+                      ...editingRecord,
+                      ...record,
+                    }
+                  : item
+            );
+          } else {
+            const newRecord: HealthRecord = {
+              id: Date.now(),
+              ...record,
+            };
 
+            updatedRecords = [
+              newRecord,
+              ...records,
+            ];
+          }
+
+          setRecords(updatedRecords);
+
+          notifyStorageChanged();
+
+          setEditingRecord(null);
           setOpenModal(false);
         }}
       />

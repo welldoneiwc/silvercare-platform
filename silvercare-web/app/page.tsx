@@ -8,9 +8,14 @@ import ElderList from "../components/ElderList";
 import type { Elder } from "../components/ElderList";
 import ElderProfile from "../components/ElderProfile";
 
+import { useDashboardData } from "../utils/useDashboardData";
+
 export default function Home() {
   const [selectedElder, setSelectedElder] =
     useState<Elder | null>(null);
+
+  const dashboardData =
+    useDashboardData();
 
   return (
     <div
@@ -52,7 +57,8 @@ export default function Home() {
         <div
           style={{
             display: "grid",
-            gridTemplateColumns: "repeat(4, 1fr)",
+            gridTemplateColumns:
+              "repeat(4, 1fr)",
             gap: "20px",
             marginBottom: "32px",
           }}
@@ -62,7 +68,8 @@ export default function Home() {
               background: "#fff",
               borderRadius: "12px",
               padding: "20px",
-              boxShadow: "0 2px 10px rgba(0,0,0,0.06)",
+              boxShadow:
+                "0 2px 10px rgba(0,0,0,0.06)",
             }}
           >
             <div
@@ -81,7 +88,7 @@ export default function Home() {
                 marginTop: "8px",
               }}
             >
-              58
+              {dashboardData.elderCount}
             </div>
           </div>
 
@@ -90,7 +97,8 @@ export default function Home() {
               background: "#fff",
               borderRadius: "12px",
               padding: "20px",
-              boxShadow: "0 2px 10px rgba(0,0,0,0.06)",
+              boxShadow:
+                "0 2px 10px rgba(0,0,0,0.06)",
             }}
           >
             <div
@@ -109,7 +117,7 @@ export default function Home() {
                 marginTop: "8px",
               }}
             >
-              3
+              {dashboardData.todayCourseCount}
             </div>
           </div>
 
@@ -118,7 +126,8 @@ export default function Home() {
               background: "#fff",
               borderRadius: "12px",
               padding: "20px",
-              boxShadow: "0 2px 10px rgba(0,0,0,0.06)",
+              boxShadow:
+                "0 2px 10px rgba(0,0,0,0.06)",
             }}
           >
             <div
@@ -137,16 +146,16 @@ export default function Home() {
                 marginTop: "8px",
               }}
             >
-              45
+              {dashboardData.todayHealthCount}
             </div>
           </div>
-
-          <div
+                    <div
             style={{
               background: "#fff",
               borderRadius: "12px",
               padding: "20px",
-              boxShadow: "0 2px 10px rgba(0,0,0,0.06)",
+              boxShadow:
+                "0 2px 10px rgba(0,0,0,0.06)",
             }}
           >
             <div
@@ -165,7 +174,7 @@ export default function Home() {
                 marginTop: "8px",
               }}
             >
-              52
+              {dashboardData.todayAttendanceCount}
             </div>
           </div>
         </div>
@@ -173,22 +182,25 @@ export default function Home() {
         <div
           style={{
             display: "grid",
-            gridTemplateColumns: selectedElder
-              ? "1.2fr 1fr"
-              : "1fr",
+            gridTemplateColumns:
+              selectedElder
+                ? "1.2fr 1fr"
+                : "1fr",
             gap: "24px",
             alignItems: "start",
           }}
         >
           <ElderList
-            onSelectElder={setSelectedElder}
+            onSelectElder={
+              setSelectedElder
+            }
           />
 
-         {selectedElder && (
-  <ElderProfile
-    elder={selectedElder}
-  />
-)}
+          {selectedElder && (
+            <ElderProfile
+              elder={selectedElder}
+            />
+          )}
         </div>
       </main>
     </div>
