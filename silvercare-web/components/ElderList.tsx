@@ -1,12 +1,18 @@
+
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import {
+  useEffect,
+  useMemo,
+  useState,
+} from "react";
 
 import AddElderModal from "./AddElderModal";
 
 import { colors } from "../styles/theme";
 import { radius } from "../styles/radius";
 import { shadow } from "../styles/shadow";
+import { notifyStorageChanged } from "../utils/storageEvents";
 
 export type Elder = {
   id: number;
@@ -22,44 +28,25 @@ type Props = {
 
 const STORAGE_KEY = "silvercare-elders";
 
-const DEFAULT_ELDERS: Elder[] = [
-  {
-    id: 1,
-    name: "王大明",
-    gender: "男",
-    birthday: "1947-05-12",
-    phone: "0912-345-678",
-  },
-  {
-    id: 2,
-    name: "李阿姨",
-    gender: "女",
-    birthday: "1943-10-28",
-    phone: "0923-456-789",
-  },
-  {
-    id: 3,
-    name: "林伯伯",
-    gender: "男",
-    birthday: "1950-01-16",
-    phone: "0934-567-890",
-  },
-];
-
-function calculateAge(birthday: string): number {
+function calculateAge(
+  birthday: string
+): number {
   const birth = new Date(birthday);
   const today = new Date();
 
   let age =
-    today.getFullYear() - birth.getFullYear();
+    today.getFullYear() -
+    birth.getFullYear();
 
   const month =
-    today.getMonth() - birth.getMonth();
+    today.getMonth() -
+    birth.getMonth();
 
   if (
     month < 0 ||
     (month === 0 &&
-      today.getDate() < birth.getDate())
+      today.getDate() <
+        birth.getDate())
   ) {
     age--;
   }
@@ -71,7 +58,10 @@ export default function ElderList({
   onSelectElder,
 }: Props) {
   const [elders, setElders] =
-    useState<Elder[]>(DEFAULT_ELDERS);
+    useState<Elder[]>([]);
+
+  const [loaded, setLoaded] =
+    useState(false);
 
   const [keyword, setKeyword] =
     useState("");
@@ -85,11 +75,18 @@ export default function ElderList({
   const [editingElder, setEditingElder] =
     useState<Elder | null>(null);
 
+  /**
+   * 第一次載入 LocalStorage
+   */
   useEffect(() => {
     const saved =
       localStorage.getItem(STORAGE_KEY);
 
-    if (!saved) return;
+    if (!saved) {
+      setElders([]);
+      setLoaded(true);
+      return;
+    }
 
     try {
       const parsed =
@@ -101,26 +98,39 @@ export default function ElderList({
         "讀取長者資料失敗：",
         error
       );
+
+      setElders([]);
     }
+
+    setLoaded(true);
   }, []);
 
+  /**
+   * 寫回 LocalStorage
+   */
   useEffect(() => {
+    if (!loaded) return;
+
     localStorage.setItem(
       STORAGE_KEY,
       JSON.stringify(elders)
     );
-  }, [elders]);
-    const handleAddElder = (elder: {
-    name: string;
-    gender: string;
-    birthday: string;
-    phone: string;
-  }) => {
+
+    notifyStorageChanged();
+  }, [elders, loaded]);
+
+  const handleAddElder = (
+    elder: Omit<Elder, "id">
+  ) => {
     setElders((prev) => {
       const nextId =
         prev.length === 0
           ? 1
-          : Math.max(...prev.map((e) => e.id)) + 1;
+          : Math.max(
+              ...prev.map(
+                (item) => item.id
+              )
+            ) + 1;
 
       return [
         ...prev,
@@ -159,15 +169,27 @@ export default function ElderList({
         (item) => item.id !== id
       )
     );
+
+    localStorage.removeItem(
+      `health-records-${id}`
+    );
+
+    notifyStorageChanged();
   };
 
   const filteredElders =
     useMemo(() => {
       return elders.filter((elder) => {
         return (
-          elder.name.includes(keyword) ||
-          elder.phone.includes(keyword) ||
-          elder.gender.includes(keyword)
+          elder.name.includes(
+            keyword
+          ) ||
+          elder.phone?.includes(
+            keyword
+          ) ||
+          elder.gender?.includes(
+            keyword
+          )
         );
       });
     }, [elders, keyword]);
@@ -239,7 +261,8 @@ export default function ElderList({
               setOpen(true);
             }}
             style={{
-              background: "#163A43",
+              background:
+                colors.primary,
               color: "#fff",
               border: "none",
               padding:
@@ -312,94 +335,145 @@ export default function ElderList({
         </thead>
 
         <tbody>
-                    {filteredElders.map((elder) => (
-            <tr key={elder.id}>
-              <td style={{ padding: "12px" }}>
-                {elder.name}
-              </td>
-
+          {filteredElders.length === 0 ? (
+            <tr>
               <td
+                colSpan={5}
                 style={{
                   textAlign: "center",
-                  padding: "12px",
+                  padding: "32px",
+                  color:
+                    colors.textLight,
                 }}
               >
-                {elder.gender}
-              </td>
-
-              <td
-                style={{
-                  textAlign: "center",
-                  padding: "12px",
-                }}
-              >
-                {calculateAge(elder.birthday)} 歲
-              </td>
-
-              <td style={{ padding: "12px" }}>
-                {elder.phone}
-              </td>
-
-              <td
-                style={{
-                  textAlign: "center",
-                  padding: "12px",
-                  whiteSpace: "nowrap",
-                }}
-              >
-                <button
-                  onClick={() =>
-                    onSelectElder(elder)
-                  }
-                  style={{
-                    marginRight: "8px",
-                    padding: "6px 12px",
-                    borderRadius: "6px",
-                    border: "none",
-                    background: "#198754",
-                    color: "#fff",
-                    cursor: "pointer",
-                  }}
-                >
-                  查看
-                </button>
-
-                <button
-                  onClick={() => {
-                    setEditingElder(elder);
-                    setIsEditing(true);
-                    setOpen(true);
-                  }}
-                  style={{
-                    marginRight: "8px",
-                    padding: "6px 12px",
-                    borderRadius: "6px",
-                    border: "1px solid #ccc",
-                    background: "#fff",
-                    cursor: "pointer",
-                  }}
-                >
-                  編輯
-                </button>
-
-                <button
-                  onClick={() =>
-                    handleDeleteElder(elder.id)
-                  }
-                  style={{
-                    padding: "6px 12px",
-                    borderRadius: "6px",
-                    border: "none",
-                    background: "#dc3545",
-                    color: "#fff",
-                    cursor: "pointer",
-                  }}
-                >
-                  刪除
-                </button>
+                尚無長者資料，請新增第一位長者。
               </td>
             </tr>
-          ))}
+          ) : (
+            filteredElders.map((elder) => (
+              <tr key={elder.id}>
+                <td
+                  style={{
+                    padding: "12px",
+                  }}
+                >
+                  {elder.name}
+                </td>
+
+                <td
+                  style={{
+                    textAlign:
+                      "center",
+                    padding: "12px",
+                  }}
+                >
+                  {elder.gender}
+                </td>
+
+                <td
+                  style={{
+                    textAlign:
+                      "center",
+                    padding: "12px",
+                  }}
+                >
+                  {calculateAge(
+                    elder.birthday
+                  )}{" "}
+                  歲
+                </td>
+
+                <td
+                  style={{
+                    padding: "12px",
+                  }}
+                >
+                  {elder.phone}
+                </td>
+
+                <td
+                  style={{
+                    textAlign:
+                      "center",
+                    padding: "12px",
+                    whiteSpace:
+                      "nowrap",
+                  }}
+                >
+                  <button
+                    onClick={() =>
+                      onSelectElder(elder)
+                    }
+                    style={{
+                      marginRight:
+                        "8px",
+                      padding:
+                        "6px 12px",
+                      borderRadius:
+                        "6px",
+                      border: "none",
+                      background:
+                        "#198754",
+                      color: "#fff",
+                      cursor:
+                        "pointer",
+                    }}
+                  >
+                    查看
+                  </button>
+
+                  <button
+                    onClick={() => {
+                      setEditingElder(
+                        elder
+                      );
+                      setIsEditing(true);
+                      setOpen(true);
+                    }}
+                    style={{
+                      marginRight:
+                        "8px",
+                      padding:
+                        "6px 12px",
+                      borderRadius:
+                        "6px",
+                      border:
+                        "1px solid #ccc",
+                      background:
+                        "#fff",
+                      cursor:
+                        "pointer",
+                    }}
+                  >
+                    編輯
+                  </button>
+
+                  <button
+                    onClick={() =>
+                      handleDeleteElder(
+                        elder.id
+                      )
+                    }
+                    style={{
+                      padding:
+                        "6px 12px",
+                      borderRadius:
+                        "6px",
+                      border: "none",
+                      background:
+                        "#DC2626",
+                      color:
+                        "#fff",
+                      cursor:
+                        "pointer",
+                    }}
+                  >
+                    刪除
+                  </button>
+                </td>
+              </tr>
+            ))
+          )}
         </tbody>
       </table>
 
@@ -418,3 +492,4 @@ export default function ElderList({
     </div>
   );
 }
+

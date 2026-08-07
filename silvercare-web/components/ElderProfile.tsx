@@ -99,13 +99,23 @@ export default function ElderProfile({
 useEffect(() => {
   if (!storageKey) return;
 
-  console.log("WRITE", storageKey);
-  console.log(records);
-  console.trace();
+  console.log("===== WRITE EFFECT =====");
+  console.log("records =", records);
+
+  // ★ 新增這行
+  if (records.length === 0) {
+    console.log("SKIP WRITE EMPTY");
+    return;
+  }
 
   localStorage.setItem(
     storageKey,
     JSON.stringify(records)
+  );
+
+  console.log(
+    "AFTER WRITE =",
+    localStorage.getItem(storageKey)
   );
 }, [records, storageKey]);
 
