@@ -10,15 +10,15 @@ import { radius } from "../styles/radius";
 import { shadow } from "../styles/shadow";
 
 export type Course = {
-id?: number;
-date: string;
-title: string;
-teacher: string;
-startTime: string;
-endTime: string;
-capacity: number;
-classroom: string;
-note: string;
+  id?: number;
+  date: string;
+  title: string;
+  teacher: string;
+  startTime: string;
+  endTime: string;
+  capacity: number;
+  classroom: string;
+  note: string;
 };
 
 type Props = {
@@ -26,13 +26,25 @@ type Props = {
   editingCourse: Course | null;
   onClose: () => void;
   onSave: (
-  course: Course
-) => void;
+    course: Course
+  ) => void;
 };
 
 function getTodayDate() {
-  return new Date()
-    .toISOString();
+  const today = new Date();
+
+  const year =
+    today.getFullYear();
+
+  const month = String(
+    today.getMonth() + 1
+  ).padStart(2, "0");
+
+  const day = String(
+    today.getDate()
+  ).padStart(2, "0");
+
+  return `${year}-${month}-${day}`;
 }
 
 export default function AddCourseModal({
@@ -41,9 +53,8 @@ export default function AddCourseModal({
   onClose,
   onSave,
 }: Props) {
-
   const [date, setDate] =
-useState("");
+    useState("");
 
   const [title, setTitle] =
     useState("");
@@ -67,14 +78,12 @@ useState("");
     useState("");
 
   useEffect(() => {
-
     if (!open) return;
 
-    setDate(
-  editingCourse?.date || ""
-);
-
     if (editingCourse) {
+      setDate(
+        editingCourse.date || ""
+      );
 
       setTitle(
         editingCourse.title
@@ -103,8 +112,10 @@ useState("");
       setNote(
         editingCourse.note
       );
-
     } else {
+      setDate(
+        getTodayDate()
+      );
 
       setTitle("");
 
@@ -126,17 +137,14 @@ useState("");
 
       setNote("");
     }
-
   }, [
     open,
     editingCourse,
   ]);
 
-
   if (!open) {
     return null;
   }
-
 
   return (
     <div
@@ -156,6 +164,8 @@ useState("");
       <div
         style={{
           width: 560,
+          maxHeight: "90vh",
+          overflowY: "auto",
           background: "#fff",
           borderRadius:
             radius.lg,
@@ -164,7 +174,6 @@ useState("");
           padding: 24,
         }}
       >
-
         <h2
           style={{
             marginTop: 0,
@@ -178,7 +187,6 @@ useState("");
             : "新增課程"}
         </h2>
 
-
         <div
           style={{
             display: "grid",
@@ -187,7 +195,35 @@ useState("");
             gap: 16,
           }}
         >
+          {/* 課程日期 */}
+          <div>
+            <label>
+              課程日期
+            </label>
 
+            <input
+              type="date"
+              value={date}
+              onChange={(e) =>
+                setDate(
+                  e.target.value
+                )
+              }
+              style={{
+                width: "100%",
+                marginTop: 6,
+                padding: 10,
+                border:
+                  "1px solid #ddd",
+                borderRadius:
+                  radius.md,
+                boxSizing:
+                  "border-box",
+              }}
+            />
+          </div>
+
+          {/* 課程名稱 */}
           <div>
             <label>
               課程名稱
@@ -208,11 +244,13 @@ useState("");
                   "1px solid #ddd",
                 borderRadius:
                   radius.md,
+                boxSizing:
+                  "border-box",
               }}
             />
           </div>
 
-
+          {/* 授課老師 */}
           <div>
             <label>
               授課老師
@@ -233,11 +271,13 @@ useState("");
                   "1px solid #ddd",
                 borderRadius:
                   radius.md,
+                boxSizing:
+                  "border-box",
               }}
             />
           </div>
 
-
+          {/* 開始時間 */}
           <div>
             <label>
               開始時間
@@ -259,11 +299,13 @@ useState("");
                   "1px solid #ddd",
                 borderRadius:
                   radius.md,
+                boxSizing:
+                  "border-box",
               }}
             />
           </div>
 
-
+          {/* 結束時間 */}
           <div>
             <label>
               結束時間
@@ -285,10 +327,14 @@ useState("");
                   "1px solid #ddd",
                 borderRadius:
                   radius.md,
+                boxSizing:
+                  "border-box",
               }}
             />
           </div>
-                    <div>
+
+          {/* 人數上限 */}
+          <div>
             <label>
               人數上限
             </label>
@@ -309,11 +355,13 @@ useState("");
                   "1px solid #ddd",
                 borderRadius:
                   radius.md,
+                boxSizing:
+                  "border-box",
               }}
             />
           </div>
 
-
+          {/* 教室 */}
           <div>
             <label>
               教室
@@ -335,11 +383,13 @@ useState("");
                   "1px solid #ddd",
                 borderRadius:
                   radius.md,
+                boxSizing:
+                  "border-box",
               }}
             />
           </div>
 
-
+          {/* 備註 */}
           <div
             style={{
               gridColumn:
@@ -368,13 +418,14 @@ useState("");
                   radius.md,
                 resize:
                   "vertical",
+                boxSizing:
+                  "border-box",
               }}
             />
           </div>
-
         </div>
 
-
+        {/* 按鈕 */}
         <div
           style={{
             display: "flex",
@@ -384,7 +435,7 @@ useState("");
             marginTop: 24,
           }}
         >
-
+          {/* 取消 */}
           <button
             onClick={onClose}
             style={{
@@ -403,16 +454,16 @@ useState("");
             取消
           </button>
 
-
+          {/* 儲存 */}
           <button
             onClick={() => {
-
               if (!date) {
-  alert(
-    "請選擇課程日期"
-  );
-  return;
-}
+                alert(
+                  "請選擇課程日期"
+                );
+                return;
+              }
+
               if (!title.trim()) {
                 alert(
                   "請輸入課程名稱"
@@ -420,14 +471,12 @@ useState("");
                 return;
               }
 
-
               if (!teacher.trim()) {
                 alert(
                   "請輸入授課老師"
                 );
                 return;
               }
-
 
               if (
                 !startTime ||
@@ -439,31 +488,51 @@ useState("");
                 return;
               }
 
+              if (
+                startTime >= endTime
+              ) {
+                alert(
+                  "結束時間必須晚於開始時間"
+                );
+                return;
+              }
 
-              onSave({
+              const course: Course = {
+                ...(editingCourse?.id !==
+                undefined
+                  ? {
+                      id: editingCourse.id,
+                    }
+                  : {}),
 
-  date,
+                date,
 
-  title,
+                title:
+                  title.trim(),
 
-  teacher,
+                teacher:
+                  teacher.trim(),
 
-  startTime,
+                startTime,
 
-  endTime,
+                endTime,
 
-  capacity:
-    Number(
-      capacity
-    ) || 0,
+                capacity:
+                  Number(
+                    capacity
+                  ) || 0,
 
-  classroom,
+                classroom:
+                  classroom.trim(),
 
-  note,
+                note:
+                  note.trim(),
+              };
 
-});
+              onSave(course);
 
-setDate("");
+              setDate("");
+
               setTitle("");
 
               setTeacher("");
@@ -483,7 +552,6 @@ setDate("");
               setClassroom("");
 
               setNote("");
-
             }}
             style={{
               background:
@@ -506,11 +574,8 @@ setDate("");
               ? "儲存修改"
               : "新增課程"}
           </button>
-
         </div>
-
       </div>
-
     </div>
   );
 }

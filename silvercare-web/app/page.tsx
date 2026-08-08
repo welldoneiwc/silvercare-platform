@@ -13,6 +13,7 @@ import type { Elder } from "../components/ElderList";
 
 import ElderProfile from "../components/ElderProfile";
 import CourseSection from "../components/CourseSection";
+import ActivitySection from "../components/ActivitySection";
 
 import { useDashboardData } from "../utils/useDashboardData";
 
@@ -30,13 +31,28 @@ export default function Home() {
     <div
       style={{
         display: "flex",
-        background: colors.background,
+        background:
+          colors.background,
         minHeight: "100vh",
       }}
     >
       <Sidebar
-        selectedMenu={selectedMenu}
-        onMenuChange={setSelectedMenu}
+        selectedMenu={
+          selectedMenu
+        }
+        onMenuChange={
+          (menu) => {
+            setSelectedMenu(menu);
+
+            if (
+              menu !== "elder"
+            ) {
+              setSelectedElder(
+                null
+              );
+            }
+          }
+        }
       />
 
       <main
@@ -66,7 +82,12 @@ export default function Home() {
           讓科技做行政，讓人陪伴人。
         </p>
 
-        {selectedMenu === "dashboard" && (
+        {/* ==================== */}
+        {/* Dashboard */}
+        {/* ==================== */}
+
+        {selectedMenu ===
+          "dashboard" && (
           <>
             <div
               style={{
@@ -77,14 +98,22 @@ export default function Home() {
                 marginBottom: 32,
               }}
             >
-                        <div
+              <div
                 style={cardStyle}
               >
-                <div style={labelStyle}>
+                <div
+                  style={
+                    labelStyle
+                  }
+                >
                   長者人數
                 </div>
 
-                <div style={valueStyle}>
+                <div
+                  style={
+                    valueStyle
+                  }
+                >
                   {
                     dashboardData.elderCount
                   }
@@ -94,11 +123,19 @@ export default function Home() {
               <div
                 style={cardStyle}
               >
-                <div style={labelStyle}>
+                <div
+                  style={
+                    labelStyle
+                  }
+                >
                   今日課程
                 </div>
 
-                <div style={valueStyle}>
+                <div
+                  style={
+                    valueStyle
+                  }
+                >
                   {
                     dashboardData.todayCourseCount
                   }
@@ -108,11 +145,19 @@ export default function Home() {
               <div
                 style={cardStyle}
               >
-                <div style={labelStyle}>
+                <div
+                  style={
+                    labelStyle
+                  }
+                >
                   今日量測
                 </div>
 
-                <div style={valueStyle}>
+                <div
+                  style={
+                    valueStyle
+                  }
+                >
                   {
                     dashboardData.todayHealthCount
                   }
@@ -122,11 +167,19 @@ export default function Home() {
               <div
                 style={cardStyle}
               >
-                <div style={labelStyle}>
+                <div
+                  style={
+                    labelStyle
+                  }
+                >
                   今日簽到
                 </div>
 
-                <div style={valueStyle}>
+                <div
+                  style={
+                    valueStyle
+                  }
+                >
                   {
                     dashboardData.todayAttendanceCount
                   }
@@ -153,7 +206,12 @@ export default function Home() {
           </>
         )}
 
-        {selectedMenu === "elder" && (
+        {/* ==================== */}
+        {/* Elder */}
+        {/* ==================== */}
+
+        {selectedMenu ===
+          "elder" && (
           <div
             style={{
               display: "grid",
@@ -181,10 +239,18 @@ export default function Home() {
           </div>
         )}
 
+        {/* ==================== */}
+        {/* Course */}
+        {/* ==================== */}
+
         {selectedMenu ===
           "course" && (
           <CourseSection />
         )}
+
+        {/* ==================== */}
+        {/* Health */}
+        {/* ==================== */}
 
         {selectedMenu ===
           "health" && (
@@ -205,25 +271,20 @@ export default function Home() {
           </div>
         )}
 
+        {/* ==================== */}
+        {/* Activity */}
+        {/* ==================== */}
+
         {selectedMenu ===
           "activity" && (
-          <div
-            style={{
-              background: "#fff",
-              padding: 40,
-              borderRadius: 16,
-            }}
-          >
-            <h2>
-              📅 活動管理
-            </h2>
+          <ActivitySection />
+        )}
 
-            <p>
-              建置中...
-            </p>
-          </div>
-        )}    
-                {selectedMenu ===
+        {/* ==================== */}
+        {/* Setting */}
+        {/* ==================== */}
+
+        {selectedMenu ===
           "setting" && (
           <div
             style={{
@@ -246,7 +307,8 @@ export default function Home() {
   );
 }
 
-const cardStyle: React.CSSProperties = {
+const cardStyle:
+  React.CSSProperties = {
   background: "#fff",
   borderRadius: 12,
   padding: 20,
@@ -254,12 +316,14 @@ const cardStyle: React.CSSProperties = {
     "0 2px 10px rgba(0,0,0,0.06)",
 };
 
-const labelStyle: React.CSSProperties = {
+const labelStyle:
+  React.CSSProperties = {
   fontSize: 14,
   color: "#6b7280",
 };
 
-const valueStyle: React.CSSProperties = {
+const valueStyle:
+  React.CSSProperties = {
   fontSize: 32,
   fontWeight: 700,
   marginTop: 8,
