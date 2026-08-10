@@ -14,6 +14,7 @@ import type { Elder } from "../components/ElderList";
 import ElderProfile from "../components/ElderProfile";
 import CourseSection from "../components/CourseSection";
 import ActivitySection from "../components/ActivitySection";
+import DashboardActivities from "../components/DashboardActivities";
 
 import { useDashboardData } from "../utils/useDashboardData";
 
@@ -40,19 +41,15 @@ export default function Home() {
         selectedMenu={
           selectedMenu
         }
-        onMenuChange={
-          (menu) => {
-            setSelectedMenu(menu);
+        onMenuChange={(menu) => {
+          setSelectedMenu(menu);
 
-            if (
-              menu !== "elder"
-            ) {
-              setSelectedElder(
-                null
-              );
-            }
+          if (menu !== "elder") {
+            setSelectedElder(
+              null
+            );
           }
-        }
+        }}
       />
 
       <main
@@ -203,6 +200,18 @@ export default function Home() {
                 請由左側功能選單開始管理據點資料。
               </p>
             </div>
+
+            {/* ==================== */}
+            {/* 近期活動公告 */}
+            {/* ==================== */}
+
+            <div
+              style={{
+                marginTop: 24,
+              }}
+            >
+              <DashboardActivities />
+            </div>
           </>
         )}
 
@@ -220,7 +229,8 @@ export default function Home() {
                   ? "1.2fr 1fr"
                   : "1fr",
               gap: 24,
-              alignItems: "start",
+              alignItems:
+                "start",
             }}
           >
             <ElderList

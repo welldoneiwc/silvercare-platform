@@ -21,23 +21,8 @@ export type Activity = {
   note: string;
 };
 
-type Course = {
-  id?: number;
-  date: string;
-  title: string;
-  teacher: string;
-  startTime: string;
-  endTime: string;
-  capacity: number;
-  classroom: string;
-  note: string;
-};
-
 const STORAGE_KEY =
   "silvercare-activities";
-
-const COURSE_STORAGE_KEY =
-  "silvercare-courses";
 
 const emptyForm = {
   date: "",
@@ -53,9 +38,6 @@ const emptyForm = {
 export default function ActivitySection() {
   const [activities, setActivities] =
     useState<Activity[]>([]);
-
-  const [courses, setCourses] =
-    useState<Course[]>([]);
 
   const [loaded, setLoaded] =
     useState(false);
@@ -106,49 +88,13 @@ export default function ActivitySection() {
       }
     }
 
-    /*
-     * 讀取課程資料
-     *
-     * 活動管理中的「報名管理」
-     * 需要找到對應的 Course ID，
-     * 才能連到：
-     *
-     * /course/register?courseId=xxx
-     */
-    const savedCourses =
-      localStorage.getItem(
-        COURSE_STORAGE_KEY
-      );
-
-    if (savedCourses) {
-      try {
-        const parsedCourses =
-          JSON.parse(
-            savedCourses
-          );
-
-        if (Array.isArray(parsedCourses)) {
-          setCourses(
-            parsedCourses
-          );
-        }
-      } catch (error) {
-        console.error(
-          "讀取課程資料失敗：",
-          error
-        );
-
-        setCourses([]);
-      }
-    }
-
     setLoaded(true);
   }, []);
 
   /*
    * 寫回活動 LocalStorage
    *
-   * 第一次讀取完成後才執行
+   * 第一次讀取完成後才執行。
    */
   useEffect(() => {
     if (!loaded) return;
@@ -161,83 +107,6 @@ export default function ActivitySection() {
     activities,
     loaded,
   ]);
-
-  /*
-   * 找到活動對應的課程
-   *
-   * 目前 Activity 與 Course
-   * 是兩組不同資料。
-   *
-   * 因此先使用：
-   *
-   * 活動名稱
-   * + 日期
-   * + 開始時間
-   * + 結束時間
-   *
-   * 找到對應 Course。
-   */
-  const findMatchingCourse = (
-    activity: Activity
-  ) => {
-    return courses.find(
-      (course) =>
-        course.title ===
-          activity.title &&
-        course.date ===
-          activity.date &&
-        course.startTime ===
-          activity.startTime &&
-        course.endTime ===
-          activity.endTime
-    );
-  };
-
-  /*
-   * 開啟報名管理
-   */
-  const handleRegistration = (
-    activity: Activity
-  ) => {
-    /*
-     * 只有課程活動才進入
-     * 課程報名頁
-     */
-    if (
-      activity.type !==
-      "課程活動"
-    ) {
-      alert(
-        "這個活動不是課程活動，目前沒有課程報名頁。"
-      );
-
-      return;
-    }
-
-    const matchedCourse =
-      findMatchingCourse(
-        activity
-      );
-
-    if (
-      !matchedCourse ||
-      matchedCourse.id ===
-        undefined
-    ) {
-      alert(
-        "找不到對應的課程資料。\n\n請確認活動名稱、日期、開始時間與結束時間是否與課程管理中的課程一致。"
-      );
-
-      return;
-    }
-
-    /*
-     * 直接前往指定課程的
-     * 公開報名頁
-     */
-    window.location.href =
-      `/course/register?courseId=${matchedCourse.id}`;
-  };
 
   /*
    * 開啟新增
@@ -274,7 +143,9 @@ export default function ActivitySection() {
       location:
         activity.location,
       capacity:
-        String(activity.capacity),
+        String(
+          activity.capacity
+        ),
       note: activity.note,
     });
 
@@ -481,7 +352,8 @@ export default function ActivitySection() {
             borderRadius:
               radius.md,
             border: "none",
-            cursor: "pointer",
+            cursor:
+              "pointer",
             background:
               colors.primary,
             color: "#fff",
@@ -578,189 +450,150 @@ export default function ActivitySection() {
               </tr>
             ) : (
               activities.map(
-                (activity) => {
-                  const matchingCourse =
-                    findMatchingCourse(
-                      activity
-                    );
-
-                  return (
-                    <tr
-                      key={
-                        activity.id
+                (activity) => (
+                  <tr
+                    key={
+                      activity.id
+                    }
+                  >
+                    <td
+                      style={
+                        tdStyle
                       }
                     >
-                      <td
-                        style={
-                          tdStyle
-                        }
-                      >
-                        {
-                          activity.title
-                        }
-                      </td>
+                      {
+                        activity.title
+                      }
+                    </td>
 
-                      <td
-                        style={
-                          tdStyle
-                        }
-                      >
-                        {activity.type ||
-                          "-"}
-                      </td>
+                    <td
+                      style={
+                        tdStyle
+                      }
+                    >
+                      {activity.type ||
+                        "-"}
+                    </td>
 
-                      <td
-                        style={
-                          tdStyle
-                        }
-                      >
-                        {formatDate(
-                          activity.date
-                        )}
-                      </td>
+                    <td
+                      style={
+                        tdStyle
+                      }
+                    >
+                      {formatDate(
+                        activity.date
+                      )}
+                    </td>
 
-                      <td
-                        style={
-                          tdStyle
-                        }
-                      >
-                        {
-                          activity.startTime
-                        }
-                        {" ~ "}
-                        {
-                          activity.endTime
-                        }
-                      </td>
+                    <td
+                      style={
+                        tdStyle
+                      }
+                    >
+                      {
+                        activity.startTime
+                      }
+                      {" ~ "}
+                      {
+                        activity.endTime
+                      }
+                    </td>
 
-                      <td
-                        style={
-                          tdStyle
-                        }
-                      >
-                        {
-                          activity.location ||
-                          "-"
-                        }
-                      </td>
+                    <td
+                      style={
+                        tdStyle
+                      }
+                    >
+                      {
+                        activity.location ||
+                        "-"
+                      }
+                    </td>
 
-                      <td
-                        style={
-                          tdStyle
-                        }
-                      >
-                        {
-                          activity.capacity
-                        }
-                        {" 人"}
-                      </td>
+                    <td
+                      style={
+                        tdStyle
+                      }
+                    >
+                      {
+                        activity.capacity
+                      }
+                      {" 人"}
+                    </td>
 
-                      <td
-                        style={
-                          tdStyle
-                        }
+                    <td
+                      style={
+                        tdStyle
+                      }
+                    >
+                      <div
+                        style={{
+                          display:
+                            "flex",
+                          justifyContent:
+                            "center",
+                          gap: 8,
+                          flexWrap:
+                            "wrap",
+                        }}
                       >
-                        <div
+                        <button
+                          type="button"
+                          onClick={() =>
+                            handleOpenEdit(
+                              activity
+                            )
+                          }
                           style={{
-                            display:
-                              "flex",
-                            justifyContent:
-                              "center",
-                            gap: 8,
-                            flexWrap:
-                              "wrap",
+                            background:
+                              "#2563EB",
+                            color:
+                              "#fff",
+                            border:
+                              "none",
+                            borderRadius:
+                              radius.sm,
+                            padding:
+                              "6px 12px",
+                            cursor:
+                              "pointer",
+                            fontSize:
+                              13,
                           }}
                         >
-                          {activity.type ===
-                            "課程活動" && (
-                            <button
-                              type="button"
-                              onClick={() =>
-                                handleRegistration(
-                                  activity
-                                )
-                              }
-                              style={{
-                                background:
-                                  matchingCourse
-                                    ? "#198754"
-                                    : "#9CA3AF",
-                                color:
-                                  "#fff",
-                                border:
-                                  "none",
-                                borderRadius:
-                                  radius.sm,
-                                padding:
-                                  "6px 12px",
-                                cursor:
-                                  "pointer",
-                                fontSize:
-                                  13,
-                              }}
-                            >
-                              報名管理
-                            </button>
-                          )}
+                          編輯
+                        </button>
 
-                          <button
-                            type="button"
-                            onClick={() =>
-                              handleOpenEdit(
-                                activity
-                              )
-                            }
-                            style={{
-                              background:
-                                "#2563EB",
-                              color:
-                                "#fff",
-                              border:
-                                "none",
-                              borderRadius:
-                                radius.sm,
-                              padding:
-                                "6px 12px",
-                              cursor:
-                                "pointer",
-                              fontSize:
-                                13,
-                            }}
-                          >
-                            編輯
-                          </button>
-
-                          <button
-                            type="button"
-                            onClick={() =>
-                              handleDelete(
-                                activity.id
-                              )
-                            }
-                            style={{
-                              background:
-                                "#DC2626",
-                              color:
-                                "#fff",
-                              border:
-                                "none",
-                              borderRadius:
-                                radius.sm,
-                              padding:
-                                "6px 12px",
-                              cursor:
-                                "pointer",
-                              fontSize:
-                                13,
-                            }}
-                          >
-                            刪除
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  );
-                }
+                        <button
+                          type="button"
+                          onClick={() =>
+                            handleDelete(
+                              activity.id
+                            )
+                          }
+                          style={{
+                            background:
+                              "#DC2626",
+                            color:
+                              "#fff",
+                            border:
+                              "none",
+                            borderRadius:
+                              radius.sm,
+                            padding:
+                              "6px 12px",
+                            cursor:
+                              "pointer",
+                            fontSize:
+                              13,
+                          }}
+                        >
+                          刪除
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                )
               )
             )}
           </tbody>

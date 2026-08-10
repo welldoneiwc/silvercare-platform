@@ -35,16 +35,21 @@ export function useDashboardData() {
       }
 
       const elders = JSON.parse(
-  localStorage.getItem("silvercare-elders") ?? "[]"
-);
+        localStorage.getItem(
+          "silvercare-elders"
+        ) ?? "[]"
+      );
 
       const courses = JSON.parse(
-        localStorage.getItem("courses") ?? "[]"
+        localStorage.getItem(
+          "silvercare-courses"
+        ) ?? "[]"
       );
 
       const attendance = JSON.parse(
-        localStorage.getItem("attendance") ??
-          "[]"
+        localStorage.getItem(
+          "attendance"
+        ) ?? "[]"
       );
 
       let todayHealthCount = 0;
@@ -67,13 +72,16 @@ export function useDashboardData() {
 
       setData({
         elderCount: elders.length,
+
         todayCourseCount:
           courses.filter(
             (course: {
               date: string;
             }) => isToday(course.date)
           ).length,
+
         todayHealthCount,
+
         todayAttendanceCount:
           attendance.filter(
             (record: {
@@ -86,7 +94,9 @@ export function useDashboardData() {
     loadData();
 
     const removeListener =
-      addStorageChangedListener(loadData);
+      addStorageChangedListener(
+        loadData
+      );
 
     window.addEventListener(
       "storage",
@@ -105,3 +115,4 @@ export function useDashboardData() {
 
   return data;
 }
+
