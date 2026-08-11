@@ -1,6 +1,9 @@
 "use client";
 
-import { useState } from "react";
+import {
+  useEffect,
+  useState,
+} from "react";
 
 import { colors } from "../styles/theme";
 
@@ -15,18 +18,89 @@ import ElderProfile from "../components/ElderProfile";
 import CourseSection from "../components/CourseSection";
 import ActivitySection from "../components/ActivitySection";
 import DashboardActivities from "../components/DashboardActivities";
+import AttendanceSection from "../components/AttendanceSection";
 
 import { useDashboardData } from "../utils/useDashboardData";
 
+const ELDER_STORAGE_KEY =
+  "silvercare-elders";
+
 export default function Home() {
   const [selectedMenu, setSelectedMenu] =
-    useState<MenuType>("elder");
+    useState<MenuType>("dashboard");
 
   const [selectedElder, setSelectedElder] =
     useState<Elder | null>(null);
 
+  const [healthElder, setHealthElder] =
+    useState<Elder | null>(null);
+
+  const [elders, setElders] =
+    useState<Elder[]>([]);
+
   const dashboardData =
     useDashboardData();
+
+  /**
+   * 讀取長者資料
+   *
+   * 簽到需要使用與長者管理
+   * 相同的 LocalStorage 資料。
+   */
+  useEffect(() => {
+    const loadElders = () => {
+      try {
+        const saved =
+          localStorage.getItem(
+            ELDER_STORAGE_KEY
+          );
+
+        if (!saved) {
+          setElders([]);
+          return;
+        }
+
+        const parsed =
+          JSON.parse(saved) as Elder[];
+
+        setElders(parsed);
+      } catch (error) {
+        console.error(
+          "讀取長者資料失敗：",
+          error
+        );
+
+        setElders([]);
+      }
+    };
+
+    loadElders();
+
+    window.addEventListener(
+      "storage",
+      loadElders
+    );
+
+    return () => {
+      window.removeEventListener(
+        "storage",
+        loadElders
+      );
+    };
+  }, []);
+
+  /**
+   * 簽到成功後：
+   *
+   * 1. 記住這位長者
+   * 2. 自動切換到健康量測
+   */
+  const handleAttendanceSuccess = (
+    elder: Elder
+  ) => {
+    setHealthElder(elder);
+    setSelectedMenu("health");
+  };
 
   return (
     <div
@@ -46,6 +120,12 @@ export default function Home() {
 
           if (menu !== "elder") {
             setSelectedElder(
+              null
+            );
+          }
+
+          if (menu !== "health") {
+            setHealthElder(
               null
             );
           }
@@ -250,6 +330,20 @@ export default function Home() {
         )}
 
         {/* ==================== */}
+        {/* Attendance */}
+        {/* ==================== */}
+
+        {selectedMenu ===
+          "attendance" && (
+          <AttendanceSection
+            elders={elders}
+            onCheckInSuccess={
+              handleAttendanceSuccess
+            }
+          />
+        )}
+
+        {/* ==================== */}
         {/* Course */}
         {/* ==================== */}
 
@@ -266,18 +360,193 @@ export default function Home() {
           "health" && (
           <div
             style={{
-              background: "#fff",
-              padding: 40,
-              borderRadius: 16,
+              display: "flex",
+              flexDirection: "column",
+              gap: 20,
             }}
           >
-            <h2>
-              ❤️ 健康量測
-            </h2>
+            {healthElder ? (
+              <>
+                <div
+                  style={{
+                    background: "#fff",
+                    borderRadius: 16,
+                    padding: 24,
+                    boxShadow:
+                      "0 2px 10px rgba(0,0,0,0.06)",
+                    display: "flex",
+                    justifyContent:
+                      "space-between",
+                    alignItems: "center",
+                  }}
+                >
+                  <div>
+                    <div
+                      style={{
+                        fontSize: 14,
+                        color:
+                          "#6B7280",
+                        marginBottom: 6,
+                      }}
+                    >
+                      已簽到長者
+                    </div>
 
-            <p>
-              下一階段將整合健康紀錄總覽。
-            </p>
+                    <div
+                      style={{
+                        fontSize: 28,
+                        fontWeight: 700,
+                        color:
+                          colors.primary,
+                      }}
+                    >
+                      {
+                        healthElder.name
+                      }
+                    </div>
+
+                    {healthElder.phone && (
+                      <div
+                        style={{
+                          marginTop: 6,
+                          color:
+                            "#6B7280",
+                          fontSize: 14,
+                        }}
+                      >
+                        {
+                          healthElder.phone
+                        }
+                      </div>
+                    )}
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setHealthElder(
+                        null
+                      )
+                    }
+                    style={{
+                      border:
+                        "1px solid #D1D5DB",
+                      background:
+                        "#fff",
+                      borderRadius: 8,
+                      padding:
+                        "9px 16px",
+                      cursor:
+                        "pointer",
+                      fontWeight: 600,
+                    }}
+                  >
+                    重新選擇
+                  </button>
+                </div>
+
+                <div
+                  style={{
+                    background: "#fff",
+                    borderRadius: 16,
+                    padding: 24,
+                    boxShadow:
+                      "0 2px 10px rgba(0,0,0,0.06)",
+                  }}
+                >
+                  <div
+                    style={{
+                      marginBottom: 20,
+                    }}
+                  >
+                    <h2
+                      style={{
+                        margin: 0,
+                        color:
+                          colors.primary,
+                      }}
+                    >
+                      ❤️ 開始健康量測
+                    </h2>
+
+                    <p
+                      style={{
+                        margin:
+                          "8px 0 0",
+                        color:
+                          "#6B7280",
+                        fontSize: 14,
+                      }}
+                    >
+                      已完成簽到，可以開始為
+                      {
+                        healthElder.name
+                      }
+                      進行健康量測。
+                    </p>
+                  </div>
+
+                  <ElderProfile
+                    elder={
+                      healthElder
+                    }
+                  />
+                </div>
+              </>
+            ) : (
+              <div
+                style={{
+                  background: "#fff",
+                  padding: 40,
+                  borderRadius: 16,
+                  textAlign: "center",
+                  boxShadow:
+                    "0 2px 10px rgba(0,0,0,0.06)",
+                }}
+              >
+                <h2
+                  style={{
+                    color:
+                      colors.primary,
+                  }}
+                >
+                  ❤️ 健康量測
+                </h2>
+
+                <p
+                  style={{
+                    color:
+                      "#6B7280",
+                    marginBottom: 24,
+                  }}
+                >
+                  請先到「今日簽到」搜尋長者並完成簽到。
+                </p>
+
+                <button
+                  type="button"
+                  onClick={() =>
+                    setSelectedMenu(
+                      "attendance"
+                    )
+                  }
+                  style={{
+                    background:
+                      colors.primary,
+                    color: "#fff",
+                    border: "none",
+                    borderRadius: 8,
+                    padding:
+                      "11px 20px",
+                    cursor:
+                      "pointer",
+                    fontWeight: 600,
+                  }}
+                >
+                  前往今日簽到
+                </button>
+              </div>
+            )}
           </div>
         )}
 

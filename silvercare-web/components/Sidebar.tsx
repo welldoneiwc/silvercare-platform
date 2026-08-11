@@ -5,6 +5,7 @@ import { colors } from "../styles/theme";
 export type MenuType =
   | "dashboard"
   | "elder"
+  | "attendance"
   | "health"
   | "course"
   | "activity"
@@ -31,6 +32,11 @@ const menus: {
     key: "elder",
     icon: "👥",
     label: "長者管理",
+  },
+  {
+    key: "attendance",
+    icon: "👋",
+    label: "長者簽到",
   },
   {
     key: "health",
@@ -96,7 +102,7 @@ export default function Sidebar({
           gap: 8,
         }}
       >
-               {menus.map((menu) => {
+        {menus.map((menu) => {
           const active =
             selectedMenu ===
             menu.key;
@@ -162,4 +168,4 @@ export default function Sidebar({
       </div>
     </aside>
   );
-} 
+}

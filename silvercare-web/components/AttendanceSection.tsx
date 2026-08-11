@@ -14,6 +14,8 @@ import { notifyStorageChanged } from "../utils/storageEvents";
 
 import AttendanceTable from "./AttendanceTable";
 
+import { Elder } from "./ElderList";
+
 export type AttendanceRecord = {
   id: string;
   elderId: number;
@@ -23,20 +25,20 @@ export type AttendanceRecord = {
   status: "出席" | "請假" | "缺席";
 };
 
-type Elder = {
-  id: number;
-  name: string;
-};
-
 type Props = {
   elders: Elder[];
+  onCheckInSuccess?: (elder: Elder) => void;
 };
 
 export default function AttendanceSection({
   elders,
+  onCheckInSuccess,
 }: Props) {
   const [records, setRecords] =
     useState<AttendanceRecord[]>([]);
+
+  const [keyword, setKeyword] =
+    useState("");
 
   const storageKey =
     "attendance-records";
@@ -110,8 +112,7 @@ export default function AttendanceSection({
             "zh-TW",
             {
               hour: "2-digit",
-              minute:
-                "2-digit",
+              minute: "2-digit",
             }
           ),
         status: "出席",
@@ -123,6 +124,10 @@ export default function AttendanceSection({
     ]);
 
     notifyStorageChanged();
+
+    setKeyword("");
+
+    onCheckInSuccess?.(elder);
   };
 
   const handleDelete = (
@@ -137,6 +142,31 @@ export default function AttendanceSection({
 
     notifyStorageChanged();
   };
+
+  const filteredElders =
+    useMemo(() => {
+      const search =
+        keyword.trim();
+
+      if (!search) {
+        return [];
+      }
+
+      return elders.filter(
+        (elder) => {
+          const name =
+            elder.name ?? "";
+
+          const phone =
+            elder.phone ?? "";
+
+          return (
+            name.includes(search) ||
+            phone.includes(search)
+          );
+        }
+      );
+    }, [elders, keyword]);
 
   return (
     <div
@@ -179,55 +209,194 @@ export default function AttendanceSection({
         </div>
       </div>
 
-      <div
-        style={{
-          display: "flex",
-          flexWrap: "wrap",
-          gap: 12,
-        }}
-      >
-        {elders.map((elder) => {
-          const checked =
-            todayRecords.some(
-              (record) =>
-                record.elderId ===
-                elder.id
-            );
+      <div>
+        <div
+          style={{
+            marginBottom: 8,
+            color: colors.primary,
+            fontSize: 14,
+            fontWeight: 600,
+          }}
+        >
+          搜尋長者
+        </div>
 
-          return (
-            <button
-              key={elder.id}
-              disabled={checked}
-              onClick={() =>
-                handleCheckIn(
-                  elder
-                )
-              }
+        <input
+          type="text"
+          value={keyword}
+          onChange={(e) =>
+            setKeyword(
+              e.target.value
+            )
+          }
+          placeholder="輸入姓名或電話搜尋..."
+          style={{
+            width: "100%",
+            boxSizing: "border-box",
+            padding:
+              "13px 16px",
+            border:
+              "1px solid #D1D5DB",
+            borderRadius:
+              radius.md,
+            fontSize: 16,
+            outline: "none",
+          }}
+        />
+      </div>
+
+      {keyword.trim() && (
+        <div
+          style={{
+            display: "flex",
+            flexDirection:
+              "column",
+            gap: 10,
+          }}
+        >
+          <div
+            style={{
+              color:
+                colors.textLight,
+              fontSize: 13,
+            }}
+          >
+            搜尋結果：
+            {filteredElders.length} 人
+          </div>
+
+          {filteredElders.length ===
+          0 ? (
+            <div
               style={{
-                padding:
-                  "10px 18px",
-                border: "none",
+                padding: 20,
+                textAlign: "center",
+                background:
+                  "#F7FAFC",
                 borderRadius:
                   radius.md,
-                background: checked
-                  ? "#D1FAE5"
-                  : colors.primary,
-                color: checked
-                  ? "#065F46"
-                  : "#fff",
-                cursor: checked
-                  ? "default"
-                  : "pointer",
-                fontWeight: 600,
+                color:
+                  colors.textLight,
               }}
             >
-              {checked
-                ? `✓ ${elder.name}`
-                : elder.name}
-            </button>
-          );
-        })}
-              </div>
+              找不到符合的長者
+            </div>
+          ) : (
+            filteredElders.map(
+              (elder) => {
+                const checked =
+                  todayRecords.some(
+                    (record) =>
+                      record.elderId ===
+                      elder.id
+                  );
+
+                return (
+                  <div
+                    key={elder.id}
+                    style={{
+                      display:
+                        "flex",
+                      alignItems:
+                        "center",
+                      justifyContent:
+                        "space-between",
+                      gap: 16,
+                      padding:
+                        "14px 16px",
+                      border:
+                        "1px solid #E5E7EB",
+                      borderRadius:
+                        radius.md,
+                      background:
+                        checked
+                          ? "#F0FDF4"
+                          : "#fff",
+                    }}
+                  >
+                    <div>
+                      <div
+                        style={{
+                          fontSize: 16,
+                          fontWeight: 700,
+                          color:
+                            colors.primary,
+                        }}
+                      >
+                        {elder.name}
+                      </div>
+
+                      {elder.phone && (
+                        <div
+                          style={{
+                            marginTop: 4,
+                            fontSize: 13,
+                            color:
+                              colors.textLight,
+                          }}
+                        >
+                          {elder.phone}
+                        </div>
+                      )}
+                    </div>
+
+                    <button
+                      disabled={checked}
+                      onClick={() =>
+                        handleCheckIn(
+                          elder
+                        )
+                      }
+                      style={{
+                        border: "none",
+                        borderRadius:
+                          radius.md,
+                        padding:
+                          "9px 18px",
+                        background:
+                          checked
+                            ? "#D1FAE5"
+                            : colors.primary,
+                        color:
+                          checked
+                            ? "#065F46"
+                            : "#fff",
+                        cursor:
+                          checked
+                            ? "default"
+                            : "pointer",
+                        fontWeight: 600,
+                        whiteSpace:
+                          "nowrap",
+                      }}
+                    >
+                      {checked
+                        ? "✓ 已簽到"
+                        : "簽到"}
+                    </button>
+                  </div>
+                );
+              }
+            )
+          )}
+        </div>
+      )}
+
+      {!keyword.trim() && (
+        <div
+          style={{
+            padding: 28,
+            textAlign: "center",
+            background: "#F7FAFC",
+            borderRadius:
+              radius.md,
+            color:
+              colors.textLight,
+          }}
+        >
+          請輸入姓名或電話開始搜尋
+        </div>
+      )}
 
       <AttendanceTable
         records={todayRecords}

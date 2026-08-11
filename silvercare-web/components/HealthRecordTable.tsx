@@ -7,10 +7,10 @@ import { radius } from "../styles/radius";
 
 type Props = {
   records: HealthRecord[];
-  onEdit: (
+  onEdit?: (
     record: HealthRecord
   ) => void;
-  onDelete: (
+  onDelete?: (
     id: number
   ) => void;
 };
@@ -20,6 +20,10 @@ export default function HealthRecordTable({
   onEdit,
   onDelete,
 }: Props) {
+  const showActions =
+    Boolean(onEdit) ||
+    Boolean(onDelete);
+
   return (
     <div
       style={{
@@ -79,9 +83,11 @@ export default function HealthRecordTable({
               BMI
             </th>
 
-            <th style={thStyle}>
-              操作
-            </th>
+            {showActions && (
+              <th style={thStyle}>
+                操作
+              </th>
+            )}
           </tr>
         </thead>
 
@@ -89,11 +95,14 @@ export default function HealthRecordTable({
           {records.length === 0 ? (
             <tr>
               <td
-                colSpan={7}
+                colSpan={
+                  showActions ? 7 : 6
+                }
                 style={{
                   textAlign: "center",
                   padding: 32,
-                  color: colors.textLight,
+                  color:
+                    colors.textLight,
                 }}
               >
                 尚無健康紀錄
@@ -110,11 +119,13 @@ export default function HealthRecordTable({
                 record.weight > 0;
 
               const bmi =
-                hasHeight && hasWeight
+                hasHeight &&
+                hasWeight
                   ? (
                       record.weight! /
                       Math.pow(
-                        record.height! / 100,
+                        record.height! /
+                          100,
                         2
                       )
                     ).toFixed(1)
@@ -166,68 +177,80 @@ export default function HealthRecordTable({
                     {bmi}
                   </td>
 
-                  <td
-                    style={tdStyle}
-                  >
-                    <div
-                      style={{
-                        display: "flex",
-                        justifyContent:
-                          "center",
-                        gap: 8,
-                      }}
+                  {showActions && (
+                    <td
+                      style={tdStyle}
                     >
-                      <button
-                        onClick={() =>
-                          onEdit(record)
-                        }
+                      <div
                         style={{
-                          background:
-                            "#2563EB",
-                          color: "#fff",
-                          border: "none",
-                          borderRadius:
-                            radius.sm,
-                          padding:
-                            "6px 12px",
-                          cursor:
-                            "pointer",
-                          fontSize: 13,
+                          display: "flex",
+                          justifyContent:
+                            "center",
+                          gap: 8,
                         }}
                       >
-                        編輯
-                      </button>
+                        {onEdit && (
+                          <button
+                            onClick={() =>
+                              onEdit(
+                                record
+                              )
+                            }
+                            style={{
+                              background:
+                                "#2563EB",
+                              color:
+                                "#fff",
+                              border:
+                                "none",
+                              borderRadius:
+                                radius.sm,
+                              padding:
+                                "6px 12px",
+                              cursor:
+                                "pointer",
+                              fontSize: 13,
+                            }}
+                          >
+                            編輯
+                          </button>
+                        )}
 
-                      <button
-                        onClick={() => {
-                          if (
-                            confirm(
-                              "確定要刪除此筆健康紀錄嗎？"
-                            )
-                          ) {
-                            onDelete(
-                              record.id
-                            );
-                          }
-                        }}
-                        style={{
-                          background:
-                            "#DC2626",
-                          color: "#fff",
-                          border: "none",
-                          borderRadius:
-                            radius.sm,
-                          padding:
-                            "6px 12px",
-                          cursor:
-                            "pointer",
-                          fontSize: 13,
-                        }}
-                      >
-                        刪除
-                      </button>
-                    </div>
-                  </td>
+                        {onDelete && (
+                          <button
+                            onClick={() => {
+                              if (
+                                confirm(
+                                  "確定要刪除此筆健康紀錄嗎？"
+                                )
+                              ) {
+                                onDelete(
+                                  record.id
+                                );
+                              }
+                            }}
+                            style={{
+                              background:
+                                "#DC2626",
+                              color:
+                                "#fff",
+                              border:
+                                "none",
+                              borderRadius:
+                                radius.sm,
+                              padding:
+                                "6px 12px",
+                              cursor:
+                                "pointer",
+                              fontSize: 13,
+                            }}
+                          >
+                            刪除
+                          </button>
+                        )}
+                      </div>
+                    </td>
+                  )}
                 </tr>
               );
             })
