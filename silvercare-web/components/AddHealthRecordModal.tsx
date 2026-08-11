@@ -16,8 +16,8 @@ export type HealthRecord = {
   systolic: number;
   diastolic: number;
   pulse: number;
-  height: number;
-  weight: number;
+  height: number | null;
+  weight: number | null;
 };
 
 type Props = {
@@ -85,11 +85,15 @@ export default function AddHealthRecordModal({
       );
 
       setHeight(
-        editingRecord.height.toString()
+        editingRecord.height !== null
+          ? editingRecord.height.toString()
+          : ""
       );
 
       setWeight(
-        editingRecord.weight.toString()
+        editingRecord.weight !== null
+          ? editingRecord.weight.toString()
+          : ""
       );
     } else {
       setDate(
@@ -135,34 +139,154 @@ export default function AddHealthRecordModal({
     reader.readAsDataURL(file);
   };
 
-  const handleStartRecognition = () => {
-    if (!photoPreview) {
-      alert("請先拍照或上傳健康量測照片。");
-      return;
+  const handleStartRecognition = async () => {
+  if (!photoPreview) {
+    alert(
+      "請先拍照或上傳健康量測照片。"
+    );
+    return;
+  }
+
+  setIsRecognizing(true);
+  setRecognized(false);
+
+  try {
+    const response = await fetch(
+      "/api/openai",
+      {
+        method: "POST",
+        headers: {
+          "Content-Type":
+            "application/json",
+        },
+        body: JSON.stringify({
+          image: photoPreview,
+        }),
+      }
+    );
+
+    const data = await response.json();
+
+    if (!response.ok || !data.success) {
+      throw new Error(
+        data.error ||
+          "AI 辨識失敗"
+      );
     }
 
+    let result = data.result;
+
     /*
-     * 目前先建立 AI 辨識流程的 UI。
+     * AI 回傳可能是：
      *
-     * 真正的 AI OCR / Vision API
-     * 下一步再接入。
+     * 1. JSON 物件
+     * 2. JSON 字串
+     * 3. 文字，例如：
+     *    "122 / 74 / 63"
      *
-     * 這裡不會把照片儲存到
-     * LocalStorage。
+     * 這裡全部處理。
      */
 
-    setIsRecognizing(true);
+    if (typeof result === "string") {
+      const text = result.trim();
 
-    window.setTimeout(() => {
-      setIsRecognizing(false);
-      setRecognized(true);
+      try {
+        result = JSON.parse(text);
+      } catch {
+        const match = text.match(
+          /(\d{2,3})\s*[/／]\s*(\d{2,3})\s*[/／]\s*(\d{2,3})/
+        );
 
-      alert(
-        "照片已準備完成。下一步將接入 AI 辨識量測數值。"
-      );
-    }, 800);
-  };
+        if (match) {
+          result = {
+            systolic: Number(match[1]),
+            diastolic: Number(match[2]),
+            pulse: Number(match[3]),
+          };
+        }
+      }
+    }
 
+    console.log(
+      "AI recognition result:",
+      result
+    );
+
+    if (
+      result &&
+      typeof result === "object"
+    ) {
+      if (
+        "systolic" in result &&
+        result.systolic !== null &&
+        result.systolic !== undefined
+      ) {
+        setSystolic(
+          String(result.systolic)
+        );
+      }
+
+      if (
+        "diastolic" in result &&
+        result.diastolic !== null &&
+        result.diastolic !== undefined
+      ) {
+        setDiastolic(
+          String(result.diastolic)
+        );
+      }
+
+      if (
+        "pulse" in result &&
+        result.pulse !== null &&
+        result.pulse !== undefined
+      ) {
+        setPulse(
+          String(result.pulse)
+        );
+      }
+
+      if (
+        "height" in result &&
+        result.height !== null &&
+        result.height !== undefined
+      ) {
+        setHeight(
+          String(result.height)
+        );
+      }
+
+      if (
+        "weight" in result &&
+        result.weight !== null &&
+        result.weight !== undefined
+      ) {
+        setWeight(
+          String(result.weight)
+        );
+      }
+    }
+
+    setRecognized(true);
+
+    alert(
+      "AI 辨識完成，請確認下方結果。"
+    );
+  } catch (error) {
+    console.error(
+      "AI recognition error:",
+      error
+    );
+
+    alert(
+      error instanceof Error
+        ? error.message
+        : "AI 辨識失敗，請稍後再試。"
+    );
+  } finally {
+    setIsRecognizing(false);
+  }
+};
   const handleSave = () => {
     if (!date) {
       alert("請選擇日期");
@@ -172,23 +296,31 @@ export default function AddHealthRecordModal({
     if (
       !systolic ||
       !diastolic ||
-      !pulse ||
-      !height ||
-      !weight
+      !pulse
     ) {
       alert(
-        "目前請確認血壓、脈搏、身高與體重都有辨識結果。"
+        "目前請確認血壓與脈搏都有辨識結果。"
       );
       return;
     }
+
+    const heightValue =
+      height.trim() === ""
+        ? null
+        : Number(height);
+
+    const weightValue =
+      weight.trim() === ""
+        ? null
+        : Number(weight);
 
     onSave({
       date,
       systolic: Number(systolic),
       diastolic: Number(diastolic),
       pulse: Number(pulse),
-      height: Number(height),
-      weight: Number(weight),
+      height: heightValue,
+      weight: weightValue,
     });
 
     setDate("");
@@ -250,8 +382,10 @@ export default function AddHealthRecordModal({
           }}
         >
           拍攝或上傳健康量測設備畫面，
-          下一步由 AI 自動辨識血壓、
+          AI 將自動辨識血壓、
           脈搏、身高與體重。
+          無法從照片辨識的項目會保留空白，
+          不會自行猜測數值。
         </p>
 
         <div
@@ -355,7 +489,7 @@ export default function AddHealthRecordModal({
                 }}
               >
                 {isRecognizing
-                  ? "AI 辨識準備中..."
+                  ? "AI 辨識中..."
                   : "🤖 開始 AI 辨識"}
               </button>
             </div>
@@ -375,7 +509,7 @@ export default function AddHealthRecordModal({
                 fontWeight: 600,
               }}
             >
-              ✓ 已進入辨識結果確認流程
+              ✓ AI 辨識完成，請確認結果
             </div>
           )}
 
@@ -387,8 +521,8 @@ export default function AddHealthRecordModal({
               lineHeight: 1.6,
             }}
           >
-            照片目前只用於辨識流程，
-            不會寫入健康紀錄
+            照片只用於 AI
+            辨識流程，不會寫入健康紀錄
             LocalStorage。
           </div>
         </div>
@@ -509,7 +643,7 @@ export default function AddHealthRecordModal({
                     e.target.value
                   )
                 }
-                placeholder="AI 辨識結果"
+                placeholder="可留白"
                 style={inputStyle}
               />
             </div>
@@ -527,7 +661,7 @@ export default function AddHealthRecordModal({
                     e.target.value
                   )
                 }
-                placeholder="AI 辨識結果"
+                placeholder="可留白"
                 style={inputStyle}
               />
             </div>

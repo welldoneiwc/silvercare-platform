@@ -21,8 +21,8 @@ export type HealthRecord = {
   systolic: number;
   diastolic: number;
   pulse: number;
-  height: number;
-  weight: number;
+  height: number | null;
+  weight: number | null;
 };
 
 type Elder = {
@@ -52,72 +52,76 @@ export default function ElderProfile({
   /**
    * 固定目前長者的 LocalStorage Key
    */
- const storageKey = useMemo(() => {
-  console.log("==========");
-  console.log("elder =", elder);
-  console.log("elder.id =", elder?.id);
-  console.log("storageKey =", `health-records-${elder?.id}`);
+  const storageKey = useMemo(() => {
+    console.log("==========");
+    console.log("elder =", elder);
+    console.log("elder.id =", elder?.id);
+    console.log(
+      "storageKey =",
+      `health-records-${elder?.id}`
+    );
 
-  if (!elder) return null;
+    if (!elder) return null;
 
-  return `health-records-${elder.id}`;
-}, [elder]);
+    return `health-records-${elder.id}`;
+  }, [elder]);
 
   /**
    * 載入 LocalStorage
    */
- useEffect(() => {
-  console.log("===== READ EFFECT =====");
-  console.log("elder =", elder);
-  console.log("storageKey =", storageKey);
+  useEffect(() => {
+    console.log("===== READ EFFECT =====");
+    console.log("elder =", elder);
+    console.log("storageKey =", storageKey);
 
-  if (!storageKey) {
-    console.log("NO STORAGE KEY");
-    setRecords([]);
-    return;
-  }
+    if (!storageKey) {
+      console.log("NO STORAGE KEY");
+      setRecords([]);
+      return;
+    }
 
-  const saved = localStorage.getItem(storageKey);
+    const saved =
+      localStorage.getItem(storageKey);
 
-  console.log("saved =", saved);
+    console.log("saved =", saved);
 
-  if (!saved) {
-    setRecords([]);
-    return;
-  }
+    if (!saved) {
+      setRecords([]);
+      return;
+    }
 
-  const parsed = JSON.parse(saved);
+    const parsed = JSON.parse(saved);
 
-  console.log("parsed =", parsed);
+    console.log("parsed =", parsed);
 
-  setRecords(parsed);
-}, [storageKey]);
+    setRecords(parsed);
+  }, [storageKey]);
 
   /**
    * records 改變才寫回 LocalStorage
    */
-useEffect(() => {
-  if (!storageKey) return;
+  useEffect(() => {
+    if (!storageKey) return;
 
-  console.log("===== WRITE EFFECT =====");
-  console.log("records =", records);
+    console.log("===== WRITE EFFECT =====");
+    console.log("records =", records);
 
-  // ★ 新增這行
-  if (records.length === 0) {
-    console.log("SKIP WRITE EMPTY");
-    return;
-  }
+    // ★ 保留原本避免空陣列覆蓋 LocalStorage 的保護
+    if (records.length === 0) {
+      console.log("SKIP WRITE EMPTY");
+      return;
+    }
 
-  localStorage.setItem(
-    storageKey,
-    JSON.stringify(records)
-  );
+    localStorage.setItem(
+      storageKey,
+      JSON.stringify(records)
+    );
 
-  console.log(
-    "AFTER WRITE =",
-    localStorage.getItem(storageKey)
-  );
-}, [records, storageKey]);
+    console.log(
+      "AFTER WRITE =",
+      localStorage.getItem(storageKey)
+    );
+  }, [records, storageKey]);
 
   const latestRecord = useMemo(() => {
     if (records.length === 0) {
@@ -160,8 +164,28 @@ useEffect(() => {
     return years;
   }, [elder]);
 
+  /**
+   * BMI
+   *
+   * 只有在身高與體重都有有效數值時才計算。
+   * AI 沒有辨識到其中一項時，顯示 "-".
+   */
   const bmi = useMemo(() => {
     if (!latestRecord) {
+      return "-";
+    }
+
+    if (
+      latestRecord.height === null ||
+      latestRecord.weight === null
+    ) {
+      return "-";
+    }
+
+    if (
+      latestRecord.height <= 0 ||
+      latestRecord.weight <= 0
+    ) {
       return "-";
     }
 
@@ -246,8 +270,7 @@ useEffect(() => {
             <h2
               style={{
                 margin: 0,
-                color:
-                  colors.primary,
+                color: colors.primary,
                 fontSize: 32,
                 fontWeight: 700,
               }}
@@ -258,8 +281,7 @@ useEffect(() => {
             <div
               style={{
                 marginTop: 8,
-                color:
-                  colors.textLight,
+                color: colors.textLight,
                 fontSize: 14,
                 lineHeight: 1.8,
               }}
@@ -307,7 +329,8 @@ useEffect(() => {
             ＋ 新增健康紀錄
           </button>
         </div>
-                <div
+
+        <div
           style={{
             display: "grid",
             gridTemplateColumns:
@@ -339,7 +362,8 @@ useEffect(() => {
                 color: colors.primary,
               }}
             >
-              {latestRecord
+              {latestRecord &&
+              latestRecord.height !== null
                 ? `${latestRecord.height} cm`
                 : "-"}
             </div>
@@ -369,7 +393,8 @@ useEffect(() => {
                 color: colors.primary,
               }}
             >
-              {latestRecord
+              {latestRecord &&
+              latestRecord.weight !== null
                 ? `${latestRecord.weight} kg`
                 : "-"}
             </div>
@@ -452,7 +477,8 @@ useEffect(() => {
           onDelete={handleDelete}
         />
       </div>
-            <AddHealthRecordModal
+
+      <AddHealthRecordModal
         open={openModal}
         editingRecord={editingRecord}
         onClose={() => {

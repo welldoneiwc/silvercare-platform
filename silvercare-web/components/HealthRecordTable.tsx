@@ -46,56 +46,40 @@ export default function HealthRecordTable({
       <table
         style={{
           width: "100%",
-          borderCollapse:
-            "collapse",
+          borderCollapse: "collapse",
         }}
       >
         <thead>
           <tr
             style={{
-              background:
-                "#F7FAFC",
+              background: "#F7FAFC",
             }}
           >
-            <th
-              style={thStyle}
-            >
+            <th style={thStyle}>
               日期
             </th>
 
-            <th
-              style={thStyle}
-            >
+            <th style={thStyle}>
               血壓
             </th>
 
-            <th
-              style={thStyle}
-            >
+            <th style={thStyle}>
               脈搏
             </th>
 
-            <th
-              style={thStyle}
-            >
+            <th style={thStyle}>
               身高
             </th>
 
-            <th
-              style={thStyle}
-            >
+            <th style={thStyle}>
               體重
             </th>
 
-            <th
-              style={thStyle}
-            >
+            <th style={thStyle}>
               BMI
             </th>
 
-            <th
-              style={thStyle}
-            >
+            <th style={thStyle}>
               操作
             </th>
           </tr>
@@ -107,166 +91,146 @@ export default function HealthRecordTable({
               <td
                 colSpan={7}
                 style={{
-                  textAlign:
-                    "center",
+                  textAlign: "center",
                   padding: 32,
-                  color:
-                    colors.textLight,
+                  color: colors.textLight,
                 }}
               >
                 尚無健康紀錄
               </td>
             </tr>
           ) : (
-            records.map(
-              (record) => {
-                const bmi =
-                  (
-                    record.weight /
-                    Math.pow(
-                      record.height /
-                        100,
-                      2
-                    )
-                  ).toFixed(1);
+            records.map((record) => {
+              const hasHeight =
+                record.height !== null &&
+                record.height > 0;
 
-                return (
-                  <tr
-                    key={
-                      record.id
-                    }
+              const hasWeight =
+                record.weight !== null &&
+                record.weight > 0;
+
+              const bmi =
+                hasHeight && hasWeight
+                  ? (
+                      record.weight! /
+                      Math.pow(
+                        record.height! / 100,
+                        2
+                      )
+                    ).toFixed(1)
+                  : "-";
+
+              return (
+                <tr
+                  key={record.id}
+                >
+                  <td
+                    style={tdStyle}
                   >
-                    <td
-                      style={
-                        tdStyle
-                      }
-                    >
-                      {
-                        record.date
-                      }
-                    </td>
+                    {record.date}
+                  </td>
 
-                    <td
-                      style={
-                        tdStyle
-                      }
-                    >
-                      {
-                        record.systolic
-                      }
-                      /
-                      {
-                        record.diastolic
-                      }
-                    </td>
+                  <td
+                    style={tdStyle}
+                  >
+                    {record.systolic}
+                    /
+                    {record.diastolic}
+                  </td>
 
-                    <td
-                      style={
-                        tdStyle
-                      }
-                    >
-                      {
-                        record.pulse
-                      }
-                    </td>
+                  <td
+                    style={tdStyle}
+                  >
+                    {record.pulse}
+                  </td>
 
-                    <td
-                      style={
-                        tdStyle
-                      }
-                    >
-                      {
-                        record.height
-                      }{" "}
-                      cm
-                    </td>
+                  <td
+                    style={tdStyle}
+                  >
+                    {hasHeight
+                      ? `${record.height} cm`
+                      : "-"}
+                  </td>
 
-                    <td
-                      style={
-                        tdStyle
-                      }
-                    >
-                      {
-                        record.weight
-                      }{" "}
-                      kg
-                    </td>
+                  <td
+                    style={tdStyle}
+                  >
+                    {hasWeight
+                      ? `${record.weight} kg`
+                      : "-"}
+                  </td>
 
-                    <td
-                      style={
-                        tdStyle
-                      }
-                    >
-                      {bmi}
-                    </td>
+                  <td
+                    style={tdStyle}
+                  >
+                    {bmi}
+                  </td>
 
-                    <td
-                      style={
-                        tdStyle
-                      }
+                  <td
+                    style={tdStyle}
+                  >
+                    <div
+                      style={{
+                        display: "flex",
+                        justifyContent:
+                          "center",
+                        gap: 8,
+                      }}
                     >
-                                            <div
+                      <button
+                        onClick={() =>
+                          onEdit(record)
+                        }
                         style={{
-                          display: "flex",
-                          justifyContent: "center",
-                          gap: 8,
+                          background:
+                            "#2563EB",
+                          color: "#fff",
+                          border: "none",
+                          borderRadius:
+                            radius.sm,
+                          padding:
+                            "6px 12px",
+                          cursor:
+                            "pointer",
+                          fontSize: 13,
                         }}
                       >
-                        <button
-                          onClick={() =>
-                            onEdit(record)
-                          }
-                          style={{
-                            background:
-                              "#2563EB",
-                            color: "#fff",
-                            border: "none",
-                            borderRadius:
-                              radius.sm,
-                            padding:
-                              "6px 12px",
-                            cursor:
-                              "pointer",
-                            fontSize: 13,
-                          }}
-                        >
-                          編輯
-                        </button>
+                        編輯
+                      </button>
 
-                        <button
-                          onClick={() => {
-                            if (
-                              confirm(
-                                "確定要刪除此筆健康紀錄嗎？"
-                              )
-                            ) {
-                              onDelete(
-                                record.id
-                              );
-                            }
-                          }}
-                          style={{
-                            background:
-                              "#DC2626",
-                            color: "#fff",
-                            border: "none",
-                            borderRadius:
-                              radius.sm,
-                            padding:
-                              "6px 12px",
-                            cursor:
-                              "pointer",
-                            fontSize: 13,
-                          }}
-                        >
-                          刪除
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                );
-              }
-            )
+                      <button
+                        onClick={() => {
+                          if (
+                            confirm(
+                              "確定要刪除此筆健康紀錄嗎？"
+                            )
+                          ) {
+                            onDelete(
+                              record.id
+                            );
+                          }
+                        }}
+                        style={{
+                          background:
+                            "#DC2626",
+                          color: "#fff",
+                          border: "none",
+                          borderRadius:
+                            radius.sm,
+                          padding:
+                            "6px 12px",
+                          cursor:
+                            "pointer",
+                          fontSize: 13,
+                        }}
+                      >
+                        刪除
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              );
+            })
           )}
         </tbody>
       </table>
@@ -277,7 +241,8 @@ export default function HealthRecordTable({
 const thStyle: React.CSSProperties = {
   padding: "12px",
   textAlign: "center",
-  borderBottom: "1px solid #E5E7EB",
+  borderBottom:
+    "1px solid #E5E7EB",
   color: colors.primary,
   fontWeight: 600,
   fontSize: 14,
@@ -286,6 +251,7 @@ const thStyle: React.CSSProperties = {
 const tdStyle: React.CSSProperties = {
   padding: "14px 12px",
   textAlign: "center",
-  borderBottom: "1px solid #F3F4F6",
+  borderBottom:
+    "1px solid #F3F4F6",
   fontSize: 14,
 };
