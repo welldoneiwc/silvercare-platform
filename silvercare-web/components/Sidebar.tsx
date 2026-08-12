@@ -9,6 +9,7 @@ export type MenuType =
   | "health"
   | "course"
   | "activity"
+  | "finance"
   | "setting";
 
 type Props = {
@@ -52,6 +53,11 @@ const menus: {
     key: "activity",
     icon: "📅",
     label: "活動管理",
+  },
+  {
+    key: "finance",
+    icon: "💰",
+    label: "財務管理",
   },
   {
     key: "setting",
@@ -169,3 +175,4 @@ export default function Sidebar({
     </aside>
   );
 }
+

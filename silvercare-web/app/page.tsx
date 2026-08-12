@@ -19,6 +19,7 @@ import CourseSection from "../components/CourseSection";
 import ActivitySection from "../components/ActivitySection";
 import DashboardActivities from "../components/DashboardActivities";
 import AttendanceSection from "../components/AttendanceSection";
+import FinanceSection from "../components/FinanceSection";
 
 import { useDashboardData } from "../utils/useDashboardData";
 
@@ -309,8 +310,7 @@ export default function Home() {
                   ? "1.2fr 1fr"
                   : "1fr",
               gap: 24,
-              alignItems:
-                "start",
+              alignItems: "start",
             }}
           >
             <ElderList
@@ -560,6 +560,15 @@ export default function Home() {
         )}
 
         {/* ==================== */}
+        {/* Finance */}
+        {/* ==================== */}
+
+        {selectedMenu ===
+          "finance" && (
+          <FinanceSection />
+        )}
+
+        {/* ==================== */}
         {/* Setting */}
         {/* ==================== */}
 
@@ -607,3 +616,4 @@ const valueStyle:
   fontWeight: 700,
   marginTop: 8,
 };
+
