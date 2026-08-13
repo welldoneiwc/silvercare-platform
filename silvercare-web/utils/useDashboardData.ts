@@ -19,6 +19,34 @@ function isToday(date: string) {
   );
 }
 
+function readArray<T>(key: string): T[] {
+  if (typeof window === "undefined") {
+    return [];
+  }
+
+  try {
+    const saved =
+      localStorage.getItem(key);
+
+    if (!saved) {
+      return [];
+    }
+
+    const parsed = JSON.parse(saved);
+
+    return Array.isArray(parsed)
+      ? parsed
+      : [];
+  } catch (error) {
+    console.error(
+      `讀取 LocalStorage 失敗：${key}`,
+      error
+    );
+
+    return [];
+  }
+}
+
 export function useDashboardData() {
   const [data, setData] =
     useState<DashboardData>({
@@ -34,70 +62,88 @@ export function useDashboardData() {
         return;
       }
 
-      const elders = JSON.parse(
-        localStorage.getItem(
-          "silvercare-elders"
-        ) ?? "[]"
+      const elders = readArray<{
+        id: number;
+      }>(
+        "silvercare-elders"
       );
 
-      const courses = JSON.parse(
-        localStorage.getItem(
-          "silvercare-courses"
-        ) ?? "[]"
+      const courses = readArray<{
+        date: string;
+      }>(
+        "silvercare-courses"
       );
 
-      const attendance = JSON.parse(
-        localStorage.getItem(
-          "attendance"
-        ) ?? "[]"
-      );
+      /*
+       * 簽到資料的正確 Storage Key
+       *
+       * AttendanceSection.tsx
+       * 使用的是：
+       * "attendance-records"
+       */
+      const attendance =
+        readArray<{
+          date: string;
+        }>(
+          "attendance-records"
+        );
 
       let todayHealthCount = 0;
 
       elders.forEach(
-        (elder: { id: number }) => {
-          const records = JSON.parse(
-            localStorage.getItem(
-              `health-records-${elder.id}`
-            ) ?? "[]"
-          );
-
-          todayHealthCount += records.filter(
-            (record: {
+        (elder) => {
+          const records =
+            readArray<{
               date: string;
-            }) => isToday(record.date)
-          ).length;
+            }>(
+              `health-records-${elder.id}`
+            );
+
+          todayHealthCount +=
+            records.filter(
+              (record) =>
+                isToday(record.date)
+            ).length;
         }
       );
 
       setData({
-        elderCount: elders.length,
+        elderCount:
+          elders.length,
 
         todayCourseCount:
           courses.filter(
-            (course: {
-              date: string;
-            }) => isToday(course.date)
+            (course) =>
+              isToday(course.date)
           ).length,
 
         todayHealthCount,
 
         todayAttendanceCount:
           attendance.filter(
-            (record: {
-              date: string;
-            }) => isToday(record.date)
+            (record) =>
+              isToday(record.date)
           ).length,
       });
     }
 
     loadData();
 
+    /*
+     * SilverCare 自訂同步事件
+     *
+     * 同一個分頁內的 LocalStorage
+     * 修改，也可以即時更新 Dashboard。
+     */
     const removeListener =
       addStorageChangedListener(
         loadData
       );
 
+    /*
+     * 保留瀏覽器原生 storage event，
+     * 支援其他分頁／視窗同步。
+     */
     window.addEventListener(
       "storage",
       loadData
@@ -115,4 +161,3 @@ export function useDashboardData() {
 
   return data;
 }
-

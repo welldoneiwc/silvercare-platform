@@ -22,6 +22,9 @@ import AttendanceSection from "../components/AttendanceSection";
 import FinanceSection from "../components/FinanceSection";
 
 import { useDashboardData } from "../utils/useDashboardData";
+import {
+  addStorageChangedListener,
+} from "../utils/storageEvents";
 
 const ELDER_STORAGE_KEY =
   "silvercare-elders";
@@ -64,7 +67,11 @@ export default function Home() {
         const parsed =
           JSON.parse(saved) as Elder[];
 
-        setElders(parsed);
+        setElders(
+          Array.isArray(parsed)
+            ? parsed
+            : []
+        );
       } catch (error) {
         console.error(
           "讀取長者資料失敗：",
@@ -77,16 +84,32 @@ export default function Home() {
 
     loadElders();
 
+    /**
+     * 跨分頁／視窗同步
+     */
     window.addEventListener(
       "storage",
       loadElders
     );
+
+    /**
+     * SilverCare 同頁面同步
+     *
+     * 長者管理新增／編輯／刪除後，
+     * 立即通知 page.tsx 更新 elders。
+     */
+    const removeStorageChangedListener =
+      addStorageChangedListener(
+        loadElders
+      );
 
     return () => {
       window.removeEventListener(
         "storage",
         loadElders
       );
+
+      removeStorageChangedListener();
     };
   }, []);
 
@@ -616,4 +639,3 @@ const valueStyle:
   fontWeight: 700,
   marginTop: 8,
 };
-
