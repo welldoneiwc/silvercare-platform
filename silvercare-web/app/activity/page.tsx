@@ -244,14 +244,14 @@ export default function ActivityPublicPage() {
                         }}
                       >
                         <div>
-                          📅{" "}
+                          {" "}
                           {formatDate(
                             activity.date
                           )}
                         </div>
 
                         <div>
-                          🕐{" "}
+                          {" "}
                           {
                             activity.startTime
                           }
@@ -270,7 +270,7 @@ export default function ActivityPublicPage() {
                         </div>
 
                         <div>
-                          👥{" "}
+                          {" "}
                           {
                             activity.capacity
                           }

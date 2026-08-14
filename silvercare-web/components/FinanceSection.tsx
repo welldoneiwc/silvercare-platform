@@ -1358,7 +1358,7 @@ const [newCourseTitle, setNewCourseTitle] =
             fontSize: 28,
           }}
         >
-          💰 財務管理／收費
+          財務管理／收費
         </h2>
 
         <p
@@ -1476,8 +1476,8 @@ const [newCourseTitle, setNewCourseTitle] =
           }}
         >
           {editingChargeId
-            ? "✏️ 編輯收費項目"
-            : "➕ 建立收費項目"}
+  ? "編輯收費項目"
+  : "建立收費項目"}
         </h3>
 
         <p
@@ -2174,7 +2174,7 @@ const [newCourseTitle, setNewCourseTitle] =
                     colors.primary,
                 }}
               >
-                ➕ 新增繳費者
+                新增繳費者
               </h4>
 
               <p
@@ -3217,7 +3217,7 @@ const [newCourseTitle, setNewCourseTitle] =
             color: colors.primary,
           }}
         >
-          ⚠️ 欠款長者追蹤
+          欠款長者追蹤
         </h3>
 
         <p

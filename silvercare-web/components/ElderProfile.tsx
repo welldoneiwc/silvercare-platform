@@ -68,6 +68,8 @@ export default function ElderProfile({
 }: Props) {
   const [records, setRecords] =
     useState<HealthRecord[]>([]);
+    const [loaded, setLoaded] =
+  useState(false);
 
   const [openModal, setOpenModal] =
     useState(false);
@@ -111,55 +113,59 @@ export default function ElderProfile({
     return `health-records-${elder.id}`;
   }, [elder]);
 
-  useEffect(() => {
-    if (!storageKey) {
-      setRecords([]);
-      return;
-    }
+ useEffect(() => {
+  if (!storageKey) {
+    setRecords([]);
+    setLoaded(true);
+    return;
+  }
 
-    try {
-      const saved =
-        localStorage.getItem(
-          storageKey
-        );
-
-      if (!saved) {
-        setRecords([]);
-        return;
-      }
-
-      const parsed =
-        JSON.parse(saved) as HealthRecord[];
-
-      setRecords(
-        Array.isArray(parsed)
-          ? parsed
-          : []
-      );
-    } catch (error) {
-      console.error(
-        "讀取健康紀錄失敗：",
-        error
+  try {
+    const saved =
+      localStorage.getItem(
+        storageKey
       );
 
+    if (!saved) {
       setRecords([]);
-    }
-  }, [storageKey]);
-
-  useEffect(() => {
-    if (!storageKey) {
+      setLoaded(true);
       return;
     }
 
-    if (records.length === 0) {
-      return;
-    }
+    const parsed =
+      JSON.parse(saved) as HealthRecord[];
 
-    localStorage.setItem(
-      storageKey,
-      JSON.stringify(records)
+    setRecords(
+      Array.isArray(parsed)
+        ? parsed
+        : []
     );
-  }, [records, storageKey]);
+  } catch (error) {
+    console.error(
+      "讀取健康紀錄失敗：",
+      error
+    );
+
+    setRecords([]);
+  } finally {
+    setLoaded(true);
+  }
+}, [storageKey]);
+
+useEffect(() => {
+  if (!storageKey || !loaded) {
+    return;
+  }
+
+  localStorage.setItem(
+    storageKey,
+    JSON.stringify(records)
+  );
+}, [
+  records,
+  storageKey,
+  loaded,
+]);
 
   useEffect(() => {
     if (!elder) {
@@ -367,18 +373,64 @@ export default function ElderProfile({
   }, [latestRecord]);
 
   const handleDelete = (
-    id: number
-  ) => {
-    const updated =
-      records.filter(
-        (record) =>
-          record.id !== id
+  id: number
+) => {
+  try {
+    if (!storageKey) {
+      return;
+    }
+
+    const saved =
+      localStorage.getItem(
+        storageKey
       );
 
-    setRecords(updated);
+    const existingRecords =
+      saved
+        ? JSON.parse(saved)
+        : [];
+
+    const safeRecords =
+      Array.isArray(existingRecords)
+        ? (existingRecords as HealthRecord[])
+        : [];
+
+    const updatedRecords =
+      safeRecords.filter(
+        (record) =>
+          Number(record.id) !==
+          Number(id)
+      );
+
+    localStorage.setItem(
+      storageKey,
+      JSON.stringify(
+        updatedRecords
+      )
+    );
+
+    setRecords(
+      updatedRecords
+    );
 
     notifyStorageChanged();
-  };
+
+    console.log(
+      "🗑️ HEALTH DELETE SUCCESS:",
+      id,
+      updatedRecords
+    );
+  } catch (error) {
+    console.error(
+      "健康紀錄刪除失敗：",
+      error
+    );
+
+    alert(
+      "健康紀錄刪除失敗，請稍後再試。"
+    );
+  }
+};
 
   const handleEdit = (
     record: HealthRecord

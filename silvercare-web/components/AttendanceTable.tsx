@@ -119,16 +119,26 @@ export default function AttendanceTable({
                 <td style={tdStyle}>
                                   <button
                     onClick={() => {
-                      if (
-                        confirm(
-                          "確定要刪除此筆簽到紀錄嗎？"
-                        )
-                      ) {
-                        onDelete(
-                          record.id
-                        );
-                      }
-                    }}
+  console.log(
+    "DELETE BUTTON CLICK:",
+    record.id
+  );
+
+  if (
+    confirm(
+      "確定要刪除此筆簽到紀錄嗎？"
+    )
+  ) {
+    console.log(
+      "DELETE CONFIRMED:",
+      record.id
+    );
+
+    onDelete(
+      record.id
+    );
+  }
+}}
                     style={{
                       background: "#DC2626",
                       color: "#fff",

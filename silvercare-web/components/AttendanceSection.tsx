@@ -122,6 +122,10 @@ export default function AttendanceSection({
 
   /**
    * 簽到資料寫回 LocalStorage
+   *
+   * 注意：
+   * 刪除與新增時都會直接同步 LocalStorage。
+   * 這裡只負責一般 state 更新後的同步。
    */
   useEffect(() => {
     if (!loaded) {
@@ -132,8 +136,6 @@ export default function AttendanceSection({
       ATTENDANCE_STORAGE_KEY,
       JSON.stringify(records)
     );
-
-    notifyStorageChanged();
   }, [records, loaded]);
 
   /**
@@ -147,11 +149,6 @@ export default function AttendanceSection({
 
   /**
    * 重新讀取今天已完成健康量測的長者
-   *
-   * 每位長者的健康紀錄使用：
-   * health-records-${elder.id}
-   *
-   * ElderProfile 目前也是使用這個 Key。
    */
   const loadTodayHealthStatus = () => {
     try {
@@ -212,7 +209,7 @@ export default function AttendanceSection({
 
   /**
    * 當健康資料發生變化時，
-   * 同步更新「尚未測量／已測量」狀態。
+   * 同步更新量測狀態。
    */
   useEffect(() => {
     const handleStorageChanged = () => {
@@ -239,6 +236,9 @@ export default function AttendanceSection({
     };
   }, [localElders, today]);
 
+  /**
+   * 今天的簽到資料
+   */
   const todayRecords =
     useMemo(() => {
       return records.filter(
@@ -246,14 +246,6 @@ export default function AttendanceSection({
           record.date === today
       );
     }, [records, today]);
-    console.log(
-  "🔍 Attendance Debug",
-  {
-    today,
-    records,
-    todayRecords,
-  }
-);
 
   /**
    * 判斷今天是否已完成健康量測
@@ -267,6 +259,73 @@ export default function AttendanceSection({
   };
 
   /**
+   * 判斷今天是否已簽到
+   */
+  const hasCheckedInToday = (
+    elderId: number
+  ) => {
+    return todayRecords.some(
+      (record) =>
+        Number(record.elderId) ===
+        Number(elderId)
+    );
+  };
+
+  /**
+   * 今天已完成健康量測的人數
+   */
+  const todayMeasuredCount =
+    useMemo(() => {
+      return localElders.filter(
+        (elder) =>
+          hasCheckedInToday(
+            elder.id
+          ) &&
+          hasMeasuredToday(
+            elder.id
+          )
+      ).length;
+    }, [
+      localElders,
+      todayRecords,
+      measuredElderIds,
+    ]);
+
+  /**
+   * 搜尋結果
+   *
+   * 沒有輸入搜尋文字時，
+   * 直接顯示全部長者。
+   */
+  const displayElders =
+    useMemo(() => {
+      const search =
+        keyword.trim();
+
+      if (!search) {
+        return localElders;
+      }
+
+      return localElders.filter(
+        (elder) => {
+          const name =
+            elder.name ?? "";
+
+          const phone =
+            elder.phone ?? "";
+
+          return (
+            name.includes(search) ||
+            phone.includes(search)
+          );
+        }
+      );
+    }, [
+      localElders,
+      keyword,
+    ]);
+
+  /**
    * 簽到
    */
   const handleCheckIn = (
@@ -275,14 +334,14 @@ export default function AttendanceSection({
     const exists =
       todayRecords.some(
         (record) =>
-          record.elderId === elder.id
+          Number(record.elderId) ===
+          Number(elder.id)
       );
 
     /**
      * 已經簽到：
-     *
-     * 不重新建立簽到資料，
-     * 但仍然允許進入健康量測。
+     * 不重新建立紀錄，
+     * 直接進入健康量測。
      */
     if (exists) {
       onCheckInSuccess?.(elder);
@@ -308,12 +367,6 @@ export default function AttendanceSection({
         status: "出席",
       };
 
-    /**
-     * 簽到當下立即寫入 LocalStorage。
-     *
-     * 不等待 records 的 useEffect，
-     * 避免簽到後立即切換頁面造成資料遺失。
-     */
     try {
       const saved =
         localStorage.getItem(
@@ -335,6 +388,9 @@ export default function AttendanceSection({
         ...safeRecords,
       ];
 
+      /**
+       * 先直接寫入 LocalStorage。
+       */
       localStorage.setItem(
         ATTENDANCE_STORAGE_KEY,
         JSON.stringify(
@@ -342,6 +398,9 @@ export default function AttendanceSection({
         )
       );
 
+      /**
+       * 再更新 React state。
+       */
       setRecords(updatedRecords);
 
       notifyStorageChanged();
@@ -360,10 +419,6 @@ export default function AttendanceSection({
 
     setKeyword("");
 
-    /**
-     * 簽到成功後，
-     * 可以立即進入健康量測。
-     */
     onCheckInSuccess?.(elder);
   };
 
@@ -479,61 +534,75 @@ export default function AttendanceSection({
 
   /**
    * 刪除簽到紀錄
+   *
+   * 重要：
+   * 不使用 setRecords(prev => ...) 裡面
+   * 再處理 LocalStorage。
+   *
+   * 先讀取目前 LocalStorage，
+   * 確實刪除指定 id，
+   * 寫回 LocalStorage，
+   * 最後才更新畫面。
    */
   const handleDelete = (
     id: string
   ) => {
-    setRecords((prev) => {
-      const updatedRecords =
-        prev.filter(
-          (record) =>
-            record.id !== id
+    try {
+      const saved =
+        localStorage.getItem(
+          ATTENDANCE_STORAGE_KEY
         );
 
+      const existingRecords =
+        saved
+          ? JSON.parse(saved)
+          : [];
+
+      const safeRecords =
+        Array.isArray(existingRecords)
+          ? (existingRecords as AttendanceRecord[])
+          : [];
+
+      const updatedRecords =
+        safeRecords.filter(
+          (record) =>
+            String(record.id) !==
+            String(id)
+        );
+
+      /**
+       * 先確實寫入刪除後的資料。
+       */
       localStorage.setItem(
         ATTENDANCE_STORAGE_KEY,
         JSON.stringify(
           updatedRecords
         )
       );
+      console.log(
+  "🗑️ DELETE AFTER:",
+  updatedRecords
+);
+
+      /**
+       * 再更新 React 畫面。
+       */
+      setRecords(
+        updatedRecords
+      );
 
       notifyStorageChanged();
-
-      return updatedRecords;
-    });
-  };
-
-  /**
-   * 搜尋長者
-   */
-  const filteredElders =
-    useMemo(() => {
-      const search =
-        keyword.trim();
-
-      if (!search) {
-        return [];
-      }
-
-      return localElders.filter(
-        (elder) => {
-          const name =
-            elder.name ?? "";
-
-          const phone =
-            elder.phone ?? "";
-
-          return (
-            name.includes(
-              search
-            ) ||
-            phone.includes(
-              search
-            )
-          );
-        }
+    } catch (error) {
+      console.error(
+        "刪除簽到紀錄失敗：",
+        error
       );
-    }, [localElders, keyword]);
+
+      alert(
+        "刪除簽到紀錄失敗，請稍後再試。"
+      );
+    }
+  };
 
   return (
     <div
@@ -547,6 +616,9 @@ export default function AttendanceSection({
         gap: 24,
       }}
     >
+      {/* ================================
+          標題區
+      ================================= */}
       <div
         style={{
           display: "flex",
@@ -577,6 +649,15 @@ export default function AttendanceSection({
           >
             今日已簽到：
             {todayRecords.length} 人
+
+            <span
+              style={{
+                marginLeft: 12,
+              }}
+            >
+              今日已測量：
+              {todayMeasuredCount} 人
+            </span>
           </div>
         </div>
 
@@ -605,10 +686,132 @@ export default function AttendanceSection({
             fontWeight: 700,
           }}
         >
-          ＋ 新增長者
+          新增長者
         </button>
       </div>
 
+      {/* ================================
+          狀態圖例
+      ================================= */}
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          gap: 18,
+          flexWrap: "wrap",
+          padding:
+            "12px 18px",
+          background:
+            "#F8FAFC",
+          border:
+            "1px solid #E5E7EB",
+          borderRadius:
+            radius.md,
+          fontSize: 14,
+          color:
+            colors.primary,
+        }}
+      >
+        <span
+          style={{
+            display:
+              "inline-flex",
+            alignItems:
+              "center",
+            gap: 7,
+          }}
+        >
+          <span
+            style={{
+              width: 10,
+              height: 10,
+              borderRadius:
+                "50%",
+              background:
+                "#22C55E",
+              display:
+                "inline-block",
+            }}
+          />
+          已測量
+        </span>
+
+        <span
+          style={{
+            display:
+              "inline-flex",
+            alignItems:
+              "center",
+            gap: 7,
+          }}
+        >
+          <span
+            style={{
+              width: 10,
+              height: 10,
+              borderRadius:
+                "50%",
+              background:
+                "#F97316",
+              display:
+                "inline-block",
+            }}
+          />
+          尚未測量
+        </span>
+
+        <span
+          style={{
+            display:
+              "inline-flex",
+            alignItems:
+              "center",
+            gap: 7,
+          }}
+        >
+          <span
+            style={{
+              width: 10,
+              height: 10,
+              borderRadius:
+                "50%",
+              background:
+                "#10B981",
+              display:
+                "inline-block",
+            }}
+          />
+          已簽到
+        </span>
+
+        <span
+          style={{
+            display:
+              "inline-flex",
+            alignItems:
+              "center",
+            gap: 7,
+          }}
+        >
+          <span
+            style={{
+              width: 10,
+              height: 10,
+              borderRadius:
+                "50%",
+              background:
+                "#D1D5DB",
+              display:
+                "inline-block",
+            }}
+          />
+          尚未簽到
+        </span>
+      </div>
+
+      {/* ================================
+          新增長者
+      ================================= */}
       {showAddElder && (
         <div
           style={{
@@ -628,7 +831,7 @@ export default function AttendanceSection({
                 colors.primary,
             }}
           >
-            ➕ 新增長者並立即簽到
+          新增長者並立即簽到
           </h3>
 
           <div
@@ -797,6 +1000,9 @@ export default function AttendanceSection({
         </div>
       )}
 
+      {/* ================================
+          可選快速搜尋
+      ================================= */}
       <div>
         <div
           style={{
@@ -807,6 +1013,17 @@ export default function AttendanceSection({
           }}
         >
           搜尋長者
+
+          <span
+            style={{
+              marginLeft: 8,
+              color:
+                colors.textLight,
+              fontWeight: 400,
+            }}
+          >
+            （可選）
+          </span>
         </div>
 
         <input
@@ -817,7 +1034,7 @@ export default function AttendanceSection({
               e.target.value
             )
           }
-          placeholder="輸入姓名或電話搜尋..."
+          placeholder="輸入姓名或電話快速找人..."
           style={{
             width: "100%",
             boxSizing:
@@ -834,93 +1051,86 @@ export default function AttendanceSection({
         />
       </div>
 
-      {keyword.trim() && (
+      {/* ================================
+          今日長者總表
+      ================================= */}
+      <div
+        style={{
+          border:
+            "1px solid #E5E7EB",
+          borderRadius:
+            radius.md,
+          overflow: "hidden",
+        }}
+      >
         <div
           style={{
-            display: "flex",
-            flexDirection:
-              "column",
-            gap: 10,
+            display: "grid",
+            gridTemplateColumns:
+              "1.4fr 1fr 1fr 1.1fr",
+            gap: 16,
+            padding:
+              "14px 18px",
+            background:
+              "#F8FAFC",
+            borderBottom:
+              "1px solid #E5E7EB",
+            fontSize: 14,
+            fontWeight: 700,
+            color:
+              colors.primary,
           }}
         >
-          <div
-            style={{
-              color:
-                colors.textLight,
-              fontSize: 13,
-            }}
-          >
-            搜尋結果：
-            {filteredElders.length} 人
+          <div>
+            長者
           </div>
 
-          {filteredElders.length ===
+          <div>
+            今日簽到
+          </div>
+
+          <div>
+            健康量測
+          </div>
+
+          <div>
+            操作
+          </div>
+        </div>
+
+        <div
+          style={{
+            maxHeight:
+              "60vh",
+            overflowY:
+              "auto",
+          }}
+        >
+          {displayElders.length ===
           0 ? (
             <div
               style={{
-                padding: 20,
+                padding: 28,
                 textAlign:
                   "center",
-                background:
-                  "#F7FAFC",
-                borderRadius:
-                  radius.md,
                 color:
                   colors.textLight,
               }}
             >
-              <div>
-                找不到符合的長者
-              </div>
-
-              <button
-                type="button"
-                onClick={() => {
-                  setShowAddElder(
-                    true
-                  );
-
-                  setNewElderForm(
-                    (
-                      current
-                    ) => ({
-                      ...current,
-                      name:
-                        keyword.trim(),
-                    })
-                  );
-                }}
-                style={{
-                  marginTop: 12,
-                  border: "none",
-                  background:
-                    colors.primary,
-                  color: "#fff",
-                  borderRadius:
-                    radius.md,
-                  padding:
-                    "9px 16px",
-                  cursor:
-                    "pointer",
-                  fontWeight: 700,
-                }}
-              >
-                ＋ 新增這位長者
-              </button>
+              找不到符合的長者
             </div>
           ) : (
-            filteredElders.map(
+            displayElders.map(
               (elder) => {
-              const checked = todayRecords.some(
-  (record) =>
-    String(record.elderName).trim() ===
-    String(elder.name).trim()
-);
+                const checked =
+                  hasCheckedInToday(
+                    elder.id
+                  );
+
                 const measured =
                   hasMeasuredToday(
                     elder.id
                   );
-                 
 
                 return (
                   <div
@@ -929,26 +1139,26 @@ export default function AttendanceSection({
                     }
                     style={{
                       display:
-                        "flex",
+                        "grid",
+                      gridTemplateColumns:
+                        "1.4fr 1fr 1fr 1.1fr",
+                      gap: 16,
                       alignItems:
                         "center",
-                      justifyContent:
-                        "space-between",
-                      gap: 16,
                       padding:
-                        "14px 16px",
-                      border:
+                        "16px 18px",
+                      borderBottom:
                         "1px solid #E5E7EB",
-                      borderRadius:
-                        radius.md,
                       background:
-                        measured
+                        measured &&
+                        checked
                           ? "#F0FDF4"
                           : checked
                           ? "#FFF7ED"
                           : "#fff",
                     }}
                   >
+                    {/* 長者 */}
                     <div>
                       <div
                         style={{
@@ -977,20 +1187,136 @@ export default function AttendanceSection({
                           }
                         </div>
                       )}
+                    </div>
 
-                      {checked && (
-                        <div
+                    {/* 今日簽到 */}
+                    <div>
+                      {checked ? (
+                        <div>
+                          <span
+                            style={{
+                              display:
+                                "inline-flex",
+                              alignItems:
+                                "center",
+                              gap: 5,
+                              padding:
+                                "7px 11px",
+                              borderRadius:
+                                999,
+                              background:
+                                "#D1FAE5",
+                              color:
+                                "#065F46",
+                              fontSize: 13,
+                              fontWeight: 700,
+                            }}
+                          >
+                            <span
+                              style={{
+                                width: 8,
+                                height: 8,
+                                borderRadius:
+                                  "50%",
+                                background:
+                                  "#10B981",
+                              }}
+                            />
+                            已簽到
+                          </span>
+
+                          {(() => {
+                            const record =
+                              todayRecords.find(
+                                (
+                                  item
+                                ) =>
+                                  Number(
+                                    item.elderId
+                                  ) ===
+                                  Number(
+                                    elder.id
+                                  )
+                              );
+
+                            return record ? (
+                              <div
+                                style={{
+                                  marginTop: 5,
+                                  fontSize: 12,
+                                  color:
+                                    colors.textLight,
+                                }}
+                              >
+                                {
+                                  record.checkInTime
+                                }
+                              </div>
+                            ) : null;
+                          })()}
+                        </div>
+                      ) : (
+                        <span
                           style={{
-                            marginTop: 8,
                             display:
                               "inline-flex",
                             alignItems:
                               "center",
                             gap: 6,
                             padding:
-                              "4px 9px",
+                              "7px 11px",
                             borderRadius:
                               999,
+                            background:
+                              "#F3F4F6",
+                            color:
+                              "#6B7280",
+                            fontSize: 13,
+                            fontWeight: 700,
+                          }}
+                        >
+                          <span
+                            style={{
+                              width: 8,
+                              height: 8,
+                              borderRadius:
+                                "50%",
+                              background:
+                                "#D1D5DB",
+                            }}
+                          />
+                          尚未簽到
+                        </span>
+                      )}
+                    </div>
+
+                    {/* 健康量測 */}
+                    <div>
+                      {!checked ? (
+                        <span
+                          style={{
+                            color:
+                              "#9CA3AF",
+                            fontSize: 14,
+                          }}
+                        >
+                          —
+                        </span>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() =>
+                            onCheckInSuccess?.(
+                              elder
+                            )
+                          }
+                          style={{
+                            border:
+                              "none",
+                            borderRadius:
+                              999,
+                            padding:
+                              "7px 12px",
                             background:
                               measured
                                 ? "#DCFCE7"
@@ -999,28 +1325,45 @@ export default function AttendanceSection({
                               measured
                                 ? "#166534"
                                 : "#C2410C",
+                            cursor:
+                              "pointer",
                             fontSize: 13,
                             fontWeight: 700,
                           }}
                         >
-                          {measured
-                            ? "🟢 已測量"
-                            : "🟠 尚未測量"}
-                        </div>
+                          <span
+                            style={{
+                              display:
+                                "inline-block",
+                              width: 8,
+                              height: 8,
+                              borderRadius:
+                                "50%",
+                              background:
+                                measured
+                                  ? "#22C55E"
+                                  : "#F97316",
+                              marginRight: 7,
+                            }}
+                          />
+
+                         {measured
+  ? "已測量"
+  : "尚未測量"}
+                        </button>
                       )}
                     </div>
 
+                    {/* 操作 */}
                     <div
                       style={{
                         display:
                           "flex",
+                        gap: 8,
                         alignItems:
                           "center",
-                        gap: 8,
                         flexWrap:
                           "wrap",
-                        justifyContent:
-                          "flex-end",
                       }}
                     >
                       {!checked ? (
@@ -1032,7 +1375,8 @@ export default function AttendanceSection({
                             )
                           }
                           style={{
-                            border: "none",
+                            border:
+                              "none",
                             borderRadius:
                               radius.md,
                             padding:
@@ -1043,7 +1387,7 @@ export default function AttendanceSection({
                               "#fff",
                             cursor:
                               "pointer",
-                            fontWeight: 600,
+                            fontWeight: 700,
                             whiteSpace:
                               "nowrap",
                           }}
@@ -1051,59 +1395,37 @@ export default function AttendanceSection({
                           簽到
                         </button>
                       ) : (
-                        <>
-                          <span
-                            style={{
-                              border:
-                                "none",
-                              borderRadius:
-                                radius.md,
-                              padding:
-                                "9px 14px",
-                              background:
-                                "#D1FAE5",
-                              color:
-                                "#065F46",
-                              fontWeight: 700,
-                              whiteSpace:
-                                "nowrap",
-                            }}
-                          >
-                            ✓ 已簽到
-                          </span>
-
-                          <button
-                            type="button"
-                            onClick={() =>
-                              onCheckInSuccess?.(
-                                elder
-                              )
-                            }
-                            style={{
-                              border:
-                                "none",
-                              borderRadius:
-                                radius.md,
-                              padding:
-                                "9px 16px",
-                              background:
-                                measured
-                                  ? "#166534"
-                                  : "#F97316",
-                              color:
-                                "#fff",
-                              cursor:
-                                "pointer",
-                              fontWeight: 700,
-                              whiteSpace:
-                                "nowrap",
-                            }}
-                          >
-                            {measured
-                              ? "查看健康量測"
-                              : "進入健康量測"}
-                          </button>
-                        </>
+                        <button
+                          type="button"
+                          onClick={() =>
+                            onCheckInSuccess?.(
+                              elder
+                            )
+                          }
+                          style={{
+                            border:
+                              "none",
+                            borderRadius:
+                              radius.md,
+                            padding:
+                              "9px 16px",
+                            background:
+                              measured
+                                ? "#166534"
+                                : "#F97316",
+                            color:
+                              "#fff",
+                            cursor:
+                              "pointer",
+                            fontWeight: 700,
+                            whiteSpace:
+                              "nowrap",
+                          }}
+                        >
+                          {measured
+                            ? "查看健康量測"
+                            : "進入健康量測"}
+                        </button>
                       )}
                     </div>
                   </div>
@@ -1112,27 +1434,11 @@ export default function AttendanceSection({
             )
           )}
         </div>
-      )}
+      </div>
 
-      {!keyword.trim() &&
-        !showAddElder && (
-          <div
-            style={{
-              padding: 28,
-              textAlign:
-                "center",
-              background:
-                "#F7FAFC",
-              borderRadius:
-                radius.md,
-              color:
-                colors.textLight,
-            }}
-          >
-            請輸入姓名或電話開始搜尋
-          </div>
-        )}
-
+      {/* ================================
+          今日簽到紀錄
+      ================================= */}
       <AttendanceTable
         records={todayRecords}
         onDelete={
@@ -1143,13 +1449,8 @@ export default function AttendanceSection({
   );
 }
 
-
 /**
  * 安全包裝 storage changed listener。
- *
- * 如果目前專案的 storageEvents.ts 已提供
- * addStorageChangedListener，
- * 就使用它同步健康量測狀態。
  */
 const addStorageChangedListenerSafe = (
   callback: () => void
@@ -1183,7 +1484,6 @@ const addStorageChangedListenerSafe = (
   return () => {};
 };
 
-
 const labelStyle:
   React.CSSProperties = {
   display: "block",
@@ -1192,7 +1492,6 @@ const labelStyle:
   fontWeight: 600,
   color: "#374151",
 };
-
 
 const inputStyle:
   React.CSSProperties = {
@@ -1206,7 +1505,6 @@ const inputStyle:
   background: "#fff",
 };
 
-
 const primaryButtonStyle:
   React.CSSProperties = {
   border: "none",
@@ -1218,7 +1516,6 @@ const primaryButtonStyle:
   cursor: "pointer",
   fontWeight: 700,
 };
-
 
 const secondaryButtonStyle:
   React.CSSProperties = {
