@@ -176,7 +176,7 @@ export default function Sidebar({
             fontSize: 28,
           }}
         >
-          SilverCare
+          SilverCare 2.0
         </h2>
 
         <div
