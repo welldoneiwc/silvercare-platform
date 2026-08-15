@@ -13,7 +13,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "SilverCare 智慧據點管理平台",
+ title: "SilverCare 2.0",
   description: "讓科技做行政，讓人陪伴人。",
 };
 export default function RootLayout({
