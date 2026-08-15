@@ -13,12 +13,11 @@ import CourseTable from "./CourseTable";
 
 import CourseRegistration from "./CourseRegistration";
 
+import { supabase } from "../utils/supabase";
+
 import { colors } from "../styles/theme";
 import { radius } from "../styles/radius";
 import { shadow } from "../styles/shadow";
-
-const STORAGE_KEY =
-  "silvercare-courses";
 
 export default function CourseSection() {
   const [courses, setCourses] =
@@ -41,115 +40,249 @@ export default function CourseSection() {
   ] = useState<Course | null>(null);
 
   /*
-   * 讀取 LocalStorage
-   * 防止 F5 後被空陣列覆蓋
+   * 從 Supabase 讀取課程
    */
-  useEffect(() => {
-    const saved =
-      localStorage.getItem(
-        STORAGE_KEY
-      );
+  async function loadCourses() {
+    try {
+      const {
+        data,
+        error,
+      } = await supabase
+        .from("courses")
+        .select("*")
+        .order("date", {
+          ascending: true,
+        })
+        .order("start_time", {
+          ascending: true,
+        });
 
-    if (saved) {
-      try {
-        const parsed =
-          JSON.parse(saved);
-
-        if (
-          Array.isArray(parsed)
-        ) {
-          setCourses(parsed);
-        }
-      } catch (error) {
+      if (error) {
         console.error(
-          "Course storage error:",
+          "讀取課程失敗：",
           error
         );
 
-        setCourses([]);
-      }
-    }
+        alert(
+          "讀取課程資料失敗，請稍後再試。"
+        );
 
-    setLoaded(true);
-  }, []);
+        return;
+      }
+
+      const formattedCourses: Course[] =
+        (data ?? []).map(
+          (item) => ({
+            id: item.id,
+            date: item.date ?? "",
+            title: item.title ?? "",
+            teacher:
+              item.teacher ?? "",
+            startTime:
+              item.start_time ?? "",
+            endTime:
+              item.end_time ?? "",
+            capacity:
+              Number(
+                item.capacity ?? 0
+              ),
+            classroom:
+              item.classroom ?? "",
+            note: item.note ?? "",
+          })
+        );
+
+      setCourses(
+        formattedCourses
+      );
+    } catch (error) {
+      console.error(
+        "讀取課程發生錯誤：",
+        error
+      );
+    } finally {
+      setLoaded(true);
+    }
+  }
 
   /*
-   * 寫入 LocalStorage
-   * 等第一次讀取完成後才執行
+   * 第一次載入
    */
   useEffect(() => {
-    if (!loaded) return;
-
-    localStorage.setItem(
-      STORAGE_KEY,
-      JSON.stringify(courses)
-    );
-  }, [courses, loaded]);
+    loadCourses();
+  }, []);
 
   /*
    * 新增 / 編輯課程
    */
-  function handleSave(
+  async function handleSave(
     course: Course
   ) {
-    const newCourse: Course = {
-      ...course,
+    try {
+      /*
+       * 編輯既有課程
+       */
+      if (
+        course.id !== undefined
+      ) {
+        const {
+          error,
+        } = await supabase
+          .from("courses")
+          .update({
+            date: course.date,
+            title: course.title,
+            teacher:
+              course.teacher,
+            start_time:
+              course.startTime,
+            end_time:
+              course.endTime,
+            capacity:
+              course.capacity,
+            classroom:
+              course.classroom,
+            note: course.note,
+          })
+          .eq("id", course.id);
 
-      id:
-        course.id ||
-        Date.now(),
-    };
-
-    setCourses(
-      (prev) => {
-        const exists =
-          prev.some(
-            (item) =>
-              item.id ===
-              newCourse.id
+        if (error) {
+          console.error(
+            "更新課程失敗：",
+            error
           );
 
-        if (exists) {
-          return prev.map(
-            (item) =>
-              item.id ===
-              newCourse.id
-                ? newCourse
-                : item
+          alert(
+            "更新課程失敗，請稍後再試。"
           );
+
+          return;
         }
+      } else {
+        /*
+         * 新增課程
+         *
+         * ID 暫時維持前端 Date.now()
+         * 與原本 SilverCare 架構一致
+         */
+        const newId =
+          Date.now();
 
-        return [
-          ...prev,
-          newCourse,
-        ];
+        const {
+          error,
+        } = await supabase
+          .from("courses")
+          .insert({
+            id: newId,
+            date: course.date,
+            title: course.title,
+            teacher:
+              course.teacher,
+            start_time:
+              course.startTime,
+            end_time:
+              course.endTime,
+            capacity:
+              course.capacity,
+            classroom:
+              course.classroom,
+            note: course.note,
+          });
+
+        if (error) {
+          console.error(
+            "新增課程失敗：",
+            error
+          );
+
+          alert(
+            "新增課程失敗，請稍後再試。"
+          );
+
+          return;
+        }
       }
-    );
 
-    setOpenModal(false);
-    setEditingCourse(null);
+      /*
+       * 儲存成功後重新讀取
+       * 確保畫面與 Database 一致
+       */
+      await loadCourses();
+
+      setOpenModal(false);
+      setEditingCourse(null);
+    } catch (error) {
+      console.error(
+        "儲存課程發生錯誤：",
+        error
+      );
+
+      alert(
+        "儲存課程時發生錯誤，請稍後再試。"
+      );
+    }
   }
 
   /*
    * 刪除課程
    */
-  function handleDelete(
+  async function handleDelete(
     id: number
   ) {
-    setCourses(
-      (prev) =>
-        prev.filter(
-          (course) =>
-            course.id !== id
-        )
-    );
+    const confirmed =
+      window.confirm(
+        "確定要刪除這門課程嗎？"
+      );
 
-    if (
-      registrationCourse?.id ===
-      id
-    ) {
-      setRegistrationCourse(
-        null
+    if (!confirmed) {
+      return;
+    }
+
+    try {
+      const {
+        error,
+      } = await supabase
+        .from("courses")
+        .delete()
+        .eq("id", id);
+
+      if (error) {
+        console.error(
+          "刪除課程失敗：",
+          error
+        );
+
+        alert(
+          "刪除課程失敗，請稍後再試。"
+        );
+
+        return;
+      }
+
+      setCourses(
+        (prev) =>
+          prev.filter(
+            (course) =>
+              course.id !== id
+          )
+      );
+
+      if (
+        registrationCourse?.id ===
+        id
+      ) {
+        setRegistrationCourse(
+          null
+        );
+      }
+    } catch (error) {
+      console.error(
+        "刪除課程發生錯誤：",
+        error
+      );
+
+      alert(
+        "刪除課程時發生錯誤，請稍後再試。"
       );
     }
   }
@@ -171,6 +304,29 @@ export default function CourseSection() {
   function handleCloseRegistration() {
     setRegistrationCourse(
       null
+    );
+  }
+
+  /*
+   * 第一次載入尚未完成
+   */
+  if (!loaded) {
+    return (
+      <div
+        style={{
+          background:
+            colors.background,
+          borderRadius:
+            radius.lg,
+          boxShadow:
+            shadow.md,
+          padding: 24,
+          textAlign: "center",
+          color: "#6B7280",
+        }}
+      >
+        課程資料載入中...
+      </div>
     );
   }
 
@@ -335,8 +491,10 @@ export default function CourseSection() {
           </div>
 
           <CourseRegistration
-  course={registrationCourse}
-/>
+            course={
+              registrationCourse
+            }
+          />
         </div>
       )}
     </div>

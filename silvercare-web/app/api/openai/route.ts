@@ -5,7 +5,9 @@ const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
 });
 
-export async function POST(request: Request) {
+export async function POST(
+  request: Request
+) {
   try {
     const body = await request.json();
 
@@ -18,7 +20,26 @@ export async function POST(request: Request) {
       return NextResponse.json(
         {
           success: false,
-          error: "請提供有效的量測照片。",
+          error:
+            "請提供有效的量測照片。",
+        },
+        {
+          status: 400,
+        }
+      );
+    }
+
+    const supportedImagePattern =
+      /^data:image\/(jpeg|jpg|png|webp|gif);base64,/i;
+
+    if (
+      !supportedImagePattern.test(image)
+    ) {
+      return NextResponse.json(
+        {
+          success: false,
+          error:
+            "目前只支援 JPG、PNG、WEBP 或 GIF 圖片。請重新拍照或上傳。",
         },
         {
           status: 400,
@@ -82,8 +103,8 @@ export async function POST(request: Request) {
       });
 
     const result =
-      completion.choices[0]?.message?.content ??
-      "";
+      completion.choices[0]
+        ?.message?.content ?? "";
 
     return NextResponse.json({
       success: true,
@@ -95,10 +116,17 @@ export async function POST(request: Request) {
       error
     );
 
+    const errorMessage =
+      error instanceof Error
+        ? error.message
+        : "";
+
     return NextResponse.json(
       {
         success: false,
-        error: "AI 辨識失敗，請稍後再試。",
+        error:
+          errorMessage ||
+          "AI 辨識失敗，請稍後再試。",
       },
       {
         status: 500,
