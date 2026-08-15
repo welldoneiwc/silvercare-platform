@@ -296,7 +296,7 @@ export default function Home() {
               lineHeight: 1.25,
             }}
           >
-            SilverCare 智慧據點管理平台
+            SilverCare 2.0 智慧據點管理平台
           </h1>
 
           <p
