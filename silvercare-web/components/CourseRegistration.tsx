@@ -10,6 +10,8 @@ import { colors } from "../styles/theme";
 import { radius } from "../styles/radius";
 import { shadow } from "../styles/shadow";
 
+import { supabase } from "../utils/supabase";
+
 type Course = {
   id?: number;
   date: string;
@@ -34,22 +36,18 @@ export type CourseRegistration = {
   id: number;
   courseId: number;
 
-  /**
-   * 系統內長者才會有 elderId
-   * 手動輸入的非系統長者可以沒有 elderId
-   */
   elderId?: number;
 
-  /**
-   * 報名時實際留下的姓名與電話
-   *
-   * 即使之後長者資料被修改，
-   * 報名紀錄仍保留當時資料。
-   */
   name: string;
   phone: string;
 
   registeredAt: string;
+
+  status:
+    | "confirmed"
+    | "waitlist";
+
+  waitlistPosition?: number | null;
 };
 
 type Props = {
@@ -62,8 +60,19 @@ const COURSE_STORAGE_KEY =
 const ELDER_STORAGE_KEY =
   "silvercare-elders";
 
-const REGISTRATION_STORAGE_KEY =
-  "silvercare-course-registrations";
+type SupabaseRegistration = {
+  id: number;
+  course_id: number;
+  name: string;
+  phone: string;
+  registered_at: string;
+  status:
+    | "confirmed"
+    | "waitlist";
+  waitlist_position:
+    | number
+    | null;
+};
 
 function formatDate(date: string) {
   if (!date) {
@@ -79,6 +88,14 @@ function formatDate(date: string) {
   return `${parts[0]}/${parts[1]}/${parts[2]}`;
 }
 
+function normalizePhone(
+  phone?: string
+) {
+  return (phone ?? "")
+    .replace(/\s/g, "")
+    .replace(/-/g, "");
+}
+
 export default function CourseRegistration({
   course,
 }: Props) {
@@ -91,9 +108,9 @@ export default function CourseRegistration({
   const [
     registrations,
     setRegistrations,
-  ] = useState<CourseRegistration[]>(
-    []
-  );
+  ] = useState<
+    CourseRegistration[]
+  >([]);
 
   const [
     selectedElderId,
@@ -111,15 +128,21 @@ export default function CourseRegistration({
   const [
     registrationMode,
     setRegistrationMode,
-  ] = useState<"system" | "manual">(
-    "system"
-  );
+  ] = useState<
+    "system" | "manual"
+  >("system");
 
-  const [loaded, setLoaded] =
+  const [loading, setLoading] =
+    useState(false);
+
+  const [saving, setSaving] =
     useState(false);
 
   /**
-   * 第一次讀取資料
+   * 讀取課程與長者資料
+   *
+   * 課程與長者目前仍沿用既有
+   * LocalStorage 架構。
    */
   useEffect(() => {
     try {
@@ -130,7 +153,9 @@ export default function CourseRegistration({
 
       if (savedCourses) {
         const parsedCourses =
-          JSON.parse(savedCourses);
+          JSON.parse(
+            savedCourses
+          );
 
         if (
           Array.isArray(
@@ -150,7 +175,9 @@ export default function CourseRegistration({
 
       if (savedElders) {
         const parsedElders =
-          JSON.parse(savedElders);
+          JSON.parse(
+            savedElders
+          );
 
         if (
           Array.isArray(
@@ -162,92 +189,16 @@ export default function CourseRegistration({
           );
         }
       }
-
-      const savedRegistrations =
-        localStorage.getItem(
-          REGISTRATION_STORAGE_KEY
-        );
-
-      if (
-        savedRegistrations
-      ) {
-        const parsedRegistrations =
-          JSON.parse(
-            savedRegistrations
-          );
-
-        if (
-          Array.isArray(
-            parsedRegistrations
-          )
-        ) {
-          const normalizedRegistrations =
-            parsedRegistrations.map(
-              (
-                item: CourseRegistration
-              ) => {
-                const elder =
-                  elders.find(
-                    (elder) =>
-                      elder.id ===
-                      item.elderId
-                  );
-
-                return {
-                  ...item,
-
-                  name:
-                    item.name ||
-                    elder?.name ||
-                    "未知長者",
-
-                  phone:
-                    item.phone ||
-                    elder?.phone ||
-                    "",
-                };
-              }
-            );
-
-          setRegistrations(
-            normalizedRegistrations
-          );
-        }
-      }
     } catch (error) {
       console.error(
-        "讀取課程報名資料失敗：",
+        "讀取課程管理資料失敗：",
         error
       );
     }
-
-    setLoaded(true);
   }, []);
 
   /**
-   * 報名資料寫入 LocalStorage
-   */
-  useEffect(() => {
-    if (!loaded) {
-      return;
-    }
-
-    localStorage.setItem(
-      REGISTRATION_STORAGE_KEY,
-      JSON.stringify(
-        registrations
-      )
-    );
-  }, [
-    registrations,
-    loaded,
-  ]);
-
-  /**
-   * 同步目前傳入的課程
-   *
-   * 課程管理已經指定是哪一門課，
-   * 因此這裡不再要求管理員重新選擇課程。
+   * 目前指定課程
    */
   const selectedCourse =
     useMemo(() => {
@@ -262,6 +213,147 @@ export default function CourseRegistration({
         ) || course
       );
     }, [course, courses]);
+
+  /**
+   * 從 Supabase 讀取目前課程的報名資料
+   *
+   * 只有登入且符合 supervisor RLS
+   * 的管理端才可以讀取。
+   */
+  useEffect(() => {
+    if (!selectedCourse?.id) {
+      setRegistrations([]);
+      return;
+    }
+
+    let cancelled = false;
+
+    async function loadRegistrations() {
+      setLoading(true);
+
+      try {
+        const {
+          data,
+          error,
+        } = await supabase
+          .from(
+            "course_registrations"
+          )
+          .select(
+            "id, course_id, name, phone, registered_at, status, waitlist_position"
+          )
+          .eq(
+            "course_id",
+            selectedCourse?.id
+          )
+          .order(
+            "status",
+            {
+              ascending: true,
+            }
+          )
+          .order(
+            "waitlist_position",
+            {
+              ascending: true,
+              nullsFirst: true,
+            }
+          )
+          .order(
+            "registered_at",
+            {
+              ascending: true,
+            }
+          );
+
+        if (error) {
+          console.error(
+            "讀取課程報名資料失敗：",
+            error
+          );
+
+          if (!cancelled) {
+            setRegistrations([]);
+          }
+
+          return;
+        }
+
+        const mapped =
+          (
+            data as SupabaseRegistration[]
+          ).map(
+            (
+              item
+            ): CourseRegistration => {
+              const matchedElder =
+                elders.find(
+                  (elder) =>
+                    normalizePhone(
+                      elder.phone
+                    ) ===
+                    normalizePhone(
+                      item.phone
+                    )
+                );
+
+              return {
+                id: item.id,
+
+                courseId:
+                  item.course_id,
+
+                elderId:
+                  matchedElder?.id,
+
+                name:
+                  item.name,
+
+                phone:
+                  item.phone,
+
+                registeredAt:
+                  item.registered_at,
+
+                status:
+                  item.status,
+
+                waitlistPosition:
+                  item.waitlist_position,
+              };
+            }
+          );
+
+        if (!cancelled) {
+          setRegistrations(
+            mapped
+          );
+        }
+      } catch (error) {
+        console.error(
+          "讀取課程報名資料發生錯誤：",
+          error
+        );
+
+        if (!cancelled) {
+          setRegistrations([]);
+        }
+      } finally {
+        if (!cancelled) {
+          setLoading(false);
+        }
+      }
+    }
+
+    loadRegistrations();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    selectedCourse?.id,
+    elders,
+  ]);
 
   /**
    * 目前課程的報名資料
@@ -285,7 +377,41 @@ export default function CourseRegistration({
     ]);
 
   /**
+   * 正取名單
+   */
+  const confirmedRegistrations =
+    useMemo(() => {
+      return courseRegistrations.filter(
+        (registration) =>
+          registration.status ===
+          "confirmed"
+      );
+    }, [courseRegistrations]);
+
+  /**
+   * 候補名單
+   */
+  const waitlistRegistrations =
+    useMemo(() => {
+      return courseRegistrations
+        .filter(
+          (registration) =>
+            registration.status ===
+            "waitlist"
+        )
+        .sort(
+          (a, b) =>
+            (a.waitlistPosition ??
+              999999) -
+            (b.waitlistPosition ??
+              999999)
+        );
+    }, [courseRegistrations]);
+
+  /**
    * 已經報名的系統長者 ID
+   *
+   * 由姓名／電話對應到目前長者資料。
    */
   const registeredElderIds =
     useMemo(() => {
@@ -301,9 +427,7 @@ export default function CourseRegistration({
               registration.elderId
           )
       );
-    }, [
-      courseRegistrations,
-    ]);
+    }, [courseRegistrations]);
 
   /**
    * 還沒有報名這門課的系統長者
@@ -322,13 +446,19 @@ export default function CourseRegistration({
     ]);
 
   /**
-   * 剩餘名額
+   * 正取人數
+   */
+  const confirmedCount =
+    confirmedRegistrations.length;
+
+  /**
+   * 剩餘正取名額
    */
   const remainingSeats =
     selectedCourse
       ? Math.max(
           selectedCourse.capacity -
-            courseRegistrations.length,
+            confirmedCount,
           0
         )
       : 0;
@@ -337,7 +467,9 @@ export default function CourseRegistration({
    * 切換報名方式
    */
   const handleModeChange = (
-    mode: "system" | "manual"
+    mode:
+      | "system"
+      | "manual"
   ) => {
     setRegistrationMode(
       mode
@@ -354,213 +486,305 @@ export default function CourseRegistration({
 
   /**
    * 新增報名
+   *
+   * 使用 Supabase RPC：
+   * - 有名額 → 正取
+   * - 額滿 → 候補
    */
-  const handleRegister = () => {
-    if (!selectedCourse) {
-      alert(
-        "找不到目前課程"
-      );
-      return;
-    }
-
-    if (
-      !selectedCourse.id
-    ) {
-      alert(
-        "此課程缺少 ID，無法報名"
-      );
-      return;
-    }
-
-    if (
-      courseRegistrations.length >=
-      selectedCourse.capacity
-    ) {
-      alert(
-        "此課程已額滿"
-      );
-      return;
-    }
-
-    /**
-     * 系統長者報名
-     */
-    if (
-      registrationMode ===
-      "system"
-    ) {
-      if (
-        selectedElderId ===
-        null
-      ) {
+  const handleRegister =
+    async () => {
+      if (!selectedCourse) {
         alert(
-          "請先選擇長者"
+          "找不到目前課程"
         );
         return;
       }
-
-      const selectedElder =
-        elders.find(
-          (elder) =>
-            elder.id ===
-            selectedElderId
-        );
-
-      if (!selectedElder) {
-        alert(
-          "找不到這位長者資料"
-        );
-        return;
-      }
-
-      const alreadyRegistered =
-        courseRegistrations.some(
-          (registration) =>
-            registration.elderId ===
-            selectedElderId
-        );
 
       if (
-        alreadyRegistered
+        !selectedCourse.id
       ) {
         alert(
-          "這位長者已經報名此課程"
+          "此課程缺少 ID，無法報名"
         );
         return;
       }
 
-      const newRegistration: CourseRegistration =
-        {
-          id: Date.now(),
+      let name = "";
+      let phone = "";
 
-          courseId:
-            selectedCourse.id,
+      if (
+        registrationMode ===
+        "system"
+      ) {
+        if (
+          selectedElderId ===
+          null
+        ) {
+          alert(
+            "請先選擇長者"
+          );
+          return;
+        }
 
-          elderId:
-            selectedElder.id,
+        const selectedElder =
+          elders.find(
+            (elder) =>
+              elder.id ===
+              selectedElderId
+          );
 
-          name:
-            selectedElder.name,
+        if (!selectedElder) {
+          alert(
+            "找不到這位長者資料"
+          );
+          return;
+        }
 
-          phone:
-            selectedElder.phone,
+        name =
+          selectedElder.name;
 
-          registeredAt:
-            new Date().toISOString(),
-        };
+        phone =
+          selectedElder.phone;
+      } else {
+        name =
+          manualName.trim();
 
-      setRegistrations(
-        (prev) => [
-          ...prev,
-          newRegistration,
-        ]
-      );
+        phone =
+          manualPhone.trim();
 
-      setSelectedElderId(
-        null
-      );
+        if (!name) {
+          alert(
+            "請輸入姓名"
+          );
+          return;
+        }
 
-      alert(
-        "報名成功"
-      );
+        if (!phone) {
+          alert(
+            "請輸入電話"
+          );
+          return;
+        }
+      }
 
-      return;
-    }
+      setSaving(true);
 
-    /**
-     * 非系統長者手動輸入
-     */
-    const name =
-      manualName.trim();
+      try {
+        const {
+          data,
+          error,
+        } = await supabase.rpc(
+          "register_for_course",
+          {
+            p_course_id:
+              selectedCourse.id,
+            p_name: name,
+            p_phone:
+              normalizePhone(
+                phone
+              ),
+          }
+        );
 
-    const phone =
-      manualPhone.trim();
+        if (error) {
+          console.error(
+            "新增課程報名失敗：",
+            error
+          );
 
-    if (!name) {
-      alert(
-        "請輸入姓名"
-      );
-      return;
-    }
+          alert(
+            "新增報名失敗，請稍後再試。"
+          );
 
-    if (!phone) {
-      alert(
-        "請輸入電話"
-      );
-      return;
-    }
+          return;
+        }
 
-    /**
-     * 用電話避免同一個人重複報名
-     */
-    const duplicate =
-      courseRegistrations.some(
-        (registration) =>
-          registration.phone ===
-          phone
-      );
+        const result =
+          Array.isArray(data)
+            ? data[0]
+            : data;
 
-    if (duplicate) {
-      alert(
-        "這個電話已經報名此課程"
-      );
-      return;
-    }
+        if (
+          !result?.success
+        ) {
+          alert(
+            result?.message ||
+              "目前無法完成報名。"
+          );
 
-    const newRegistration: CourseRegistration =
-      {
-        id: Date.now(),
+          return;
+        }
 
-        courseId:
-          selectedCourse.id,
+        if (
+          result.registration_status ===
+          "waitlist"
+        ) {
+          alert(
+            `課程已額滿，已加入候補第 ${result.waitlist_position} 位。`
+          );
+        } else {
+          alert(
+            "報名成功"
+          );
+        }
 
-        name,
+        if (
+          registrationMode ===
+          "system"
+        ) {
+          setSelectedElderId(
+            null
+          );
+        } else {
+          setManualName("");
 
-        phone,
+          setManualPhone("");
+        }
 
-        registeredAt:
-          new Date().toISOString(),
-      };
+        await reloadRegistrations();
+      } catch (error) {
+        console.error(
+          "新增課程報名發生錯誤：",
+          error
+        );
 
-    setRegistrations(
-      (prev) => [
-        ...prev,
-        newRegistration,
-      ]
-    );
-
-    setManualName("");
-
-    setManualPhone("");
-
-    alert(
-      "報名成功"
-    );
-  };
+        alert(
+          "新增報名發生錯誤，請稍後再試。"
+        );
+      } finally {
+        setSaving(false);
+      }
+    };
 
   /**
-   * 取消報名
+   * 重新讀取報名資料
+   */
+  const reloadRegistrations =
+    async () => {
+      if (
+        !selectedCourse?.id
+      ) {
+        return;
+      }
+
+      setLoading(true);
+
+      try {
+        const {
+          data,
+          error,
+        } = await supabase
+          .from(
+            "course_registrations"
+          )
+          .select(
+            "id, course_id, name, phone, registered_at, status, waitlist_position"
+          )
+          .eq(
+            "course_id",
+            selectedCourse.id
+          )
+          .order(
+            "registered_at",
+            {
+              ascending: true,
+            }
+          );
+
+        if (error) {
+          console.error(
+            "重新讀取課程報名資料失敗：",
+            error
+          );
+
+          return;
+        }
+
+        const mapped =
+          (
+            data as SupabaseRegistration[]
+          ).map(
+            (
+              item
+            ): CourseRegistration => {
+              const matchedElder =
+                elders.find(
+                  (elder) =>
+                    normalizePhone(
+                      elder.phone
+                    ) ===
+                    normalizePhone(
+                      item.phone
+                    )
+                );
+
+              return {
+                id: item.id,
+
+                courseId:
+                  item.course_id,
+
+                elderId:
+                  matchedElder?.id,
+
+                name:
+                  item.name,
+
+                phone:
+                  item.phone,
+
+                registeredAt:
+                  item.registered_at,
+
+                status:
+                  item.status,
+
+                waitlistPosition:
+                  item.waitlist_position,
+              };
+            }
+          );
+
+        setRegistrations(
+          mapped
+        );
+      } catch (error) {
+        console.error(
+          "重新讀取課程報名資料發生錯誤：",
+          error
+        );
+      } finally {
+        setLoading(false);
+      }
+    };
+
+  /**
+   * 目前這一版先不執行取消報名。
+   *
+   * 因為真正的取消功能需要同時處理：
+   * 1. Supabase DELETE
+   * 2. 正取名額釋出
+   * 3. 第一位候補自動遞補
+   *
+   * 這部分下一步會用資料庫函式完整處理。
    */
   const handleCancelRegistration =
     (
       registrationId: number
     ) => {
-      const confirmed =
-        window.confirm(
-          "確定要取消這筆報名嗎？"
+      const registration =
+        courseRegistrations.find(
+          (item) =>
+            item.id ===
+            registrationId
         );
 
-      if (!confirmed) {
+      if (!registration) {
         return;
       }
 
-      setRegistrations(
-        (prev) =>
-          prev.filter(
-            (registration) =>
-              registration.id !==
-              registrationId
-          )
+      alert(
+        "取消報名功能正在進行雲端同步設定，請稍候。"
       );
     };
 
@@ -677,7 +901,7 @@ export default function CourseRegistration({
                     fontSize: 13,
                   }}
                 >
-                  已報名
+                  正取人數
                 </div>
 
                 <div
@@ -686,9 +910,7 @@ export default function CourseRegistration({
                     fontWeight: 600,
                   }}
                 >
-                  {
-                    courseRegistrations.length
-                  }
+                  {confirmedCount}
                   {" / "}
                   {
                     selectedCourse.capacity
@@ -719,14 +941,31 @@ export default function CourseRegistration({
                         : "#198754",
                   }}
                 >
-                  {
-                    remainingSeats
-                  }
+                  {remainingSeats}
                   {" 人"}
                 </div>
               </div>
             </div>
           </div>
+
+          {loading && (
+            <div
+              style={{
+                marginBottom: 20,
+                padding: 14,
+                background:
+                  "#F7FAFC",
+                borderRadius:
+                  radius.md,
+                color:
+                  "#6B7280",
+                textAlign:
+                  "center",
+              }}
+            >
+              正在同步報名資料...
+            </div>
+          )}
 
           {/* 報名方式 */}
           <div
@@ -813,7 +1052,7 @@ export default function CourseRegistration({
                       : "#374151",
                   cursor:
                     "pointer",
-                    fontWeight: 600,
+                  fontWeight: 600,
                 }}
               >
                 非系統長者
@@ -857,8 +1096,7 @@ export default function CourseRegistration({
                   );
                 }}
                 disabled={
-                  remainingSeats ===
-                    0 ||
+                  saving ||
                   availableElders.length ===
                     0
                 }
@@ -876,13 +1114,10 @@ export default function CourseRegistration({
                 }}
               >
                 <option value="">
-                  {remainingSeats ===
+                  {availableElders.length ===
                   0
-                    ? "課程已額滿"
-                    : availableElders.length ===
-                        0
-                      ? "目前沒有可報名長者"
-                      : "請選擇長者"}
+                    ? "目前沒有可報名長者"
+                    : "請選擇長者"}
                 </option>
 
                 {availableElders.map(
@@ -1009,10 +1244,7 @@ export default function CourseRegistration({
               onClick={
                 handleRegister
               }
-              disabled={
-                remainingSeats ===
-                0
-              }
+              disabled={saving}
               style={{
                 background:
                   colors.primary,
@@ -1023,25 +1255,23 @@ export default function CourseRegistration({
                 padding:
                   "10px 20px",
                 cursor:
-                  remainingSeats ===
-                  0
+                  saving
                     ? "not-allowed"
                     : "pointer",
                 fontWeight: 600,
                 opacity:
-                  remainingSeats ===
-                  0
-                    ? 0.5
-                    : 1,
+                  saving ? 0.5 : 1,
               }}
             >
-              ＋ 新增報名
+              {saving
+                ? "處理中..."
+                : "＋ 新增報名"}
             </button>
           </div>
         </>
       )}
 
-      {/* 已報名名單 */}
+      {/* 正取名單 */}
       <div
         style={{
           marginTop: 28,
@@ -1055,10 +1285,11 @@ export default function CourseRegistration({
               colors.primary,
           }}
         >
-          已報名長者
+          正取名單
         </h3>
 
-        {!selectedCourse ? (
+        {confirmedRegistrations.length ===
+        0 ? (
           <div
             style={{
               padding: 24,
@@ -1072,24 +1303,7 @@ export default function CourseRegistration({
                 radius.md,
             }}
           >
-            找不到目前課程資料
-          </div>
-        ) : courseRegistrations.length ===
-          0 ? (
-          <div
-            style={{
-              padding: 24,
-              textAlign:
-                "center",
-              color:
-                "#6B7280",
-              background:
-                "#F9FAFB",
-              borderRadius:
-                radius.md,
-            }}
-          >
-            目前尚無報名長者
+            目前尚無正取報名
           </div>
         ) : (
           <table
@@ -1157,7 +1371,7 @@ export default function CourseRegistration({
             </thead>
 
             <tbody>
-              {courseRegistrations.map(
+              {confirmedRegistrations.map(
                 (
                   registration
                 ) => (
@@ -1238,6 +1452,202 @@ export default function CourseRegistration({
                       >
                         取消報名
                       </button>
+                    </td>
+                  </tr>
+                )
+              )}
+            </tbody>
+          </table>
+        )}
+      </div>
+
+      {/* 候補名單 */}
+      <div
+        style={{
+          marginTop: 28,
+        }}
+      >
+        <h3
+          style={{
+            marginTop: 0,
+            marginBottom: 12,
+            color:
+              colors.primary,
+          }}
+        >
+          候補名單
+        </h3>
+
+        {waitlistRegistrations.length ===
+        0 ? (
+          <div
+            style={{
+              padding: 24,
+              textAlign:
+                "center",
+              color:
+                "#6B7280",
+              background:
+                "#FFF7ED",
+              borderRadius:
+                radius.md,
+            }}
+          >
+            目前沒有候補名單
+          </div>
+        ) : (
+          <table
+            style={{
+              width: "100%",
+              borderCollapse:
+                "collapse",
+            }}
+          >
+            <thead>
+              <tr
+                style={{
+                  background:
+                    "#FFF7ED",
+                }}
+              >
+                <th
+                  style={{
+                    padding: 12,
+                    textAlign:
+                      "center",
+                    borderBottom:
+                      "1px solid #E5E7EB",
+                  }}
+                >
+                  候補順位
+                </th>
+
+                <th
+                  style={{
+                    padding: 12,
+                    textAlign:
+                      "left",
+                    borderBottom:
+                      "1px solid #E5E7EB",
+                  }}
+                >
+                  姓名
+                </th>
+
+                <th
+                  style={{
+                    padding: 12,
+                    textAlign:
+                      "left",
+                    borderBottom:
+                      "1px solid #E5E7EB",
+                  }}
+                >
+                  電話
+                </th>
+
+                <th
+                  style={{
+                    padding: 12,
+                    textAlign:
+                      "left",
+                    borderBottom:
+                      "1px solid #E5E7EB",
+                  }}
+                >
+                  登記時間
+                </th>
+
+                <th
+                  style={{
+                    padding: 12,
+                    textAlign:
+                      "center",
+                    borderBottom:
+                      "1px solid #E5E7EB",
+                  }}
+                >
+                  狀態
+                </th>
+              </tr>
+            </thead>
+
+            <tbody>
+              {waitlistRegistrations.map(
+                (
+                  registration
+                ) => (
+                  <tr
+                    key={
+                      registration.id
+                    }
+                  >
+                    <td
+                      style={{
+                        padding: 12,
+                        textAlign:
+                          "center",
+                        fontWeight: 700,
+                        borderBottom:
+                          "1px solid #F3F4F6",
+                      }}
+                    >
+                      {registration.waitlistPosition ??
+                        "-"}
+                    </td>
+
+                    <td
+                      style={{
+                        padding: 12,
+                        borderBottom:
+                          "1px solid #F3F4F6",
+                      }}
+                    >
+                      {
+                        registration.name
+                      }
+                    </td>
+
+                    <td
+                      style={{
+                        padding: 12,
+                        borderBottom:
+                          "1px solid #F3F4F6",
+                      }}
+                    >
+                      {
+                        registration.phone ||
+                        "-"
+                      }
+                    </td>
+
+                    <td
+                      style={{
+                        padding: 12,
+                        borderBottom:
+                          "1px solid #F3F4F6",
+                      }}
+                    >
+                      {new Date(
+                        registration.registeredAt
+                      ).toLocaleString(
+                        "zh-TW"
+                      )}
+                    </td>
+
+                    <td
+                      style={{
+                        padding: 12,
+                        textAlign:
+                          "center",
+                        borderBottom:
+                          "1px solid #F3F4F6",
+                        fontWeight: 700,
+                        color:
+                          "#C2410C",
+                      }}
+                    >
+                      候補
                     </td>
                   </tr>
                 )
