@@ -2,6 +2,7 @@
 
 import {
   FormEvent,
+  useEffect,
   useState,
 } from "react";
 
@@ -13,6 +14,9 @@ import { shadow } from "../../styles/shadow";
 
 import { supabase } from "../../utils/supabase";
 
+const LAST_LOGIN_EMAIL_KEY =
+  "silvercare-last-login-email";
+
 export default function LoginPage() {
   const router = useRouter();
 
@@ -22,11 +26,91 @@ export default function LoginPage() {
   const [password, setPassword] =
     useState("");
 
+  const [showPassword, setShowPassword] =
+    useState(false);
+
   const [loading, setLoading] =
     useState(false);
 
+  const [checkingSession, setCheckingSession] =
+    useState(true);
+
   const [errorMessage, setErrorMessage] =
     useState("");
+
+  /**
+   * 讀取目前登入狀態
+   * 如果已經登入，直接回管理端首頁。
+   *
+   * 同時讀取這台裝置上次使用的 Email。
+   */
+  useEffect(() => {
+    let mounted = true;
+
+    async function checkSession() {
+      try {
+        const savedEmail =
+          localStorage.getItem(
+            LAST_LOGIN_EMAIL_KEY
+          );
+
+        if (
+          savedEmail &&
+          mounted
+        ) {
+          setEmail(savedEmail);
+        }
+      } catch (error) {
+        console.error(
+          "讀取上次登入 Email 失敗：",
+          error
+        );
+      }
+
+      try {
+        const {
+          data,
+          error,
+        } = await supabase.auth.getSession();
+
+        if (error) {
+          console.error(
+            "檢查登入狀態失敗：",
+            error
+          );
+
+          if (mounted) {
+            setCheckingSession(false);
+          }
+
+          return;
+        }
+
+        if (
+          data.session &&
+          mounted
+        ) {
+          router.replace("/");
+          return;
+        }
+      } catch (error) {
+        console.error(
+          "檢查登入狀態發生錯誤：",
+          error
+        );
+      }
+
+      if (mounted) {
+        setCheckingSession(false);
+      }
+    }
+
+    checkSession();
+
+    return () => {
+      mounted = false;
+    };
+  }, [router]);
 
   const handleSubmit = async (
     event: FormEvent<HTMLFormElement>
@@ -77,6 +161,25 @@ export default function LoginPage() {
         return;
       }
 
+      /*
+       * 只記住 Email。
+       *
+       * 不儲存密碼。
+       */
+      try {
+        localStorage.setItem(
+          LAST_LOGIN_EMAIL_KEY,
+          trimmedEmail
+        );
+      } catch (error) {
+        console.error(
+          "儲存登入 Email 失敗：",
+          error
+        );
+      }
+
+      setPassword("");
+
       router.replace("/");
       router.refresh();
     } catch (error) {
@@ -92,6 +195,46 @@ export default function LoginPage() {
       setLoading(false);
     }
   };
+
+  if (checkingSession) {
+    return (
+      <main
+        style={{
+          minHeight: "100vh",
+          background:
+            colors.background,
+          display: "flex",
+          justifyContent:
+            "center",
+          alignItems: "center",
+          padding: 24,
+          boxSizing:
+            "border-box",
+        }}
+      >
+        <div
+          style={{
+            width: "100%",
+            maxWidth: 440,
+            background: "#fff",
+            borderRadius:
+              radius.lg,
+            boxShadow:
+              shadow.md,
+            padding: 32,
+            boxSizing:
+              "border-box",
+            textAlign:
+              "center",
+            color:
+              "#6B7280",
+          }}
+        >
+          正在確認登入狀態...
+        </div>
+      </main>
+    );
+  }
 
   return (
     <main
@@ -218,20 +361,90 @@ export default function LoginPage() {
               密碼
             </label>
 
-            <input
-              id="password"
-              type="password"
-              value={password}
-              onChange={(event) =>
-                setPassword(
-                  event.target.value
-                )
-              }
-              placeholder="請輸入密碼"
-              autoComplete="current-password"
-              disabled={loading}
-              style={inputStyle}
-            />
+            <div
+              style={{
+                position:
+                  "relative",
+              }}
+            >
+              <input
+                id="password"
+                type={
+                  showPassword
+                    ? "text"
+                    : "password"
+                }
+                value={password}
+                onChange={(event) =>
+                  setPassword(
+                    event.target.value
+                  )
+                }
+                placeholder="請輸入密碼"
+                autoComplete="current-password"
+                disabled={loading}
+                style={{
+                  ...inputStyle,
+                  paddingRight: 50,
+                }}
+              />
+
+              <button
+                type="button"
+                onClick={() =>
+                  setShowPassword(
+                    (previous) =>
+                      !previous
+                  )
+                }
+                disabled={loading}
+                aria-label={
+                  showPassword
+                    ? "隱藏密碼"
+                    : "顯示密碼"
+                }
+                title={
+                  showPassword
+                    ? "隱藏密碼"
+                    : "顯示密碼"
+                }
+                style={{
+                  position:
+                    "absolute",
+                  top: "50%",
+                  right: 7,
+                  transform:
+                    "translateY(-50%)",
+                  width: 38,
+                  height: 38,
+                  display: "flex",
+                  alignItems:
+                    "center",
+                  justifyContent:
+                    "center",
+                  border: "none",
+                  background:
+                    "transparent",
+                  color:
+                    "#6B7280",
+                  cursor:
+                    loading
+                      ? "not-allowed"
+                      : "pointer",
+                  fontSize: 20,
+                  lineHeight: 1,
+                  padding: 0,
+                  borderRadius:
+                    radius.sm,
+                  fontFamily:
+                    "Arial, 'Noto Sans TC', 'Noto Sans', sans-serif",
+                }}
+              >
+                {showPassword
+                  ? "◉"
+                  : "◎"}
+              </button>
+            </div>
           </div>
 
           <button
