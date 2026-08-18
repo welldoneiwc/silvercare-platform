@@ -9,6 +9,7 @@ import {
 import { colors } from "../../../styles/theme";
 import { radius } from "../../../styles/radius";
 import { shadow } from "../../../styles/shadow";
+import { supabase } from "../../../utils/supabase";
 
 type Course = {
   id?: number;
@@ -61,8 +62,17 @@ type StoredRegistration = {
   registeredAt: string;
 };
 
-const COURSE_STORAGE_KEY =
-  "silvercare-courses";
+type SupabaseCourse = {
+  id: number;
+  date: string;
+  title: string;
+  teacher: string;
+  start_time: string;
+  end_time: string;
+  capacity: number;
+  classroom: string | null;
+  note: string | null;
+};
 
 const ACTIVITY_STORAGE_KEY =
   "silvercare-activities";
@@ -147,6 +157,26 @@ function getStoredElderPhone(
   return "";
 }
 
+function mapSupabaseCourse(
+  course: SupabaseCourse
+): Course {
+  return {
+    id: course.id,
+    date: course.date ?? "",
+    title: course.title ?? "",
+    teacher: course.teacher ?? "",
+    startTime:
+      course.start_time ?? "",
+    endTime:
+      course.end_time ?? "",
+    capacity:
+      course.capacity ?? 0,
+    classroom:
+      course.classroom ?? "",
+    note: course.note ?? "",
+  };
+}
+
 export default function CourseRegisterPage() {
   const [courses, setCourses] =
     useState<Course[]>([]);
@@ -185,6 +215,11 @@ export default function CourseRegisterPage() {
 
   const [loaded, setLoaded] =
     useState(false);
+
+  const [
+    courseLoading,
+    setCourseLoading,
+  ] = useState(false);
 
   const [
     submitted,
@@ -236,33 +271,89 @@ export default function CourseRegisterPage() {
   }, []);
 
   /*
-   * 讀取課程、活動、長者
-   * 與報名資料
+   * 從 Supabase 讀取目前課程
+   *
+   * 公開報名頁不能依賴建立課程那台
+   * 電腦的 LocalStorage。
+   *
+   * 使用網址上的 courseId，
+   * 直接從 courses 資料表查詢。
+   */
+  useEffect(() => {
+    if (courseId === null) {
+      return;
+    }
+
+    let cancelled = false;
+
+    async function loadCourse() {
+      setCourseLoading(true);
+
+      try {
+        const {
+          data,
+          error,
+        } = await supabase
+          .from("courses")
+          .select(
+            "id, date, title, teacher, start_time, end_time, capacity, classroom, note"
+          )
+          .eq("id", courseId)
+          .maybeSingle();
+
+        if (error) {
+          console.error(
+            "讀取公開課程失敗：",
+            error
+          );
+
+          if (!cancelled) {
+            setCourses([]);
+          }
+
+          return;
+        }
+
+        if (!cancelled) {
+          if (data) {
+            setCourses([
+              mapSupabaseCourse(
+                data as SupabaseCourse
+              ),
+            ]);
+          } else {
+            setCourses([]);
+          }
+        }
+      } catch (error) {
+        console.error(
+          "讀取公開課程失敗：",
+          error
+        );
+
+        if (!cancelled) {
+          setCourses([]);
+        }
+      } finally {
+        if (!cancelled) {
+          setCourseLoading(false);
+        }
+      }
+    }
+
+    loadCourse();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [courseId]);
+
+  /*
+   * 讀取活動、長者
+   * 與目前報名資料
    */
   useEffect(() => {
     try {
-      const savedCourses =
-        localStorage.getItem(
-          COURSE_STORAGE_KEY
-        );
-
-      if (savedCourses) {
-        const parsedCourses =
-          JSON.parse(
-            savedCourses
-          );
-
-        if (
-          Array.isArray(
-            parsedCourses
-          )
-        ) {
-          setCourses(
-            parsedCourses
-          );
-        }
-      }
-
       const savedActivities =
         localStorage.getItem(
           ACTIVITY_STORAGE_KEY
@@ -771,6 +862,46 @@ export default function CourseRegisterPage() {
           >
             找不到報名對象，
             請確認報名連結是否正確。
+          </div>
+        </div>
+      </main>
+    );
+  }
+
+  /*
+   * Supabase 正在讀取課程
+   */
+  if (
+    isCourse &&
+    courseLoading
+  ) {
+    return (
+      <main
+        style={pageStyle}
+      >
+        <div
+          style={cardStyle}
+        >
+          <h1
+            style={titleStyle}
+          >
+            SilverCare 報名
+          </h1>
+
+          <div
+            style={{
+              padding: 20,
+              background:
+                "#F7FAFC",
+              borderRadius:
+                radius.md,
+              color:
+                "#6B7280",
+              textAlign:
+                "center",
+            }}
+          >
+            正在讀取課程資料...
           </div>
         </div>
       </main>
