@@ -216,25 +216,7 @@ export default function Home() {
             >
               ♡
             </button>
-
-            <button
-              type="button"
-              aria-label="登入"
-              style={{
-                border:
-                  "1px solid rgba(255,255,255,0.45)",
-                background:
-                  "transparent",
-                color: "#fff",
-                borderRadius: 10,
-                fontSize: 24,
-                width: 44,
-                height: 44,
-                cursor: "pointer",
-              }}
-            >
-              ↪
-            </button>
+           
           </div>
         </div>
       )}
@@ -467,40 +449,43 @@ export default function Home() {
             </>
           )}
 
-          {/* ==================== */}
-          {/* Elder */}
-          {/* ==================== */}
+        {/* ==================== */}
+{/* Elder */}
+{/* ==================== */}
 
-          {selectedMenu ===
-            "elder" && (
-            <div
-              style={{
-                display: "grid",
-                gridTemplateColumns:
-                  selectedElder &&
-                  !isMobile
-                    ? "1.2fr 1fr"
-                    : "1fr",
-                gap: 24,
-                alignItems:
-                  "start",
-              }}
-            >
-              <ElderList
-                onSelectElder={
-                  setSelectedElder
-                }
-              />
+{selectedMenu ===
+  "elder" && (
+  <div
+    style={{
+      display: "flex",
+      flexDirection: "column",
+      gap: 24,
+      width: "100%",
+    }}
+  >
+    {/* 長者列表 */}
+    <ElderList
+      onSelectElder={
+        setSelectedElder
+      }
+    />
 
-              {selectedElder && (
-                <ElderProfile
-                  elder={
-                    selectedElder
-                  }
-                />
-              )}
-            </div>
-          )}
+    {/* 查看後的長者詳細資料 */}
+    {selectedElder && (
+      <div
+        style={{
+          width: "100%",
+        }}
+      >
+        <ElderProfile
+          elder={
+            selectedElder
+          }
+        />
+      </div>
+    )}
+  </div>
+)}
 
           {/* ==================== */}
           {/* Attendance */}

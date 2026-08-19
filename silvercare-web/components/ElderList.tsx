@@ -12,6 +12,7 @@ import { colors } from "../styles/theme";
 import { radius } from "../styles/radius";
 import { shadow } from "../styles/shadow";
 import { notifyStorageChanged } from "../utils/storageEvents";
+import { supabase } from "../utils/supabase";
 
 export type Elder = {
   id: number;
@@ -24,8 +25,6 @@ export type Elder = {
 type Props = {
   onSelectElder: (elder: Elder) => void;
 };
-
-const STORAGE_KEY = "silvercare-elders";
 
 function calculateAge(
   birthday: string
@@ -75,85 +74,186 @@ export default function ElderList({
     useState<Elder | null>(null);
 
   /**
-   * 第一次載入 LocalStorage
-   */
-  useEffect(() => {
-    const saved =
-      localStorage.getItem(STORAGE_KEY);
-
-    if (!saved) {
-      setElders([]);
-      setLoaded(true);
-      return;
-    }
-
+ * 第一次載入 Supabase 長者資料
+ */
+useEffect(() => {
+  const loadElders = async () => {
     try {
-      const parsed =
-        JSON.parse(saved) as Elder[];
+      const {
+        data,
+        error,
+      } = await supabase
+        .from("elders")
+        .select(
+          "id, name, gender, birthday, phone"
+        )
+        .order("id", {
+          ascending: true,
+        });
 
-      setElders(parsed);
+      if (error) {
+        console.error(
+          "讀取長者資料失敗：",
+          error
+        );
+
+        setElders([]);
+        setLoaded(true);
+        return;
+      }
+
+      setElders(
+        (data ?? []) as Elder[]
+      );
+
+      setLoaded(true);
     } catch (error) {
       console.error(
-        "讀取長者資料失敗：",
+        "讀取長者資料發生錯誤：",
         error
       );
 
       setElders([]);
+      setLoaded(true);
     }
+  };
 
-    setLoaded(true);
-  }, []);
+  loadElders();
+}, []);
 
   /**
-   * 寫回 LocalStorage
+   * 新增長者到 Supabase
    */
-  useEffect(() => {
-    if (!loaded) return;
+const handleAddElder = async (
+  elder: Omit<Elder, "id">
+) => {
+  try {
+    const { data, error } =
+      await supabase
+        .from("elders")
+        .insert({
+          name: elder.name,
+          gender: elder.gender,
+          birthday: elder.birthday,
+          phone: elder.phone,
+        })
+        .select(
+          "id, name, gender, birthday, phone"
+        )
+        .single();
 
-    localStorage.setItem(
-      STORAGE_KEY,
-      JSON.stringify(elders)
-    );
+    if (error) {
+      console.error(
+        "新增長者失敗：",
+        {
+          message: error.message,
+          details: error.details,
+          hint: error.hint,
+          code: error.code,
+        }
+      );
+
+      window.alert(
+        `新增長者失敗：${error.message}`
+      );
+
+      return;
+    }
+
+    if (!data) {
+      window.alert(
+        "新增長者失敗：沒有取得新增資料。"
+      );
+
+      return;
+    }
+
+    setElders((prev) => [
+      ...prev,
+      data as Elder,
+    ]);
 
     notifyStorageChanged();
-  }, [elders, loaded]);
+  } catch (error) {
+    console.error(
+      "新增長者發生錯誤：",
+      error
+    );
 
-  const handleAddElder = (
-    elder: Omit<Elder, "id">
-  ) => {
-    setElders((prev) => {
-      const nextId =
-        prev.length === 0
-          ? 1
-          : Math.max(
-              ...prev.map(
-                (item) => item.id
-              )
-            ) + 1;
+    window.alert(
+      "新增長者失敗，請稍後再試。"
+    );
+  }
+};
 
-      return [
-        ...prev,
-        {
-          id: nextId,
-          ...elder,
-        },
-      ];
-    });
-  };
-
-  const handleUpdateElder = (
+  /**
+   * 更新長者到 Supabase
+   */
+  const handleUpdateElder = async (
     elder: Elder
   ) => {
-    setElders((prev) =>
-      prev.map((item) =>
-        item.id === elder.id
-          ? elder
-          : item
-      )
-    );
+    try {
+      const { data, error } =
+        await supabase
+          .from("elders")
+          .update({
+            name: elder.name,
+            gender: elder.gender,
+            birthday: elder.birthday,
+            phone: elder.phone,
+          })
+          .eq("id", elder.id)
+          .select(
+            "id, name, gender, birthday, phone"
+          )
+          .single();
+
+      if (error) {
+        console.error(
+          "更新長者失敗：",
+          error
+        );
+
+        window.alert(
+          `更新長者失敗：${error.message}`
+        );
+
+        return;
+      }
+
+      if (!data) {
+        window.alert(
+          "更新長者失敗：沒有取得更新資料。"
+        );
+
+        return;
+      }
+
+      setElders((prev) =>
+        prev.map((item) =>
+          item.id === elder.id
+            ? (data as Elder)
+            : item
+        )
+      );
+
+      notifyStorageChanged();
+    } catch (error) {
+      console.error(
+        "更新長者發生錯誤：",
+        error
+      );
+
+      window.alert(
+        "更新長者失敗，請稍後再試。"
+      );
+    }
   };
 
-  const handleDeleteElder = (
+  /**
+   * 從 Supabase 刪除長者
+   */
+  const handleDeleteElder = async (
     id: number
   ) => {
     const confirmDelete =
@@ -163,17 +263,47 @@ export default function ElderList({
 
     if (!confirmDelete) return;
 
-    setElders((prev) =>
-      prev.filter(
-        (item) => item.id !== id
-      )
-    );
+    try {
+      const { error } =
+        await supabase
+          .from("elders")
+          .delete()
+          .eq("id", id);
 
-    localStorage.removeItem(
-      `health-records-${id}`
-    );
+      if (error) {
+        console.error(
+          "刪除長者失敗：",
+          error
+        );
 
-    notifyStorageChanged();
+        window.alert(
+          `刪除長者失敗：${error.message}`
+        );
+
+        return;
+      }
+
+      setElders((prev) =>
+        prev.filter(
+          (item) => item.id !== id
+        )
+      );
+
+      localStorage.removeItem(
+        `health-records-${id}`
+      );
+
+      notifyStorageChanged();
+    } catch (error) {
+      console.error(
+        "刪除長者發生錯誤：",
+        error
+      );
+
+      window.alert(
+        "刪除長者失敗，請稍後再試。"
+      );
+    }
   };
 
   const filteredElders =
@@ -215,7 +345,7 @@ export default function ElderList({
       >
         <div>
           <h2 style={{ margin: 0 }}>
-            👵 長者管理
+            長者管理
           </h2>
 
           <div
@@ -334,7 +464,21 @@ export default function ElderList({
         </thead>
 
         <tbody>
-          {filteredElders.length === 0 ? (
+          {!loaded ? (
+            <tr>
+              <td
+                colSpan={5}
+                style={{
+                  textAlign: "center",
+                  padding: "32px",
+                  color:
+                    colors.textLight,
+                }}
+              >
+                正在載入長者資料...
+              </td>
+            </tr>
+          ) : filteredElders.length === 0 ? (
             <tr>
               <td
                 colSpan={5}
@@ -491,4 +635,3 @@ export default function ElderList({
     </div>
   );
 }
-
