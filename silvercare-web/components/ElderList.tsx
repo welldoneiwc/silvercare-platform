@@ -20,6 +20,12 @@ export type Elder = {
   gender: string;
   birthday: string;
   phone: string;
+  elder_type: string;
+  living_status: string;
+  contact_method: string;
+  emergency_contact_name: string;
+  emergency_contact_relation: string;
+  emergency_contact_phone: string;
 };
 
 type Props = {
@@ -74,117 +80,209 @@ export default function ElderList({
     useState<Elder | null>(null);
 
   /**
- * 第一次載入 Supabase 長者資料
- */
-useEffect(() => {
-  const loadElders = async () => {
+   * 第一次載入 Supabase 長者資料
+   */
+  useEffect(() => {
+    const loadElders = async () => {
+      try {
+        const {
+          data,
+          error,
+        } = await supabase
+          .from("elders")
+          .select(
+            `
+              id,
+              name,
+              gender,
+              birthday,
+              phone,
+              elder_type,
+              living_status,
+              contact_method,
+              emergency_contact_name,
+              emergency_contact_relation,
+              emergency_contact_phone
+            `
+          )
+          .order("id", {
+            ascending: true,
+          });
+
+        if (error) {
+          console.error(
+            "讀取長者資料失敗：",
+            error
+          );
+
+          setElders([]);
+          setLoaded(true);
+          return;
+        }
+
+        const safeData: Elder[] =
+          (data ?? []).map(
+            (item) => ({
+              id: Number(item.id),
+              name: item.name ?? "",
+              gender: item.gender ?? "",
+              birthday:
+                item.birthday ?? "",
+              phone: item.phone ?? "",
+              elder_type:
+                item.elder_type ??
+                "出席型",
+              living_status:
+                item.living_status ??
+                "一般",
+              contact_method:
+                item.contact_method ??
+                "電話",
+              emergency_contact_name:
+                item.emergency_contact_name ??
+                "",
+              emergency_contact_relation:
+                item.emergency_contact_relation ??
+                "",
+              emergency_contact_phone:
+                item.emergency_contact_phone ??
+                "",
+            })
+          );
+
+        setElders(safeData);
+        setLoaded(true);
+      } catch (error) {
+        console.error(
+          "讀取長者資料發生錯誤：",
+          error
+        );
+
+        setElders([]);
+        setLoaded(true);
+      }
+    };
+
+    loadElders();
+  }, []);
+
+  /**
+   * 新增長者到 Supabase
+   */
+  const handleAddElder = async (
+    elder: Omit<Elder, "id">
+  ) => {
     try {
       const {
         data,
         error,
       } = await supabase
         .from("elders")
-        .select(
-          "id, name, gender, birthday, phone"
-        )
-        .order("id", {
-          ascending: true,
-        });
-
-      if (error) {
-        console.error(
-          "讀取長者資料失敗：",
-          error
-        );
-
-        setElders([]);
-        setLoaded(true);
-        return;
-      }
-
-      setElders(
-        (data ?? []) as Elder[]
-      );
-
-      setLoaded(true);
-    } catch (error) {
-      console.error(
-        "讀取長者資料發生錯誤：",
-        error
-      );
-
-      setElders([]);
-      setLoaded(true);
-    }
-  };
-
-  loadElders();
-}, []);
-
-  /**
-   * 新增長者到 Supabase
-   */
-const handleAddElder = async (
-  elder: Omit<Elder, "id">
-) => {
-  try {
-    const { data, error } =
-      await supabase
-        .from("elders")
         .insert({
           name: elder.name,
           gender: elder.gender,
           birthday: elder.birthday,
           phone: elder.phone,
+          elder_type:
+            elder.elder_type,
+          living_status:
+            elder.living_status,
+          contact_method:
+            elder.contact_method,
+          emergency_contact_name:
+            elder.emergency_contact_name,
+          emergency_contact_relation:
+            elder.emergency_contact_relation,
+          emergency_contact_phone:
+            elder.emergency_contact_phone,
         })
         .select(
-          "id, name, gender, birthday, phone"
+          `
+            id,
+            name,
+            gender,
+            birthday,
+            phone,
+            elder_type,
+            living_status,
+            contact_method,
+            emergency_contact_name,
+            emergency_contact_relation,
+            emergency_contact_phone
+          `
         )
         .single();
 
-    if (error) {
+      if (error) {
+        console.error(
+          "新增長者失敗：",
+          {
+            message: error.message,
+            details: error.details,
+            hint: error.hint,
+            code: error.code,
+          }
+        );
+
+        window.alert(
+          `新增長者失敗：${error.message}`
+        );
+
+        return;
+      }
+
+      if (!data) {
+        window.alert(
+          "新增長者失敗：沒有取得新增資料。"
+        );
+
+        return;
+      }
+
+      const newElder: Elder = {
+        id: Number(data.id),
+        name: data.name ?? "",
+        gender: data.gender ?? "",
+        birthday:
+          data.birthday ?? "",
+        phone: data.phone ?? "",
+        elder_type:
+          data.elder_type ??
+          "出席型",
+        living_status:
+          data.living_status ??
+          "一般",
+        contact_method:
+          data.contact_method ??
+          "電話",
+        emergency_contact_name:
+          data.emergency_contact_name ??
+          "",
+        emergency_contact_relation:
+          data.emergency_contact_relation ??
+          "",
+        emergency_contact_phone:
+          data.emergency_contact_phone ??
+          "",
+      };
+
+      setElders((prev) => [
+        ...prev,
+        newElder,
+      ]);
+
+      notifyStorageChanged();
+    } catch (error) {
       console.error(
-        "新增長者失敗：",
-        {
-          message: error.message,
-          details: error.details,
-          hint: error.hint,
-          code: error.code,
-        }
+        "新增長者發生錯誤：",
+        error
       );
 
       window.alert(
-        `新增長者失敗：${error.message}`
+        "新增長者失敗，請稍後再試。"
       );
-
-      return;
     }
-
-    if (!data) {
-      window.alert(
-        "新增長者失敗：沒有取得新增資料。"
-      );
-
-      return;
-    }
-
-    setElders((prev) => [
-      ...prev,
-      data as Elder,
-    ]);
-
-    notifyStorageChanged();
-  } catch (error) {
-    console.error(
-      "新增長者發生錯誤：",
-      error
-    );
-
-    window.alert(
-      "新增長者失敗，請稍後再試。"
-    );
-  }
-};
+  };
 
   /**
    * 更新長者到 Supabase
@@ -193,20 +291,46 @@ const handleAddElder = async (
     elder: Elder
   ) => {
     try {
-      const { data, error } =
-        await supabase
-          .from("elders")
-          .update({
-            name: elder.name,
-            gender: elder.gender,
-            birthday: elder.birthday,
-            phone: elder.phone,
-          })
-          .eq("id", elder.id)
-          .select(
-            "id, name, gender, birthday, phone"
-          )
-          .single();
+      const {
+        data,
+        error,
+      } = await supabase
+        .from("elders")
+        .update({
+          name: elder.name,
+          gender: elder.gender,
+          birthday: elder.birthday,
+          phone: elder.phone,
+          elder_type:
+            elder.elder_type,
+          living_status:
+            elder.living_status,
+          contact_method:
+            elder.contact_method,
+          emergency_contact_name:
+            elder.emergency_contact_name,
+          emergency_contact_relation:
+            elder.emergency_contact_relation,
+          emergency_contact_phone:
+            elder.emergency_contact_phone,
+        })
+        .eq("id", elder.id)
+        .select(
+          `
+            id,
+            name,
+            gender,
+            birthday,
+            phone,
+            elder_type,
+            living_status,
+            contact_method,
+            emergency_contact_name,
+            emergency_contact_relation,
+            emergency_contact_phone
+          `
+        )
+        .single();
 
       if (error) {
         console.error(
@@ -229,10 +353,37 @@ const handleAddElder = async (
         return;
       }
 
+      const updatedElder: Elder = {
+        id: Number(data.id),
+        name: data.name ?? "",
+        gender: data.gender ?? "",
+        birthday:
+          data.birthday ?? "",
+        phone: data.phone ?? "",
+        elder_type:
+          data.elder_type ??
+          "出席型",
+        living_status:
+          data.living_status ??
+          "一般",
+        contact_method:
+          data.contact_method ??
+          "電話",
+        emergency_contact_name:
+          data.emergency_contact_name ??
+          "",
+        emergency_contact_relation:
+          data.emergency_contact_relation ??
+          "",
+        emergency_contact_phone:
+          data.emergency_contact_phone ??
+          "",
+      };
+
       setElders((prev) =>
         prev.map((item) =>
           item.id === elder.id
-            ? (data as Elder)
+            ? updatedElder
             : item
         )
       );
@@ -261,7 +412,9 @@ const handleAddElder = async (
         "確定要刪除此長者嗎？"
       );
 
-    if (!confirmDelete) return;
+    if (!confirmDelete) {
+      return;
+    }
 
     try {
       const { error } =
@@ -285,7 +438,8 @@ const handleAddElder = async (
 
       setElders((prev) =>
         prev.filter(
-          (item) => item.id !== id
+          (item) =>
+            item.id !== id
         )
       );
 
@@ -308,28 +462,45 @@ const handleAddElder = async (
 
   const filteredElders =
     useMemo(() => {
-      return elders.filter((elder) => {
-        return (
-          elder.name.includes(
-            keyword
-          ) ||
-          elder.phone?.includes(
-            keyword
-          ) ||
-          elder.gender?.includes(
-            keyword
-          )
-        );
-      });
+      return elders.filter(
+        (elder) => {
+          return (
+            elder.name.includes(
+              keyword
+            ) ||
+            elder.phone.includes(
+              keyword
+            ) ||
+            elder.gender.includes(
+              keyword
+            ) ||
+            elder.elder_type.includes(
+              keyword
+            ) ||
+            elder.living_status.includes(
+              keyword
+            ) ||
+            elder.contact_method.includes(
+              keyword
+            ) ||
+            elder.emergency_contact_name.includes(
+              keyword
+            )
+          );
+        }
+      );
     }, [elders, keyword]);
 
   return (
     <div
       style={{
-        background: colors.card,
+        background:
+          colors.card,
         padding: "30px",
-        borderRadius: radius.lg,
-        boxShadow: shadow.md,
+        borderRadius:
+          radius.lg,
+        boxShadow:
+          shadow.md,
       }}
     >
       <div
@@ -344,7 +515,11 @@ const handleAddElder = async (
         }}
       >
         <div>
-          <h2 style={{ margin: 0 }}>
+          <h2
+            style={{
+              margin: 0,
+            }}
+          >
             長者管理
           </h2>
 
@@ -355,7 +530,9 @@ const handleAddElder = async (
               marginTop: "6px",
             }}
           >
-            共 {filteredElders.length} 位長者
+            共{" "}
+            {filteredElders.length}{" "}
+            位長者
           </div>
         </div>
 
@@ -377,16 +554,20 @@ const handleAddElder = async (
             style={{
               width: "220px",
               padding: "10px",
-              borderRadius: "8px",
+              borderRadius:
+                "8px",
               border:
                 "1px solid #ddd",
             }}
           />
 
           <button
+            type="button"
             onClick={() => {
               setIsEditing(false);
-              setEditingElder(null);
+              setEditingElder(
+                null
+              );
               setOpen(true);
             }}
             style={{
@@ -396,7 +577,8 @@ const handleAddElder = async (
               border: "none",
               padding:
                 "10px 18px",
-              borderRadius: "10px",
+              borderRadius:
+                "10px",
               cursor: "pointer",
               fontSize: "16px",
               fontWeight: "bold",
@@ -407,230 +589,268 @@ const handleAddElder = async (
         </div>
       </div>
 
-      <table
+      <div
         style={{
           width: "100%",
-          borderCollapse:
-            "collapse",
+          overflowX: "auto",
         }}
       >
-        <thead>
-          <tr>
-            <th
-              style={{
-                textAlign: "left",
-                padding: "12px",
-              }}
-            >
-              姓名
-            </th>
-
-            <th
-              style={{
-                textAlign: "center",
-                padding: "12px",
-              }}
-            >
-              性別
-            </th>
-
-            <th
-              style={{
-                textAlign: "center",
-                padding: "12px",
-              }}
-            >
-              年齡
-            </th>
-
-            <th
-              style={{
-                textAlign: "left",
-                padding: "12px",
-              }}
-            >
-              電話
-            </th>
-
-            <th
-              style={{
-                textAlign: "center",
-                padding: "12px",
-              }}
-            >
-              操作
-            </th>
-          </tr>
-        </thead>
-
-        <tbody>
-          {!loaded ? (
+        <table
+          style={{
+            width: "100%",
+            borderCollapse:
+              "collapse",
+          }}
+        >
+          <thead>
             <tr>
-              <td
-                colSpan={5}
+              <th
                 style={{
-                  textAlign: "center",
-                  padding: "32px",
-                  color:
-                    colors.textLight,
+                  textAlign: "left",
+                  padding: "12px",
                 }}
               >
-                正在載入長者資料...
-              </td>
-            </tr>
-          ) : filteredElders.length === 0 ? (
-            <tr>
-              <td
-                colSpan={5}
+                姓名
+              </th>
+
+              <th
                 style={{
-                  textAlign: "center",
-                  padding: "32px",
-                  color:
-                    colors.textLight,
+                  textAlign:
+                    "center",
+                  padding: "12px",
                 }}
               >
-                尚無長者資料，請新增第一位長者。
-              </td>
+                性別
+              </th>
+
+              <th
+                style={{
+                  textAlign:
+                    "center",
+                  padding: "12px",
+                }}
+              >
+                年齡
+              </th>
+
+              <th
+                style={{
+                  textAlign: "left",
+                  padding: "12px",
+                }}
+              >
+                電話
+              </th>
+
+              <th
+                style={{
+                  textAlign:
+                    "center",
+                  padding: "12px",
+                }}
+              >
+                操作
+              </th>
             </tr>
-          ) : (
-            filteredElders.map((elder) => (
-              <tr key={elder.id}>
-                <td
-                  style={{
-                    padding: "12px",
-                  }}
-                >
-                  {elder.name}
-                </td>
+          </thead>
 
+          <tbody>
+            {!loaded ? (
+              <tr>
                 <td
+                  colSpan={5}
                   style={{
                     textAlign:
                       "center",
-                    padding: "12px",
+                    padding: "32px",
+                    color:
+                      colors.textLight,
                   }}
                 >
-                  {elder.gender}
-                </td>
-
-                <td
-                  style={{
-                    textAlign:
-                      "center",
-                    padding: "12px",
-                  }}
-                >
-                  {calculateAge(
-                    elder.birthday
-                  )}{" "}
-                  歲
-                </td>
-
-                <td
-                  style={{
-                    padding: "12px",
-                  }}
-                >
-                  {elder.phone}
-                </td>
-
-                <td
-                  style={{
-                    textAlign:
-                      "center",
-                    padding: "12px",
-                    whiteSpace:
-                      "nowrap",
-                  }}
-                >
-                  <button
-                    onClick={() =>
-                      onSelectElder(elder)
-                    }
-                    style={{
-                      marginRight:
-                        "8px",
-                      padding:
-                        "6px 12px",
-                      borderRadius:
-                        "6px",
-                      border: "none",
-                      background:
-                        "#198754",
-                      color: "#fff",
-                      cursor:
-                        "pointer",
-                    }}
-                  >
-                    查看
-                  </button>
-
-                  <button
-                    onClick={() => {
-                      setEditingElder(
-                        elder
-                      );
-                      setIsEditing(true);
-                      setOpen(true);
-                    }}
-                    style={{
-                      marginRight:
-                        "8px",
-                      padding:
-                        "6px 12px",
-                      borderRadius:
-                        "6px",
-                      border:
-                        "1px solid #ccc",
-                      background:
-                        "#fff",
-                      cursor:
-                        "pointer",
-                    }}
-                  >
-                    編輯
-                  </button>
-
-                  <button
-                    onClick={() =>
-                      handleDeleteElder(
-                        elder.id
-                      )
-                    }
-                    style={{
-                      padding:
-                        "6px 12px",
-                      borderRadius:
-                        "6px",
-                      border: "none",
-                      background:
-                        "#DC2626",
-                      color:
-                        "#fff",
-                      cursor:
-                        "pointer",
-                    }}
-                  >
-                    刪除
-                  </button>
+                  正在載入長者資料...
                 </td>
               </tr>
-            ))
-          )}
-        </tbody>
-      </table>
+            ) : filteredElders.length ===
+              0 ? (
+              <tr>
+                <td
+                  colSpan={5}
+                  style={{
+                    textAlign:
+                      "center",
+                    padding: "32px",
+                    color:
+                      colors.textLight,
+                  }}
+                >
+                  尚無長者資料，請新增第一位長者。
+                </td>
+              </tr>
+            ) : (
+              filteredElders.map(
+                (elder) => (
+                  <tr
+                    key={elder.id}
+                  >
+                    <td
+                      style={{
+                        padding:
+                          "12px",
+                      }}
+                    >
+                      {elder.name}
+                    </td>
+
+                    <td
+                      style={{
+                        textAlign:
+                          "center",
+                        padding:
+                          "12px",
+                      }}
+                    >
+                      {elder.gender}
+                    </td>
+
+                    <td
+                      style={{
+                        textAlign:
+                          "center",
+                        padding:
+                          "12px",
+                      }}
+                    >
+                      {calculateAge(
+                        elder.birthday
+                      )}{" "}
+                      歲
+                    </td>
+
+                    <td
+                      style={{
+                        padding:
+                          "12px",
+                      }}
+                    >
+                      {elder.phone}
+                    </td>
+
+                    <td
+                      style={{
+                        textAlign:
+                          "center",
+                        padding:
+                          "12px",
+                        whiteSpace:
+                          "nowrap",
+                      }}
+                    >
+                      <button
+                        type="button"
+                        onClick={() =>
+                          onSelectElder(
+                            elder
+                          )
+                        }
+                        style={{
+                          marginRight:
+                            "8px",
+                          padding:
+                            "6px 12px",
+                          borderRadius:
+                            "6px",
+                          border:
+                            "none",
+                          background:
+                            "#198754",
+                          color:
+                            "#fff",
+                          cursor:
+                            "pointer",
+                        }}
+                      >
+                        查看
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setEditingElder(
+                            elder
+                          );
+                          setIsEditing(
+                            true
+                          );
+                          setOpen(
+                            true
+                          );
+                        }}
+                        style={{
+                          marginRight:
+                            "8px",
+                          padding:
+                            "6px 12px",
+                          borderRadius:
+                            "6px",
+                          border:
+                            "1px solid #ccc",
+                          background:
+                            "#fff",
+                          cursor:
+                            "pointer",
+                        }}
+                      >
+                        編輯
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() =>
+                          handleDeleteElder(
+                            elder.id
+                          )
+                        }
+                        style={{
+                          padding:
+                            "6px 12px",
+                          borderRadius:
+                            "6px",
+                          border:
+                            "none",
+                          background:
+                            "#DC2626",
+                          color:
+                            "#fff",
+                          cursor:
+                            "pointer",
+                        }}
+                      >
+                        刪除
+                      </button>
+                    </td>
+                  </tr>
+                )
+              )
+            )}
+          </tbody>
+        </table>
+      </div>
 
       <AddElderModal
         open={open}
         onClose={() => {
           setOpen(false);
-          setEditingElder(null);
+          setEditingElder(
+            null
+          );
           setIsEditing(false);
         }}
         onSave={handleAddElder}
         onUpdate={handleUpdateElder}
         isEditing={isEditing}
-        editingElder={editingElder}
+        editingElder={
+          editingElder
+        }
       />
     </div>
   );
