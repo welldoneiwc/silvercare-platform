@@ -201,22 +201,7 @@ export default function Home() {
               gap: 16,
             }}
           >
-            <button
-              type="button"
-              aria-label="通知"
-              style={{
-                border: "none",
-                background:
-                  "transparent",
-                color: "#fff",
-                fontSize: 28,
-                padding: 4,
-                cursor: "pointer",
-              }}
-            >
-              ♡
-            </button>
-           
+                    
           </div>
         </div>
       )}
