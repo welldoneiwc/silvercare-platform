@@ -415,7 +415,7 @@ export default function Sidebar({
 
           .silvercare-mobile-logout {
             position: fixed !important;
-            top: 206px !important;
+            top: 12px !important;
             right: 14px !important;
             z-index: 2147483646 !important;
             display: inline-flex !important;
