@@ -485,15 +485,21 @@ export default function AttendanceSection({
           : 1;
 
       const newElder: Elder = {
-        id: nextId,
-        name,
-        gender:
-          newElderForm.gender.trim(),
-        birthday:
-          newElderForm.birthday,
-        phone:
-          newElderForm.phone.trim(),
-      };
+  id: nextId,
+  name,
+  gender:
+    newElderForm.gender.trim(),
+  birthday:
+    newElderForm.birthday,
+  phone:
+    newElderForm.phone.trim(),
+  elder_type: "出席型",
+  living_status: "一般",
+  contact_method: "電話",
+  emergency_contact_name: "",
+  emergency_contact_relation: "",
+  emergency_contact_phone: "",
+};
 
       const updatedElders = [
         ...safeExistingElders,
