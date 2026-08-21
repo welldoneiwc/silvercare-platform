@@ -58,6 +58,89 @@ function calculateAge(
   return age;
 }
 
+function EyeIcon() {
+  return (
+    <svg
+      width="18"
+      height="18"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <path d="M2 12s3.5-6 10-6 10 6 10 6-3.5 6-10 6S2 12 2 12Z" />
+      <circle
+        cx="12"
+        cy="12"
+        r="2.5"
+      />
+    </svg>
+  );
+}
+
+function EditIcon() {
+  return (
+    <svg
+      width="18"
+      height="18"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <path d="M12 20h9" />
+      <path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z" />
+    </svg>
+  );
+}
+
+function DeleteIcon() {
+  return (
+    <svg
+      width="18"
+      height="18"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <path d="M3 6h18" />
+      <path d="M8 6V4h8v2" />
+      <path d="M19 6l-1 14H6L5 6" />
+      <path d="M10 11v6" />
+      <path d="M14 11v6" />
+    </svg>
+  );
+}
+
+function PlusIcon() {
+  return (
+    <svg
+      width="19"
+      height="19"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <path d="M12 5v14" />
+      <path d="M5 12h14" />
+    </svg>
+  );
+}
+
 export default function ElderList({
   onSelectElder,
 }: Props) {
@@ -124,11 +207,14 @@ export default function ElderList({
           (data ?? []).map(
             (item) => ({
               id: Number(item.id),
-              name: item.name ?? "",
-              gender: item.gender ?? "",
+              name:
+                item.name ?? "",
+              gender:
+                item.gender ?? "",
               birthday:
                 item.birthday ?? "",
-              phone: item.phone ?? "",
+              phone:
+                item.phone ?? "",
               elder_type:
                 item.elder_type ??
                 "出席型",
@@ -217,10 +303,14 @@ export default function ElderList({
         console.error(
           "新增長者失敗：",
           {
-            message: error.message,
-            details: error.details,
-            hint: error.hint,
-            code: error.code,
+            message:
+              error.message,
+            details:
+              error.details,
+            hint:
+              error.hint,
+            code:
+              error.code,
           }
         );
 
@@ -241,11 +331,14 @@ export default function ElderList({
 
       const newElder: Elder = {
         id: Number(data.id),
-        name: data.name ?? "",
-        gender: data.gender ?? "",
+        name:
+          data.name ?? "",
+        gender:
+          data.gender ?? "",
         birthday:
           data.birthday ?? "",
-        phone: data.phone ?? "",
+        phone:
+          data.phone ?? "",
         elder_type:
           data.elder_type ??
           "出席型",
@@ -355,11 +448,14 @@ export default function ElderList({
 
       const updatedElder: Elder = {
         id: Number(data.id),
-        name: data.name ?? "",
-        gender: data.gender ?? "",
+        name:
+          data.name ?? "",
+        gender:
+          data.gender ?? "",
         birthday:
           data.birthday ?? "",
-        phone: data.phone ?? "",
+        phone:
+          data.phone ?? "",
         elder_type:
           data.elder_type ??
           "出席型",
@@ -492,366 +588,725 @@ export default function ElderList({
     }, [elders, keyword]);
 
   return (
-    <div
-      style={{
-        background:
-          colors.card,
-        padding: "30px",
-        borderRadius:
-          radius.lg,
-        boxShadow:
-          shadow.md,
-      }}
-    >
+    <>
+      <style>{`
+        .silvercare-elder-header-actions {
+          display: flex;
+          gap: 10px;
+          align-items: center;
+        }
+
+        .silvercare-elder-search {
+          width: 220px;
+          min-width: 0;
+          box-sizing: border-box;
+        }
+
+        .silvercare-elder-table-wrap {
+          width: 100%;
+          overflow-x: auto;
+          -webkit-overflow-scrolling: touch;
+        }
+
+        .silvercare-elder-desktop-table {
+          display: table;
+          width: 100%;
+          border-collapse: collapse;
+          min-width: 620px;
+        }
+
+        .silvercare-elder-mobile-list {
+          display: none;
+        }
+
+        .silvercare-elder-action-group {
+          display: inline-flex;
+          align-items: center;
+          gap: 8px;
+        }
+
+        .silvercare-elder-action-button {
+          width: 38px;
+          height: 38px;
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          padding: 0;
+          border-radius: 8px;
+          cursor: pointer;
+          flex: 0 0 auto;
+        }
+
+        .silvercare-elder-card {
+          width: 100%;
+          box-sizing: border-box;
+          background: #fff;
+          border: 1px solid #E5E7EB;
+          border-radius: 12px;
+          padding: 16px;
+          box-shadow: 0 2px 8px rgba(0,0,0,0.04);
+        }
+
+        .silvercare-elder-card-top {
+          display: flex;
+          justify-content: space-between;
+          align-items: flex-start;
+          gap: 12px;
+        }
+
+        .silvercare-elder-card-name {
+          color: ${colors.primary};
+          font-size: 18px;
+          font-weight: 700;
+          line-height: 1.35;
+          word-break: break-word;
+        }
+
+        .silvercare-elder-card-phone {
+          margin-top: 4px;
+          color: #6B7280;
+          font-size: 13px;
+          word-break: break-word;
+        }
+
+        .silvercare-elder-card-actions {
+          display: flex;
+          gap: 6px;
+          flex: 0 0 auto;
+        }
+
+        .silvercare-elder-card-details {
+          margin-top: 14px;
+          display: grid;
+          grid-template-columns:
+            repeat(2, minmax(0, 1fr));
+          gap: 10px;
+        }
+
+        .silvercare-elder-card-detail {
+          min-width: 0;
+          padding: 10px 12px;
+          background: #F8FAFC;
+          border-radius: 8px;
+          box-sizing: border-box;
+        }
+
+        .silvercare-elder-card-detail-label {
+          color: #94A3B8;
+          font-size: 11px;
+        }
+
+        .silvercare-elder-card-detail-value {
+          margin-top: 3px;
+          color: #374151;
+          font-size: 14px;
+          font-weight: 600;
+          word-break: break-word;
+        }
+
+        @media (max-width: 767px) {
+          .silvercare-elder-container {
+            padding: 16px !important;
+            border-radius: 14px !important;
+          }
+
+          .silvercare-elder-header {
+            align-items: stretch !important;
+          }
+
+          .silvercare-elder-header-actions {
+            width: 100%;
+            display: flex;
+            gap: 8px;
+            align-items: center;
+          }
+
+          .silvercare-elder-search {
+            flex: 1;
+            width: auto !important;
+            height: 40px;
+            min-width: 0;
+          }
+
+          .silvercare-elder-add-button {
+            width: 40px !important;
+            height: 40px !important;
+            flex: 0 0 40px;
+          }
+
+          .silvercare-elder-table-wrap {
+            display: none;
+          }
+
+          .silvercare-elder-mobile-list {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+          }
+
+          .silvercare-elder-mobile-empty {
+            padding: 28px 16px;
+            text-align: center;
+            color: #6B7280;
+            background: #F8FAFC;
+            border-radius: 10px;
+          }
+        }
+      `}</style>
+
       <div
+        className="silvercare-elder-container"
         style={{
-          display: "flex",
-          justifyContent:
-            "space-between",
-          alignItems: "center",
-          marginBottom: "20px",
-          flexWrap: "wrap",
-          gap: "12px",
+          background:
+            colors.card,
+          padding: 30,
+          borderRadius:
+            radius.lg,
+          boxShadow:
+            shadow.md,
+          width: "100%",
+          minWidth: 0,
+          boxSizing:
+            "border-box",
         }}
       >
-        <div>
-          <h2
-            style={{
-              margin: 0,
-            }}
-          >
-            長者管理
-          </h2>
-
+        <div
+          className="silvercare-elder-header"
+          style={{
+            display: "flex",
+            justifyContent:
+              "space-between",
+            alignItems: "center",
+            marginBottom: 20,
+            flexWrap: "wrap",
+            gap: 12,
+          }}
+        >
           <div
             style={{
-              color: "#666",
-              fontSize: "14px",
-              marginTop: "6px",
+              minWidth: 0,
             }}
           >
-            共{" "}
-            {filteredElders.length}{" "}
-            位長者
+            <h2
+              style={{
+                margin: 0,
+                color: colors.primary,
+              }}
+            >
+              長者管理
+            </h2>
+
+            <div
+              style={{
+                color: "#666",
+                fontSize: 14,
+                marginTop: 6,
+              }}
+            >
+              共{" "}
+              {filteredElders.length}{" "}
+              位長者
+            </div>
+          </div>
+
+          <div className="silvercare-elder-header-actions">
+            <input
+              className="silvercare-elder-search"
+              placeholder="搜尋姓名 / 電話"
+              value={keyword}
+              onChange={(e) =>
+                setKeyword(
+                  e.target.value
+                )
+              }
+              style={{
+                padding: "10px 12px",
+                borderRadius: 8,
+                border:
+                  "1px solid #D1D5DB",
+                background:
+                  "#fff",
+                fontSize: 14,
+                outline: "none",
+              }}
+            />
+
+            <button
+              type="button"
+              title="新增長者"
+              aria-label="新增長者"
+              className="silvercare-elder-add-button"
+              onClick={() => {
+                setIsEditing(false);
+                setEditingElder(null);
+                setOpen(true);
+              }}
+              style={{
+                width: 40,
+                height: 40,
+                display:
+                  "inline-flex",
+                alignItems:
+                  "center",
+                justifyContent:
+                  "center",
+                background:
+                  colors.primary,
+                color: "#fff",
+                border: "none",
+                borderRadius: 10,
+                cursor: "pointer",
+                flex: "0 0 40px",
+              }}
+            >
+              <PlusIcon />
+            </button>
           </div>
         </div>
 
-        <div
-          style={{
-            display: "flex",
-            gap: "10px",
-            alignItems: "center",
-          }}
-        >
-          <input
-            placeholder="搜尋姓名 / 電話"
-            value={keyword}
-            onChange={(e) =>
-              setKeyword(
-                e.target.value
-              )
-            }
+        {!loaded ? (
+          <div
+            className="silvercare-elder-mobile-empty"
             style={{
-              width: "220px",
-              padding: "10px",
-              borderRadius:
-                "8px",
-              border:
-                "1px solid #ddd",
-            }}
-          />
-
-          <button
-            type="button"
-            onClick={() => {
-              setIsEditing(false);
-              setEditingElder(
-                null
-              );
-              setOpen(true);
-            }}
-            style={{
-              background:
-                colors.primary,
-              color: "#fff",
-              border: "none",
-              padding:
-                "10px 18px",
-              borderRadius:
-                "10px",
-              cursor: "pointer",
-              fontSize: "16px",
-              fontWeight: "bold",
+              padding: 32,
+              textAlign: "center",
+              color: colors.textLight,
+              background: "#F8FAFC",
+              borderRadius: 10,
             }}
           >
-            ＋ 新增長者
-          </button>
-        </div>
-      </div>
+            正在載入長者資料...
+          </div>
+        ) : filteredElders.length === 0 ? (
+          <div
+            className="silvercare-elder-mobile-empty"
+            style={{
+              padding: 32,
+              textAlign: "center",
+              color: colors.textLight,
+              background: "#F8FAFC",
+              borderRadius: 10,
+            }}
+          >
+            尚無長者資料，請新增第一位長者。
+          </div>
+        ) : (
+          <>
+            {/* ==================== */}
+            {/* Desktop Table */}
+            {/* ==================== */}
 
-      <div
-        style={{
-          width: "100%",
-          overflowX: "auto",
-        }}
-      >
-        <table
-          style={{
-            width: "100%",
-            borderCollapse:
-              "collapse",
-          }}
-        >
-          <thead>
-            <tr>
-              <th
-                style={{
-                  textAlign: "left",
-                  padding: "12px",
-                }}
-              >
-                姓名
-              </th>
-
-              <th
-                style={{
-                  textAlign:
-                    "center",
-                  padding: "12px",
-                }}
-              >
-                性別
-              </th>
-
-              <th
-                style={{
-                  textAlign:
-                    "center",
-                  padding: "12px",
-                }}
-              >
-                年齡
-              </th>
-
-              <th
-                style={{
-                  textAlign: "left",
-                  padding: "12px",
-                }}
-              >
-                電話
-              </th>
-
-              <th
-                style={{
-                  textAlign:
-                    "center",
-                  padding: "12px",
-                }}
-              >
-                操作
-              </th>
-            </tr>
-          </thead>
-
-          <tbody>
-            {!loaded ? (
-              <tr>
-                <td
-                  colSpan={5}
-                  style={{
-                    textAlign:
-                      "center",
-                    padding: "32px",
-                    color:
-                      colors.textLight,
-                  }}
-                >
-                  正在載入長者資料...
-                </td>
-              </tr>
-            ) : filteredElders.length ===
-              0 ? (
-              <tr>
-                <td
-                  colSpan={5}
-                  style={{
-                    textAlign:
-                      "center",
-                    padding: "32px",
-                    color:
-                      colors.textLight,
-                  }}
-                >
-                  尚無長者資料，請新增第一位長者。
-                </td>
-              </tr>
-            ) : (
-              filteredElders.map(
-                (elder) => (
-                  <tr
-                    key={elder.id}
-                  >
-                    <td
+            <div className="silvercare-elder-table-wrap">
+              <table className="silvercare-elder-desktop-table">
+                <thead>
+                  <tr>
+                    <th
                       style={{
-                        padding:
-                          "12px",
+                        textAlign: "left",
+                        padding: 12,
                       }}
                     >
-                      {elder.name}
-                    </td>
+                      姓名
+                    </th>
 
-                    <td
+                    <th
                       style={{
-                        textAlign:
-                          "center",
-                        padding:
-                          "12px",
+                        textAlign: "center",
+                        padding: 12,
                       }}
                     >
-                      {elder.gender}
-                    </td>
+                      性別
+                    </th>
 
-                    <td
+                    <th
                       style={{
-                        textAlign:
-                          "center",
-                        padding:
-                          "12px",
+                        textAlign: "center",
+                        padding: 12,
                       }}
                     >
-                      {calculateAge(
-                        elder.birthday
-                      )}{" "}
-                      歲
-                    </td>
+                      年齡
+                    </th>
 
-                    <td
+                    <th
                       style={{
-                        padding:
-                          "12px",
+                        textAlign: "left",
+                        padding: 12,
                       }}
                     >
-                      {elder.phone}
-                    </td>
+                      電話
+                    </th>
 
-                    <td
+                    <th
                       style={{
-                        textAlign:
-                          "center",
-                        padding:
-                          "12px",
-                        whiteSpace:
-                          "nowrap",
+                        textAlign: "center",
+                        padding: 12,
                       }}
                     >
-                      <button
-                        type="button"
-                        onClick={() =>
-                          onSelectElder(
-                            elder
-                          )
-                        }
-                        style={{
-                          marginRight:
-                            "8px",
-                          padding:
-                            "6px 12px",
-                          borderRadius:
-                            "6px",
-                          border:
-                            "none",
-                          background:
-                            "#198754",
-                          color:
-                            "#fff",
-                          cursor:
-                            "pointer",
-                        }}
-                      >
-                        查看
-                      </button>
-
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setEditingElder(
-                            elder
-                          );
-                          setIsEditing(
-                            true
-                          );
-                          setOpen(
-                            true
-                          );
-                        }}
-                        style={{
-                          marginRight:
-                            "8px",
-                          padding:
-                            "6px 12px",
-                          borderRadius:
-                            "6px",
-                          border:
-                            "1px solid #ccc",
-                          background:
-                            "#fff",
-                          cursor:
-                            "pointer",
-                        }}
-                      >
-                        編輯
-                      </button>
-
-                      <button
-                        type="button"
-                        onClick={() =>
-                          handleDeleteElder(
-                            elder.id
-                          )
-                        }
-                        style={{
-                          padding:
-                            "6px 12px",
-                          borderRadius:
-                            "6px",
-                          border:
-                            "none",
-                          background:
-                            "#DC2626",
-                          color:
-                            "#fff",
-                          cursor:
-                            "pointer",
-                        }}
-                      >
-                        刪除
-                      </button>
-                    </td>
+                      操作
+                    </th>
                   </tr>
-                )
-              )
-            )}
-          </tbody>
-        </table>
-      </div>
+                </thead>
 
-      <AddElderModal
-        open={open}
-        onClose={() => {
-          setOpen(false);
-          setEditingElder(
-            null
-          );
-          setIsEditing(false);
-        }}
-        onSave={handleAddElder}
-        onUpdate={handleUpdateElder}
-        isEditing={isEditing}
-        editingElder={
-          editingElder
-        }
-      />
-    </div>
+                <tbody>
+                  {filteredElders.map(
+                    (elder) => (
+                      <tr
+                        key={elder.id}
+                      >
+                        <td
+                          style={{
+                            padding: 12,
+                          }}
+                        >
+                          {elder.name}
+                        </td>
+
+                        <td
+                          style={{
+                            textAlign:
+                              "center",
+                            padding: 12,
+                          }}
+                        >
+                          {elder.gender}
+                        </td>
+
+                        <td
+                          style={{
+                            textAlign:
+                              "center",
+                            padding: 12,
+                          }}
+                        >
+                          {calculateAge(
+                            elder.birthday
+                          )}{" "}
+                          歲
+                        </td>
+
+                        <td
+                          style={{
+                            padding: 12,
+                          }}
+                        >
+                          {elder.phone}
+                        </td>
+
+                        <td
+                          style={{
+                            textAlign:
+                              "center",
+                            padding: 12,
+                          }}
+                        >
+                          <div className="silvercare-elder-action-group">
+                            <button
+                              type="button"
+                              title="查看"
+                              aria-label="查看"
+                              className="silvercare-elder-action-button"
+                              onClick={() =>
+                                onSelectElder(
+                                  elder
+                                )
+                              }
+                              style={{
+                                border: "none",
+                                background:
+                                  "#198754",
+                                color:
+                                  "#fff",
+                              }}
+                            >
+                              <EyeIcon />
+                            </button>
+
+                            <button
+                              type="button"
+                              title="編輯"
+                              aria-label="編輯"
+                              className="silvercare-elder-action-button"
+                              onClick={() => {
+                                setEditingElder(
+                                  elder
+                                );
+                                setIsEditing(
+                                  true
+                                );
+                                setOpen(
+                                  true
+                                );
+                              }}
+                              style={{
+                                border:
+                                  "1px solid #D1D5DB",
+                                background:
+                                  "#fff",
+                                color:
+                                  "#374151",
+                              }}
+                            >
+                              <EditIcon />
+                            </button>
+
+                            <button
+                              type="button"
+                              title="刪除"
+                              aria-label="刪除"
+                              className="silvercare-elder-action-button"
+                              onClick={() =>
+                                handleDeleteElder(
+                                  elder.id
+                                )
+                              }
+                              style={{
+                                border: "none",
+                                background:
+                                  "#DC2626",
+                                color:
+                                  "#fff",
+                              }}
+                            >
+                              <DeleteIcon />
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    )
+                  )}
+                </tbody>
+              </table>
+            </div>
+
+            {/* ==================== */}
+            {/* Mobile Cards */}
+            {/* ==================== */}
+
+            <div className="silvercare-elder-mobile-list">
+              {filteredElders.map(
+                (elder) => (
+                  <div
+                    key={elder.id}
+                    className="silvercare-elder-card"
+                  >
+                    <div className="silvercare-elder-card-top">
+                      <div
+                        style={{
+                          minWidth: 0,
+                        }}
+                      >
+                        <div className="silvercare-elder-card-name">
+                          {elder.name}
+                        </div>
+
+                        {elder.phone && (
+                          <div className="silvercare-elder-card-phone">
+                            {elder.phone}
+                          </div>
+                        )}
+                      </div>
+
+                      <div className="silvercare-elder-card-actions">
+                        <button
+                          type="button"
+                          title="查看"
+                          aria-label="查看"
+                          onClick={() =>
+                            onSelectElder(
+                              elder
+                            )
+                          }
+                          style={{
+                            width: 36,
+                            height: 36,
+                            display:
+                              "inline-flex",
+                            alignItems:
+                              "center",
+                            justifyContent:
+                              "center",
+                            padding: 0,
+                            border: "none",
+                            borderRadius: 8,
+                            background:
+                              "#198754",
+                            color: "#fff",
+                            cursor:
+                              "pointer",
+                          }}
+                        >
+                          <EyeIcon />
+                        </button>
+
+                        <button
+                          type="button"
+                          title="編輯"
+                          aria-label="編輯"
+                          onClick={() => {
+                            setEditingElder(
+                              elder
+                            );
+                            setIsEditing(
+                              true
+                            );
+                            setOpen(
+                              true
+                            );
+                          }}
+                          style={{
+                            width: 36,
+                            height: 36,
+                            display:
+                              "inline-flex",
+                            alignItems:
+                              "center",
+                            justifyContent:
+                              "center",
+                            padding: 0,
+                            border:
+                              "1px solid #D1D5DB",
+                            borderRadius: 8,
+                            background:
+                              "#fff",
+                            color:
+                              "#374151",
+                            cursor:
+                              "pointer",
+                          }}
+                        >
+                          <EditIcon />
+                        </button>
+
+                        <button
+                          type="button"
+                          title="刪除"
+                          aria-label="刪除"
+                          onClick={() =>
+                            handleDeleteElder(
+                              elder.id
+                            )
+                          }
+                          style={{
+                            width: 36,
+                            height: 36,
+                            display:
+                              "inline-flex",
+                            alignItems:
+                              "center",
+                            justifyContent:
+                              "center",
+                            padding: 0,
+                            border: "none",
+                            borderRadius: 8,
+                            background:
+                              "#DC2626",
+                            color: "#fff",
+                            cursor:
+                              "pointer",
+                          }}
+                        >
+                          <DeleteIcon />
+                        </button>
+                      </div>
+                    </div>
+
+                    <div className="silvercare-elder-card-details">
+                      <div className="silvercare-elder-card-detail">
+                        <div className="silvercare-elder-card-detail-label">
+                          性別
+                        </div>
+
+                        <div className="silvercare-elder-card-detail-value">
+                          {elder.gender ||
+                            "未填寫"}
+                        </div>
+                      </div>
+
+                      <div className="silvercare-elder-card-detail">
+                        <div className="silvercare-elder-card-detail-label">
+                          年齡
+                        </div>
+
+                        <div className="silvercare-elder-card-detail-value">
+                          {calculateAge(
+                            elder.birthday
+                          )}{" "}
+                          歲
+                        </div>
+                      </div>
+
+                      <div className="silvercare-elder-card-detail">
+                        <div className="silvercare-elder-card-detail-label">
+                          長者類型
+                        </div>
+
+                        <div className="silvercare-elder-card-detail-value">
+                          {elder.elder_type ||
+                            "未填寫"}
+                        </div>
+                      </div>
+
+                      <div className="silvercare-elder-card-detail">
+                        <div className="silvercare-elder-card-detail-label">
+                          居住／服務狀態
+                        </div>
+
+                        <div className="silvercare-elder-card-detail-value">
+                          {elder.living_status ||
+                            "未填寫"}
+                        </div>
+                      </div>
+
+                      <div className="silvercare-elder-card-detail">
+                        <div className="silvercare-elder-card-detail-label">
+                          聯絡方式
+                        </div>
+
+                        <div className="silvercare-elder-card-detail-value">
+                          {elder.contact_method ||
+                            "未填寫"}
+                        </div>
+                      </div>
+
+                      <div className="silvercare-elder-card-detail">
+                        <div className="silvercare-elder-card-detail-label">
+                          緊急聯絡人
+                        </div>
+
+                        <div className="silvercare-elder-card-detail-value">
+                          {elder.emergency_contact_name ||
+                            "未填寫"}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                )
+              )}
+            </div>
+          </>
+        )}
+
+        <AddElderModal
+          open={open}
+          onClose={() => {
+            setOpen(false);
+            setEditingElder(
+              null
+            );
+            setIsEditing(false);
+          }}
+          onSave={handleAddElder}
+          onUpdate={
+            handleUpdateElder
+          }
+          isEditing={
+            isEditing
+          }
+          editingElder={
+            editingElder
+          }
+        />
+      </div>
+    </>
   );
 }

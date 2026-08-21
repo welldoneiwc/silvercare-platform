@@ -1972,8 +1972,18 @@ const [newCourseTitle, setNewCourseTitle] =
                                 "wrap",
                             }}
                           >
+                                                     <div
+                            style={{
+                              display: "flex",
+                              gap: 8,
+                              flexWrap: "wrap",
+                            }}
+                          >
+                            {/* 查看名單 */}
                             <button
                               type="button"
+                              title="查看名單"
+                              aria-label="查看名單"
                               onClick={() => {
                                 setSelectedChargeId(
                                   charge.id
@@ -1982,58 +1992,196 @@ const [newCourseTitle, setNewCourseTitle] =
                                   false
                                 );
                               }}
-                              style={
-                                isSelected
-                                  ? selectedButtonStyle
-                                  : smallButtonStyle
-                              }
+                              style={{
+                                width: 38,
+                                height: 38,
+                                display:
+                                  "inline-flex",
+                                alignItems:
+                                  "center",
+                                justifyContent:
+                                  "center",
+                                padding: 0,
+                                border:
+                                  "1px solid #D1D5DB",
+                                borderRadius:
+                                  "8px",
+                                background:
+                                  "#fff",
+                                color:
+                                  colors.primary,
+                                cursor:
+                                  "pointer",
+                              }}
                             >
-                              查看名單
+                              <svg
+                                width="18"
+                                height="18"
+                                viewBox="0 0 24 24"
+                                fill="none"
+                                stroke="currentColor"
+                                strokeWidth="2"
+                                strokeLinecap="round"
+                                strokeLinejoin="round"
+                                aria-hidden="true"
+                              >
+                                <path d="M2 12s3.5-6 10-6 10 6 10 6-3.5 6-10 6S2 12 2 12Z" />
+                                <circle
+                                  cx="12"
+                                  cy="12"
+                                  r="2.5"
+                                />
+                              </svg>
                             </button>
 
+                            {/* 產生名單 */}
                             <button
                               type="button"
+                              title="產生名單"
+                              aria-label="產生名單"
                               onClick={() =>
                                 handleGeneratePayerList(
                                   charge
                                 )
                               }
-                              style={
-                                smallButtonStyle
-                              }
+                              style={{
+                                width: 38,
+                                height: 38,
+                                display:
+                                  "inline-flex",
+                                alignItems:
+                                  "center",
+                                justifyContent:
+                                  "center",
+                                padding: 0,
+                                border:
+                                  "1px solid #D1D5DB",
+                                borderRadius:
+                                  "8px",
+                                background:
+                                  "#fff",
+                                color:
+                                  colors.primary,
+                                cursor:
+                                  "pointer",
+                              }}
                             >
-                              產生名單
+                              <svg
+                                width="18"
+                                height="18"
+                                viewBox="0 0 24 24"
+                                fill="none"
+                                stroke="currentColor"
+                                strokeWidth="2"
+                                strokeLinecap="round"
+                                strokeLinejoin="round"
+                                aria-hidden="true"
+                              >
+                                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8Z" />
+                                <path d="M14 2v6h6" />
+                                <path d="M8 13h8" />
+                                <path d="M8 17h6" />
+                              </svg>
                             </button>
 
+                            {/* 編輯 */}
                             <button
                               type="button"
+                              title="編輯"
+                              aria-label="編輯"
                               onClick={() =>
                                 handleEditCharge(
                                   charge
                                 )
                               }
-                              style={
-                                smallButtonStyle
-                              }
+                              style={{
+                                width: 38,
+                                height: 38,
+                                display:
+                                  "inline-flex",
+                                alignItems:
+                                  "center",
+                                justifyContent:
+                                  "center",
+                                padding: 0,
+                                border:
+                                  "1px solid #D1D5DB",
+                                borderRadius:
+                                  "8px",
+                                background:
+                                  "#fff",
+                                color:
+                                  "#374151",
+                                cursor:
+                                  "pointer",
+                              }}
                             >
-                              編輯
+                              <svg
+                                width="18"
+                                height="18"
+                                viewBox="0 0 24 24"
+                                fill="none"
+                                stroke="currentColor"
+                                strokeWidth="2"
+                                strokeLinecap="round"
+                                strokeLinejoin="round"
+                                aria-hidden="true"
+                              >
+                                <path d="M12 20h9" />
+                                <path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z" />
+                              </svg>
                             </button>
 
+                            {/* 刪除 */}
                             <button
                               type="button"
+                              title="刪除"
+                              aria-label="刪除"
                               onClick={() =>
                                 handleDeleteCharge(
                                   charge.id
                                 )
                               }
                               style={{
-                                ...smallButtonStyle,
+                                width: 38,
+                                height: 38,
+                                display:
+                                  "inline-flex",
+                                alignItems:
+                                  "center",
+                                justifyContent:
+                                  "center",
+                                padding: 0,
+                                border: "none",
+                                borderRadius:
+                                  "8px",
+                                background:
+                                  "#DC2626",
                                 color:
-                                  "#B91C1C",
+                                  "#fff",
+                                cursor:
+                                  "pointer",
                               }}
                             >
-                              刪除
+                              <svg
+                                width="18"
+                                height="18"
+                                viewBox="0 0 24 24"
+                                fill="none"
+                                stroke="currentColor"
+                                strokeWidth="2"
+                                strokeLinecap="round"
+                                strokeLinejoin="round"
+                                aria-hidden="true"
+                              >
+                                <path d="M3 6h18" />
+                                <path d="M8 6V4h8v2" />
+                                <path d="M19 6l-1 14H6L5 6" />
+                                <path d="M10 11v6" />
+                                <path d="M14 11v6" />
+                              </svg>
                             </button>
+                          </div>
                           </div>
                         </td>
                       </tr>

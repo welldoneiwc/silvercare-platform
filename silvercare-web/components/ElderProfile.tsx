@@ -33,6 +33,12 @@ type Elder = {
   gender: string;
   birthday: string;
   phone: string;
+  elder_type: string;
+  living_status: string;
+  contact_method: string;
+  emergency_contact_name: string;
+  emergency_contact_relation: string;
+  emergency_contact_phone: string;
 };
 
 type PersonalConsentRecord = {
@@ -341,8 +347,9 @@ useEffect(() => {
   }, [elder]);
 
   const bmi = useMemo(() => {
-    if (!latestRecord) {
+    if (!latestRecord) { 
       return "-";
+      
     }
 
     if (
@@ -371,6 +378,138 @@ useEffect(() => {
       (height * height)
     ).toFixed(1);
   }, [latestRecord]);
+
+    const healthSummary = useMemo(() => {
+    if (records.length === 0) {
+      return {
+        text: "目前尚無健康量測紀錄。",
+        level: "info" as const,
+      };
+    }
+
+    const sortedRecords = [...records].sort(
+      (a, b) =>
+        new Date(a.date).getTime() -
+        new Date(b.date).getTime()
+    );
+
+    const recentRecords =
+      sortedRecords.slice(-5);
+
+    const latest =
+      recentRecords[recentRecords.length - 1];
+
+    const averageSystolic =
+      recentRecords.reduce(
+        (sum, record) =>
+          sum + record.systolic,
+        0
+      ) / recentRecords.length;
+
+    const averageDiastolic =
+      recentRecords.reduce(
+        (sum, record) =>
+          sum + record.diastolic,
+        0
+      ) / recentRecords.length;
+
+    const latestBmi =
+      latest.height !== null &&
+      latest.weight !== null &&
+      latest.height > 0 &&
+      latest.weight > 0
+        ? (
+            latest.weight /
+            Math.pow(
+              latest.height / 100,
+              2
+            )
+          ).toFixed(1)
+        : null;
+
+    const concerns: string[] = [];
+
+    if (
+      latest.systolic >= 140 ||
+      latest.diastolic >= 90
+    ) {
+      concerns.push(
+        "最近一次血壓偏高，建議持續追蹤。"
+      );
+    }
+
+    if (
+      latest.systolic < 90 ||
+      latest.diastolic < 60
+    ) {
+      concerns.push(
+        "最近一次血壓偏低，建議持續觀察。"
+      );
+    }
+
+    if (
+      latestBmi !== null &&
+      Number(latestBmi) >= 27
+    ) {
+      concerns.push(
+        "目前 BMI 偏高，建議持續追蹤體重變化。"
+      );
+    }
+
+    if (
+      latestBmi !== null &&
+      Number(latestBmi) < 18.5
+    ) {
+      concerns.push(
+        "目前 BMI 偏低，建議持續追蹤體重變化。"
+      );
+    }
+
+    const latestDate = new Date(
+      latest.date
+    );
+
+    const dateText =
+      Number.isNaN(
+        latestDate.getTime()
+      )
+        ? latest.date
+        : latestDate.toLocaleDateString(
+            "zh-TW"
+          );
+
+    let text =
+      `近 ${recentRecords.length} 次健康紀錄中，` +
+      `最近一次量測日期為 ${dateText}。` +
+      `血壓 ${latest.systolic}/${latest.diastolic} mmHg，` +
+      `脈搏 ${latest.pulse} bpm。`;
+
+    if (latestBmi !== null) {
+      text += ` BMI ${latestBmi}。`;
+    }
+
+    if (recentRecords.length >= 2) {
+      text +=
+        `近 ${recentRecords.length} 次平均血壓約 ` +
+        `${Math.round(averageSystolic)}/` +
+        `${Math.round(averageDiastolic)} mmHg。`;
+    }
+
+    if (concerns.length > 0) {
+      text += ` ${concerns.join(" ")}`;
+    } else {
+      text +=
+        "目前未發現需要特別標示的數值，建議持續依據據點作業流程量測與追蹤。";
+    }
+
+    return {
+      text,
+      level:
+        concerns.length > 0
+          ? ("attention" as const)
+          : ("normal" as const),
+    };
+  }, [records]);
 
   const handleDelete = (
   id: number
@@ -1073,245 +1212,495 @@ useEffect(() => {
         }}
       >
         {/* ==================== */}
-        {/* Elder Header */}
-        {/* ==================== */}
+{/* Elder Header */}
+{/* ==================== */}
+
+<div
+  style={{
+    display: "flex",
+    justifyContent: "space-between",
+    alignItems: "flex-start",
+    gap: 24,
+    flexWrap: "wrap",
+  }}
+>
+  <div
+    style={{
+      flex: 1,
+      minWidth: 280,
+    }}
+  >
+    <h2
+      style={{
+        margin: 0,
+        color: colors.primary,
+        fontSize: 32,
+        fontWeight: 700,
+      }}
+    >
+      {elder.name}
+    </h2>
+
+    {/* ==================== */}
+    {/* 基本資料 */}
+    {/* ==================== */}
+
+    <div
+      style={{
+        marginTop: 14,
+        display: "grid",
+        gridTemplateColumns:
+          "repeat(auto-fit, minmax(180px, 1fr))",
+        gap: 10,
+      }}
+    >
+      <div
+        style={{
+          padding: "10px 14px",
+          background: "#F8FAFC",
+          borderRadius: radius.md,
+        }}
+      >
+        <div
+          style={{
+            color: colors.textLight,
+            fontSize: 12,
+          }}
+        >
+          性別
+        </div>
 
         <div
           style={{
-            display: "flex",
-            justifyContent:
-              "space-between",
-            alignItems:
-              "flex-start",
+            marginTop: 3,
+            color: "#374151",
+            fontWeight: 600,
           }}
         >
-          <div>
-            <h2
-              style={{
-                margin: 0,
-                color:
-                  colors.primary,
-                fontSize: 32,
-                fontWeight: 700,
-              }}
-            >
-              {elder.name}
-            </h2>
+          {elder.gender}
+        </div>
+      </div>
 
-            <div
-              style={{
-                marginTop: 8,
-                color:
-                  colors.textLight,
-                fontSize: 14,
-                lineHeight: 1.8,
-              }}
-            >
-              <div>
-                性別：
-                {elder.gender}
-              </div>
+      <div
+        style={{
+          padding: "10px 14px",
+          background: "#F8FAFC",
+          borderRadius: radius.md,
+        }}
+      >
+        <div
+          style={{
+            color: colors.textLight,
+            fontSize: 12,
+          }}
+        >
+          生日
+        </div>
 
-              <div>
-                生日：
-                {elder.birthday}
-              </div>
+        <div
+          style={{
+            marginTop: 3,
+            color: "#374151",
+            fontWeight: 600,
+          }}
+        >
+          {elder.birthday}
+        </div>
+      </div>
 
-              <div>
-                年齡：
-                {age} 歲
-              </div>
+      <div
+        style={{
+          padding: "10px 14px",
+          background: "#F8FAFC",
+          borderRadius: radius.md,
+        }}
+      >
+        <div
+          style={{
+            color: colors.textLight,
+            fontSize: 12,
+          }}
+        >
+          年齡
+        </div>
 
-              <div>
-                電話：
-                {elder.phone}
-              </div>
-            </div>
+        <div
+          style={{
+            marginTop: 3,
+            color: "#374151",
+            fontWeight: 600,
+          }}
+        >
+          {age} 歲
+        </div>
+      </div>
+
+      <div
+        style={{
+          padding: "10px 14px",
+          background: "#F8FAFC",
+          borderRadius: radius.md,
+        }}
+      >
+        <div
+          style={{
+            color: colors.textLight,
+            fontSize: 12,
+          }}
+        >
+          電話
+        </div>
+
+        <div
+          style={{
+            marginTop: 3,
+            color: "#374151",
+            fontWeight: 600,
+          }}
+        >
+          {elder.phone}
+        </div>
+      </div>
+    </div>
+
+    {/* ==================== */}
+    {/* 長者屬性 */}
+    {/* ==================== */}
+
+    <div
+      style={{
+        marginTop: 18,
+        padding: 16,
+        background: "#F8FAFC",
+        borderRadius: radius.md,
+        border: "1px solid #E5E7EB",
+      }}
+    >
+      <div
+        style={{
+          color: colors.primary,
+          fontSize: 15,
+          fontWeight: 700,
+          marginBottom: 12,
+        }}
+      >
+        長者屬性
+      </div>
+
+      <div
+        style={{
+          display: "grid",
+          gridTemplateColumns:
+            "repeat(auto-fit, minmax(180px, 1fr))",
+          gap: 12,
+        }}
+      >
+        <div>
+          <div
+            style={{
+              color: colors.textLight,
+              fontSize: 12,
+            }}
+          >
+            長者類型
           </div>
 
-          <button
-            type="button"
-            onClick={() => {
-              setEditingRecord(
-                null
-              );
-              setOpenModal(true);
-            }}
+          <div
             style={{
+              marginTop: 5,
+              display: "inline-flex",
+              padding: "5px 10px",
+              borderRadius: 999,
+              background: "#E8F1F3",
+              color: colors.primary,
+              fontSize: 13,
+              fontWeight: 700,
+            }}
+          >
+            {elder.elder_type}
+          </div>
+        </div>
+
+        <div>
+          <div
+            style={{
+              color: colors.textLight,
+              fontSize: 12,
+            }}
+          >
+            居住／服務狀態
+          </div>
+
+          <div
+            style={{
+              marginTop: 5,
+              display: "inline-flex",
+              padding: "5px 10px",
+              borderRadius: 999,
               background:
-                colors.primary,
-              color: "#fff",
-              border: "none",
-              borderRadius:
-                radius.md,
-              padding:
-                "10px 18px",
-              cursor:
-                "pointer",
+                elder.living_status === "獨居"
+                  ? "#FFF4E5"
+                  : elder.living_status === "電訪"
+                    ? "#F0ECF8"
+                    : "#F3F4F6",
+              color:
+                elder.living_status === "獨居"
+                  ? "#9A5B00"
+                  : elder.living_status === "電訪"
+                    ? "#654A8B"
+                    : "#4B5563",
+              fontSize: 13,
+              fontWeight: 700,
+            }}
+          >
+            {elder.living_status}
+          </div>
+        </div>
+
+        <div>
+          <div
+            style={{
+              color: colors.textLight,
+              fontSize: 12,
+            }}
+          >
+            聯絡方式
+          </div>
+
+          <div
+            style={{
+              marginTop: 5,
+              color: "#374151",
               fontWeight: 600,
             }}
           >
-            ＋ 新增健康紀錄
-          </button>
+            {elder.contact_method}
+          </div>
+        </div>
+      </div>
+    </div>
+
+    {/* ==================== */}
+    {/* 緊急聯絡人 */}
+    {/* ==================== */}
+
+    <div
+      style={{
+        marginTop: 14,
+        padding: 16,
+        background: "#FFFBEB",
+        borderRadius: radius.md,
+        border: "1px solid #FDE68A",
+      }}
+    >
+      <div
+        style={{
+          color: "#92400E",
+          fontSize: 15,
+          fontWeight: 700,
+          marginBottom: 12,
+        }}
+      >
+        緊急聯絡人
+      </div>
+
+      <div
+        style={{
+          display: "grid",
+          gridTemplateColumns:
+            "repeat(auto-fit, minmax(180px, 1fr))",
+          gap: 12,
+        }}
+      >
+        <div>
+          <div
+            style={{
+              color: "#92400E",
+              fontSize: 12,
+            }}
+          >
+            姓名
+          </div>
+
+          <div
+            style={{
+              marginTop: 4,
+              color: "#374151",
+              fontWeight: 600,
+            }}
+          >
+            {elder.emergency_contact_name ||
+              "未填寫"}
+          </div>
         </div>
 
-        {/* ==================== */}
-        {/* Health Summary */}
+        <div>
+          <div
+            style={{
+              color: "#92400E",
+              fontSize: 12,
+            }}
+          >
+            與長者關係
+          </div>
+
+          <div
+            style={{
+              marginTop: 4,
+              color: "#374151",
+              fontWeight: 600,
+            }}
+          >
+            {elder.emergency_contact_relation ||
+              "未填寫"}
+          </div>
+        </div>
+
+        <div>
+          <div
+            style={{
+              color: "#92400E",
+              fontSize: 12,
+            }}
+          >
+            電話
+          </div>
+
+          <div
+            style={{
+              marginTop: 4,
+              color: "#374151",
+              fontWeight: 600,
+            }}
+          >
+            {elder.emergency_contact_phone ||
+              "未填寫"}
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <button
+    type="button"
+    onClick={() => {
+      setEditingRecord(null);
+      setOpenModal(true);
+    }}
+    style={{
+      background: colors.primary,
+      color: "#fff",
+      border: "none",
+      borderRadius: radius.md,
+      padding: "10px 18px",
+      cursor: "pointer",
+      fontWeight: 600,
+      whiteSpace: "nowrap",
+    }}
+  >
+    ＋ 新增健康紀錄
+  </button>
+</div>
+
+           {/* ==================== */}
+        {/* AI Health Summary */}
         {/* ==================== */}
 
         <div
           style={{
-            display: "grid",
-            gridTemplateColumns:
-              "repeat(4, 1fr)",
-            gap: 16,
+            background: "#F8FAFC",
+            border: "1px solid #D9E5E8",
+            borderRadius: radius.md,
+            padding: "18px 20px",
           }}
         >
           <div
             style={{
-              background: "#F7FAFC",
-              borderRadius:
-                radius.md,
-              padding: 18,
+              display: "flex",
+              justifyContent: "space-between",
+              alignItems: "center",
+              gap: 16,
+              flexWrap: "wrap",
             }}
           >
             <div
               style={{
-                color:
-                  colors.textLight,
-                fontSize: 13,
+                display: "flex",
+                alignItems: "center",
+          
               }}
             >
-              身高
+             
+              <div>
+                <div
+                  style={{
+                    color: colors.primary,
+                    fontSize: 17,
+                    fontWeight: 700,
+                  }}
+                >
+                  智慧健康摘要
+                </div>
+
+                <div
+                  style={{
+                    marginTop: 2,
+                    color: colors.textLight,
+                    fontSize: 12,
+                  }}
+                >
+                  SilverCare 智慧追蹤
+                </div>
+              </div>
             </div>
 
             <div
               style={{
-                marginTop: 10,
-                fontSize: 28,
-                fontWeight: 700,
+                padding: "5px 11px",
+                borderRadius: 999,
+                background:
+                  healthSummary.level ===
+                  "attention"
+                    ? "#FFF1E6"
+                    : "#E8F4F1",
                 color:
-                  colors.primary,
+                  healthSummary.level ===
+                  "attention"
+                    ? "#B45309"
+                    : "#17635D",
+                fontSize: 12,
+                fontWeight: 700,
               }}
             >
-              {latestRecord &&
-              latestRecord.height !==
-                null
-                ? `${latestRecord.height} cm`
-                : "-"}
+              {healthSummary.level ===
+              "attention"
+                ? "需要留意"
+                : "目前穩定"}
             </div>
           </div>
 
           <div
             style={{
-              background: "#F7FAFC",
-              borderRadius:
-                radius.md,
-              padding: 18,
+              marginTop: 16,
+              paddingTop: 14,
+              borderTop:
+                "1px solid #E5E7EB",
+              color: "#374151",
+              fontSize: 14,
+              lineHeight: 1.8,
             }}
           >
-            <div
-              style={{
-                color:
-                  colors.textLight,
-                fontSize: 13,
-              }}
-            >
-              體重
-            </div>
-
-            <div
-              style={{
-                marginTop: 10,
-                fontSize: 28,
-                fontWeight: 700,
-                color:
-                  colors.primary,
-              }}
-            >
-              {latestRecord &&
-              latestRecord.weight !==
-                null
-                ? `${latestRecord.weight} kg`
-                : "-"}
-            </div>
+            {healthSummary.text}
           </div>
 
           <div
             style={{
-              background: "#F7FAFC",
-              borderRadius:
-                radius.md,
-              padding: 18,
+              marginTop: 10,
+              fontSize: 12,
+              color: "#94A3B8",
             }}
           >
-            <div
-              style={{
-                color:
-                  colors.textLight,
-                fontSize: 13,
-              }}
-            >
-              BMI
-            </div>
-
-            <div
-              style={{
-                marginTop: 10,
-                fontSize: 28,
-                fontWeight: 700,
-                color:
-                  colors.primary,
-              }}
-            >
-              {bmi}
-            </div>
-          </div>
-
-          <div
-            style={{
-              background: "#F7FAFC",
-              borderRadius:
-                radius.md,
-              padding: 18,
-            }}
-          >
-            <div
-              style={{
-                color:
-                  colors.textLight,
-                fontSize: 13,
-              }}
-            >
-              最新血壓
-            </div>
-
-            <div
-              style={{
-                marginTop: 10,
-                fontSize: 24,
-                fontWeight: 700,
-                color:
-                  colors.primary,
-              }}
-            >
-              {latestRecord
-                ? `${latestRecord.systolic}/${latestRecord.diastolic}`
-                : "-"}
-            </div>
-
-            <div
-              style={{
-                marginTop: 6,
-                color:
-                  colors.textLight,
-                fontSize: 13,
-              }}
-            >
-              {latestRecord
-                ? `脈搏 ${latestRecord.pulse} bpm`
-                : ""}
-            </div>
+            健康紀錄整理與追蹤提示，不取代醫療專業判斷。
           </div>
         </div>
 
