@@ -408,7 +408,6 @@ export default function AttendanceSection({
       todayRecords,
       measuredElderIds,
     ]);
-
   /**
    * 搜尋長者
    */
@@ -419,6 +418,40 @@ export default function AttendanceSection({
 
       if (!search) {
         return localElders;
+      }
+
+      return localElders.filter(
+        (elder) => {
+          const name =
+            elder.name ?? "";
+
+          const phone =
+            elder.phone ?? "";
+
+          return (
+            name.includes(
+              search
+            ) ||
+            phone.includes(
+              search
+            )
+          );
+        }
+      );
+    }, [
+      localElders,
+      keyword,
+    ]);
+   /**
+   * 搜尋下拉候選
+   */
+  const searchSuggestions =
+    useMemo(() => {
+      const search =
+        keyword.trim();
+
+      if (!search) {
+        return [];
       }
 
       return localElders.filter(
@@ -1629,7 +1662,11 @@ export default function AttendanceSection({
             搜尋長者
         ================================= */}
 
-        <div>
+              <div
+          style={{
+            position: "relative",
+          }}
+        >
           <div
             style={{
               marginBottom: 8,
@@ -1677,6 +1714,131 @@ export default function AttendanceSection({
                 "none",
             }}
           />
+
+          {keyword.trim() && (
+            <div
+              style={{
+                position: "absolute",
+                top: "100%",
+                left: 0,
+                right: 0,
+                zIndex: 20,
+                marginTop: 4,
+                background: "#fff",
+                border:
+                  "1px solid #D1D5DB",
+                borderRadius:
+                  radius.md,
+                boxShadow:
+                  "0 8px 20px rgba(0,0,0,0.10)",
+                overflow: "hidden",
+              }}
+            >
+              {searchSuggestions.length >
+              0 ? (
+                searchSuggestions.map(
+                  (elder) => (
+                    <button
+                      key={elder.id}
+                      type="button"
+                      onClick={() => {
+                        setKeyword(
+                          elder.name
+                        );
+                      }}
+                      style={{
+                        width: "100%",
+                        display:
+                          "flex",
+                        alignItems:
+                          "center",
+                        justifyContent:
+                          "space-between",
+                        gap: 12,
+                        padding:
+                          "12px 16px",
+                        border: "none",
+                        borderBottom:
+                          "1px solid #F1F5F9",
+                        background:
+                          "#fff",
+                        color:
+                          colors.primary,
+                        cursor:
+                          "pointer",
+                        textAlign:
+                          "left",
+                      }}
+                    >
+                      <span
+                        style={{
+                          fontSize: 15,
+                          fontWeight: 700,
+                        }}
+                      >
+                        {
+                          elder.name
+                        }
+                      </span>
+
+                      {elder.phone && (
+                        <span
+                          style={{
+                            fontSize: 13,
+                            color:
+                              colors.textLight,
+                            whiteSpace:
+                              "nowrap",
+                          }}
+                        >
+                          {
+                            elder.phone
+                          }
+                        </span>
+                      )}
+                    </button>
+                  )
+                )
+              ) : (
+                <div
+                  style={{
+                    padding:
+                      "14px 16px",
+                    color:
+                      colors.textLight,
+                    fontSize: 14,
+                  }}
+                >
+                  找不到符合的長者
+
+                  <button
+                    type="button"
+                    onClick={
+                      handleUnregisteredCheckIn
+                    }
+                    style={{
+                      display:
+                        "block",
+                      marginTop: 10,
+                      border: "none",
+                      borderRadius:
+                        radius.md,
+                      padding:
+                        "9px 14px",
+                      background:
+                        colors.primary,
+                      color: "#fff",
+                      cursor:
+                        "pointer",
+                      fontWeight: 700,
+                    }}
+                  >
+                    ＋ 現場新增報到
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
         </div>
 
         {/* ================================
