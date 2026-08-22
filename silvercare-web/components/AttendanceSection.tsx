@@ -84,7 +84,7 @@ export default function AttendanceSection({
   ] = useState<number[]>([]);
 
   /**
-   * 載入 Supabase 長者資料
+   * 從 Supabase 載入長者
    */
   const loadElders = async () => {
     try {
@@ -172,14 +172,15 @@ export default function AttendanceSection({
     loadElders();
   }, []);
 
+  /**
+   * 保留父層傳入資料作為備援。
+   */
   useEffect(() => {
     if (
       localElders.length === 0 &&
       elders.length > 0
     ) {
-      setLocalElders(
-        elders
-      );
+      setLocalElders(elders);
     }
   }, [
     elders,
@@ -187,7 +188,7 @@ export default function AttendanceSection({
   ]);
 
   /**
-   * 載入簽到資料
+   * 載入簽到紀錄
    */
   useEffect(() => {
     try {
@@ -223,7 +224,7 @@ export default function AttendanceSection({
   }, []);
 
   /**
-   * 簽到資料寫回 LocalStorage
+   * 同步簽到資料
    */
   useEffect(() => {
     if (!loaded) {
@@ -249,7 +250,7 @@ export default function AttendanceSection({
   }, []);
 
   /**
-   * 重新讀取今天健康量測狀態
+   * 載入今日健康量測狀態
    */
   const loadTodayHealthStatus = () => {
     try {
@@ -314,6 +315,9 @@ export default function AttendanceSection({
     today,
   ]);
 
+  /**
+   * 健康資料變更時同步
+   */
   useEffect(() => {
     const handleStorageChanged =
       () => {
@@ -344,7 +348,7 @@ export default function AttendanceSection({
   ]);
 
   /**
-   * 今日簽到資料
+   * 今天簽到
    */
   const todayRecords =
     useMemo(() => {
@@ -358,7 +362,7 @@ export default function AttendanceSection({
     ]);
 
   /**
-   * 是否已完成健康量測
+   * 判斷今天是否已測量
    */
   const hasMeasuredToday = (
     elderId: number
@@ -369,7 +373,7 @@ export default function AttendanceSection({
   };
 
   /**
-   * 是否已簽到
+   * 判斷今天是否已簽到
    */
   const hasCheckedInToday = (
     elderId: number
@@ -384,7 +388,7 @@ export default function AttendanceSection({
   };
 
   /**
-   * 今日已完成健康量測人數
+   * 今日已測量人數
    */
   const todayMeasuredCount =
     useMemo(() => {
@@ -772,63 +776,141 @@ export default function AttendanceSection({
   return (
     <>
       <style>{`
-        .silvercare-attendance-legend {
-          display: grid;
-          grid-template-columns: repeat(4, minmax(0, 1fr));
-          gap: 18px;
+        .silvercare-attendance-desktop {
+          display: block;
         }
 
-        .silvercare-attendance-desktop-header,
-        .silvercare-attendance-row {
-          display: grid;
-          grid-template-columns: 1.4fr 1fr 1fr 1.1fr;
-          gap: 16px;
-        }
-
-        .silvercare-attendance-mobile-status {
+        .silvercare-attendance-mobile {
           display: none;
         }
 
-        @media (max-width: 767px) {
-          .silvercare-attendance-legend {
-            grid-template-columns: repeat(2, minmax(0, 1fr));
-            gap: 12px;
-          }
+        .silvercare-attendance-legend {
+          display: grid;
+          grid-template-columns:
+            repeat(4, minmax(0, 1fr));
+          gap: 18px;
+        }
 
-          .silvercare-attendance-desktop-header {
+        .silvercare-attendance-table-header,
+        .silvercare-attendance-table-row {
+          display: grid;
+          grid-template-columns:
+            1.4fr 1fr 1fr 1.1fr;
+          gap: 16px;
+        }
+
+        .silvercare-attendance-table-header {
+          padding: 14px 18px;
+          background: #F8FAFC;
+          border-bottom:
+            1px solid #E5E7EB;
+          font-size: 14px;
+          font-weight: 700;
+          color: ${colors.primary};
+        }
+
+        .silvercare-attendance-table-row {
+          align-items: center;
+          padding: 16px 18px;
+          border-bottom:
+            1px solid #E5E7EB;
+        }
+
+        @media (max-width: 767px) {
+          .silvercare-attendance-desktop {
             display: none !important;
           }
 
-          .silvercare-attendance-row {
-            display: flex !important;
-            flex-direction: column !important;
-            gap: 14px !important;
-            align-items: stretch !important;
-            padding: 16px !important;
+          .silvercare-attendance-mobile {
+            display: block !important;
           }
 
-          .silvercare-attendance-mobile-status {
-            display: grid;
-            grid-template-columns: repeat(2, minmax(0, 1fr));
+          .silvercare-attendance-legend {
+            grid-template-columns:
+              repeat(2, minmax(0, 1fr));
             gap: 10px;
+          }
+
+          .silvercare-attendance-mobile-list {
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+          }
+
+          .silvercare-attendance-mobile-card {
             width: 100%;
+            box-sizing: border-box;
+            background: #fff;
+            border:
+              1px solid #E5E7EB;
+            border-radius: 14px;
+            padding: 16px;
+            box-shadow:
+              0 2px 8px rgba(0,0,0,0.04);
           }
 
-          .silvercare-attendance-status-box {
+          .silvercare-attendance-mobile-card-name {
+            color: ${colors.primary};
+            font-size: 19px;
+            line-height: 1.35;
+            font-weight: 700;
+          }
+
+          .silvercare-attendance-mobile-card-phone {
+            margin-top: 4px;
+            color: #6B7280;
+            font-size: 13px;
+          }
+
+          .silvercare-attendance-mobile-status-grid {
+            display: grid;
+            grid-template-columns:
+              repeat(2, minmax(0, 1fr));
+            gap: 10px;
+            margin-top: 14px;
+          }
+
+          .silvercare-attendance-mobile-status-box {
             min-width: 0;
+            padding: 11px 12px;
+            border-radius: 10px;
+            box-sizing: border-box;
           }
 
-          .silvercare-attendance-action {
-            width: 100% !important;
+          .silvercare-attendance-mobile-status-label {
+            font-size: 11px;
+            color: #64748B;
+            margin-bottom: 5px;
           }
 
-          .silvercare-attendance-action button {
-            width: 100% !important;
+          .silvercare-attendance-mobile-status-value {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            min-width: 0;
+            font-size: 14px;
+            font-weight: 700;
+          }
+
+          .silvercare-attendance-mobile-action {
+            margin-top: 14px;
+          }
+
+          .silvercare-attendance-mobile-action button {
+            width: 100%;
             min-height: 46px;
+            border: none;
+            border-radius: 10px;
+            padding: 10px 16px;
+            color: #fff;
+            cursor: pointer;
+            font-size: 15px;
+            font-weight: 700;
           }
 
-          .silvercare-attendance-table-wrap {
+          .silvercare-attendance-mobile-records {
             overflow-x: auto;
+            -webkit-overflow-scrolling: touch;
           }
         }
       `}</style>
@@ -1083,8 +1165,7 @@ export default function AttendanceSection({
 
             <div
               style={{
-                display:
-                  "grid",
+                display: "grid",
                 gridTemplateColumns:
                   "repeat(2, 1fr)",
                 gap: 16,
@@ -1336,73 +1417,413 @@ export default function AttendanceSection({
         </div>
 
         {/* ================================
-            今日長者總表
+            桌機版：四欄總表
         ================================= */}
 
         <div
-          style={{
-            border:
-              "1px solid #E5E7EB",
-            borderRadius:
-              radius.md,
-            overflow: "hidden",
-          }}
+          className="silvercare-attendance-desktop"
         >
           <div
-            className="silvercare-attendance-desktop-header"
             style={{
-              padding:
-                "14px 18px",
-              background:
-                "#F8FAFC",
-              borderBottom:
+              border:
                 "1px solid #E5E7EB",
-              fontSize: 14,
-              fontWeight: 700,
-              color:
-                colors.primary,
+              borderRadius:
+                radius.md,
+              overflow: "hidden",
             }}
           >
-            <div>
-              長者
+            <div className="silvercare-attendance-table-header">
+              <div>
+                長者
+              </div>
+
+              <div>
+                今日簽到
+              </div>
+
+              <div>
+                健康量測
+              </div>
+
+              <div>
+                操作
+              </div>
             </div>
 
-            <div>
-              今日簽到
-            </div>
+            <div
+              style={{
+                maxHeight:
+                  "60vh",
+                overflowY:
+                  "auto",
+              }}
+            >
+              {displayElders.length ===
+              0 ? (
+                <div
+                  style={{
+                    padding: 28,
+                    textAlign:
+                      "center",
+                    color:
+                      colors.textLight,
+                  }}
+                >
+                  找不到符合的長者
+                </div>
+              ) : (
+                displayElders.map(
+                  (elder) => {
+                    const checked =
+                      hasCheckedInToday(
+                        elder.id
+                      );
 
-            <div>
-              健康量測
-            </div>
+                    const measured =
+                      hasMeasuredToday(
+                        elder.id
+                      );
 
-            <div>
-              操作
+                    const record =
+                      todayRecords.find(
+                        (
+                          item
+                        ) =>
+                          Number(
+                            item.elderId
+                          ) ===
+                          Number(
+                            elder.id
+                          )
+                      );
+
+                    return (
+                      <div
+                        key={
+                          elder.id
+                        }
+                        className="silvercare-attendance-table-row"
+                        style={{
+                          background:
+                            measured &&
+                            checked
+                              ? "#F0FDF4"
+                              : checked
+                              ? "#FFF7ED"
+                              : "#fff",
+                        }}
+                      >
+                        <div>
+                          <div
+                            style={{
+                              fontSize:
+                                16,
+                              fontWeight:
+                                700,
+                              color:
+                                colors.primary,
+                            }}
+                          >
+                            {
+                              elder.name
+                            }
+                          </div>
+
+                          {elder.phone && (
+                            <div
+                              style={{
+                                marginTop:
+                                  4,
+                                fontSize:
+                                  13,
+                                color:
+                                  colors.textLight,
+                              }}
+                            >
+                              {
+                                elder.phone
+                              }
+                            </div>
+                          )}
+                        </div>
+
+                        <div>
+                          {checked ? (
+                            <div>
+                              <span
+                                style={{
+                                  display:
+                                    "inline-flex",
+                                  alignItems:
+                                    "center",
+                                  gap: 5,
+                                  padding:
+                                    "7px 11px",
+                                  borderRadius:
+                                    999,
+                                  background:
+                                    "#D1FAE5",
+                                  color:
+                                    "#065F46",
+                                  fontSize:
+                                    13,
+                                  fontWeight:
+                                    700,
+                                }}
+                              >
+                                <span
+                                  style={{
+                                    width:
+                                      8,
+                                    height:
+                                      8,
+                                    borderRadius:
+                                      "50%",
+                                    background:
+                                      "#10B981",
+                                  }}
+                                />
+
+                                已簽到
+                              </span>
+
+                              {record && (
+                                <div
+                                  style={{
+                                    marginTop:
+                                      5,
+                                    fontSize:
+                                      12,
+                                    color:
+                                      colors.textLight,
+                                  }}
+                                >
+                                  {
+                                    record.checkInTime
+                                  }
+                                </div>
+                              )}
+                            </div>
+                          ) : (
+                            <span
+                              style={{
+                                display:
+                                  "inline-flex",
+                                alignItems:
+                                  "center",
+                                gap: 6,
+                                padding:
+                                  "7px 11px",
+                                borderRadius:
+                                  999,
+                                background:
+                                  "#F3F4F6",
+                                color:
+                                  "#6B7280",
+                                fontSize:
+                                  13,
+                                fontWeight:
+                                  700,
+                              }}
+                            >
+                              <span
+                                style={{
+                                  width:
+                                    8,
+                                  height:
+                                    8,
+                                  borderRadius:
+                                    "50%",
+                                  background:
+                                    "#D1D5DB",
+                                }}
+                              />
+
+                              尚未簽到
+                            </span>
+                          )}
+                        </div>
+
+                        <div>
+                          {!checked ? (
+                            <span
+                              style={{
+                                color:
+                                  "#9CA3AF",
+                                fontSize:
+                                  14,
+                              }}
+                            >
+                              —
+                            </span>
+                          ) : (
+                            <button
+                              type="button"
+                              onClick={() =>
+                                onCheckInSuccess?.(
+                                  elder
+                                )
+                              }
+                              style={{
+                                border:
+                                  "none",
+                                borderRadius:
+                                  999,
+                                padding:
+                                  "7px 12px",
+                                background:
+                                  measured
+                                    ? "#DCFCE7"
+                                    : "#FFEDD5",
+                                color:
+                                  measured
+                                    ? "#166534"
+                                    : "#C2410C",
+                                cursor:
+                                  "pointer",
+                                fontSize:
+                                  13,
+                                fontWeight:
+                                  700,
+                              }}
+                            >
+                              <span
+                                style={{
+                                  display:
+                                    "inline-block",
+                                  width:
+                                    8,
+                                  height:
+                                    8,
+                                  borderRadius:
+                                    "50%",
+                                  background:
+                                    measured
+                                      ? "#22C55E"
+                                      : "#F97316",
+                                  marginRight:
+                                    7,
+                                }}
+                              />
+
+                              {measured
+                                ? "已測量"
+                                : "尚未測量"}
+                            </button>
+                          )}
+                        </div>
+
+                        <div
+                          style={{
+                            display:
+                              "flex",
+                            gap: 8,
+                            alignItems:
+                              "center",
+                            flexWrap:
+                              "wrap",
+                          }}
+                        >
+                          {!checked ? (
+                            <button
+                              type="button"
+                              onClick={() =>
+                                handleCheckIn(
+                                  elder
+                                )
+                              }
+                              style={{
+                                border:
+                                  "none",
+                                borderRadius:
+                                  radius.md,
+                                padding:
+                                  "9px 18px",
+                                background:
+                                  colors.primary,
+                                color:
+                                  "#fff",
+                                cursor:
+                                  "pointer",
+                                fontWeight:
+                                  700,
+                                whiteSpace:
+                                  "nowrap",
+                              }}
+                            >
+                              簽到
+                            </button>
+                          ) : (
+                            <button
+                              type="button"
+                              onClick={() =>
+                                onCheckInSuccess?.(
+                                  elder
+                                )
+                              }
+                              style={{
+                                border:
+                                  "none",
+                                borderRadius:
+                                  radius.md,
+                                padding:
+                                  "9px 16px",
+                                background:
+                                  measured
+                                    ? "#166534"
+                                    : "#F97316",
+                                color:
+                                  "#fff",
+                                cursor:
+                                  "pointer",
+                                fontWeight:
+                                  700,
+                                whiteSpace:
+                                  "nowrap",
+                              }}
+                            >
+                              {measured
+                                ? "查看健康量測"
+                                : "進入健康量測"}
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  }
+                )
+              )}
             </div>
           </div>
+        </div>
 
-          <div
-            style={{
-              maxHeight:
-                "60vh",
-              overflowY:
-                "auto",
-            }}
-          >
-            {displayElders.length ===
-            0 ? (
-              <div
-                style={{
-                  padding: 28,
-                  textAlign:
-                    "center",
-                  color:
-                    colors.textLight,
-                }}
-              >
-                找不到符合的長者
-              </div>
-            ) : (
-              displayElders.map(
+        {/* ================================
+            手機版：卡片
+        ================================= */}
+
+        <div
+          className="silvercare-attendance-mobile"
+        >
+          {displayElders.length ===
+          0 ? (
+            <div
+              style={{
+                padding: 28,
+                textAlign:
+                  "center",
+                color:
+                  colors.textLight,
+                background:
+                  "#F8FAFC",
+                borderRadius:
+                  radius.md,
+              }}
+            >
+              找不到符合的長者
+            </div>
+          ) : (
+            <div className="silvercare-attendance-mobile-list">
+              {displayElders.map(
                 (elder) => {
                   const checked =
                     hasCheckedInToday(
@@ -1427,57 +1848,36 @@ export default function AttendanceSection({
                         )
                     );
 
+                  const cardBackground =
+                    measured &&
+                    checked
+                      ? "#F0FDF4"
+                      : checked
+                      ? "#FFF7ED"
+                      : "#FFFFFF";
+
                   return (
                     <div
                       key={
                         elder.id
                       }
-                      className="silvercare-attendance-row"
+                      className="silvercare-attendance-mobile-card"
                       style={{
-                        alignItems:
-                          "center",
-                        padding:
-                          "16px 18px",
-                        borderBottom:
-                          "1px solid #E5E7EB",
                         background:
-                          measured &&
-                          checked
-                            ? "#F0FDF4"
-                            : checked
-                            ? "#FFF7ED"
-                            : "#fff",
+                          cardBackground,
                       }}
                     >
-                      {/* Desktop：長者 */}
+                      {/* 姓名 */}
 
                       <div>
-                        <div
-                          style={{
-                            fontSize:
-                              16,
-                            fontWeight:
-                              700,
-                            color:
-                              colors.primary,
-                          }}
-                        >
+                        <div className="silvercare-attendance-mobile-card-name">
                           {
                             elder.name
                           }
                         </div>
 
                         {elder.phone && (
-                          <div
-                            style={{
-                              marginTop:
-                                4,
-                              fontSize:
-                                13,
-                              color:
-                                colors.textLight,
-                            }}
-                          >
+                          <div className="silvercare-attendance-mobile-card-phone">
                             {
                               elder.phone
                             }
@@ -1485,267 +1885,12 @@ export default function AttendanceSection({
                         )}
                       </div>
 
-                      {/* Desktop：今日簽到 */}
+                      {/* 狀態 */}
 
-                      <div>
-                        {checked ? (
-                          <div>
-                            <span
-                              style={{
-                                display:
-                                  "inline-flex",
-                                alignItems:
-                                  "center",
-                                gap: 5,
-                                padding:
-                                  "7px 11px",
-                                borderRadius:
-                                  999,
-                                background:
-                                  "#D1FAE5",
-                                color:
-                                  "#065F46",
-                                fontSize:
-                                  13,
-                                fontWeight:
-                                  700,
-                              }}
-                            >
-                              <span
-                                style={{
-                                  width:
-                                    8,
-                                  height:
-                                    8,
-                                  borderRadius:
-                                    "50%",
-                                  background:
-                                    "#10B981",
-                                }}
-                              />
-
-                              已簽到
-                            </span>
-
-                            {record && (
-                              <div
-                                style={{
-                                  marginTop:
-                                    5,
-                                  fontSize:
-                                    12,
-                                  color:
-                                    colors.textLight,
-                                }}
-                              >
-                                {
-                                  record.checkInTime
-                                }
-                              </div>
-                            )}
-                          </div>
-                        ) : (
-                          <span
-                            style={{
-                              display:
-                                "inline-flex",
-                              alignItems:
-                                "center",
-                              gap: 6,
-                              padding:
-                                "7px 11px",
-                              borderRadius:
-                                999,
-                              background:
-                                "#F3F4F6",
-                              color:
-                                "#6B7280",
-                              fontSize:
-                                13,
-                              fontWeight:
-                                700,
-                            }}
-                          >
-                            <span
-                              style={{
-                                width:
-                                  8,
-                                height:
-                                  8,
-                                borderRadius:
-                                  "50%",
-                                background:
-                                  "#D1D5DB",
-                              }}
-                            />
-
-                            尚未簽到
-                          </span>
-                        )}
-                      </div>
-
-                      {/* Desktop：健康量測 */}
-
-                      <div>
-                        {!checked ? (
-                          <span
-                            style={{
-                              color:
-                                "#9CA3AF",
-                              fontSize:
-                                14,
-                            }}
-                          >
-                            —
-                          </span>
-                        ) : (
-                          <button
-                            type="button"
-                            onClick={() =>
-                              onCheckInSuccess?.(
-                                elder
-                              )
-                            }
-                            style={{
-                              border:
-                                "none",
-                              borderRadius:
-                                999,
-                              padding:
-                                "7px 12px",
-                              background:
-                                measured
-                                  ? "#DCFCE7"
-                                  : "#FFEDD5",
-                              color:
-                                measured
-                                  ? "#166534"
-                                  : "#C2410C",
-                              cursor:
-                                "pointer",
-                              fontSize:
-                                13,
-                              fontWeight:
-                                700,
-                            }}
-                          >
-                            <span
-                              style={{
-                                display:
-                                  "inline-block",
-                                width:
-                                  8,
-                                height:
-                                  8,
-                                borderRadius:
-                                  "50%",
-                                background:
-                                  measured
-                                    ? "#22C55E"
-                                    : "#F97316",
-                                marginRight:
-                                  7,
-                              }}
-                            />
-
-                            {measured
-                              ? "已測量"
-                              : "尚未測量"}
-                          </button>
-                        )}
-                      </div>
-
-                      {/* Desktop：操作 */}
-
-                      <div
-                        style={{
-                          display:
-                            "flex",
-                          gap: 8,
-                          alignItems:
-                            "center",
-                          flexWrap:
-                            "wrap",
-                        }}
-                        className="silvercare-attendance-action"
-                      >
-                        {!checked ? (
-                          <button
-                            type="button"
-                            onClick={() =>
-                              handleCheckIn(
-                                elder
-                              )
-                            }
-                            style={{
-                              border:
-                                "none",
-                              borderRadius:
-                                radius.md,
-                              padding:
-                                "9px 18px",
-                              background:
-                                colors.primary,
-                              color:
-                                "#fff",
-                              cursor:
-                                "pointer",
-                              fontWeight:
-                                700,
-                              whiteSpace:
-                                "nowrap",
-                            }}
-                          >
-                            簽到
-                          </button>
-                        ) : (
-                          <button
-                            type="button"
-                            onClick={() =>
-                              onCheckInSuccess?.(
-                                elder
-                              )
-                            }
-                            style={{
-                              border:
-                                "none",
-                              borderRadius:
-                                radius.md,
-                              padding:
-                                "9px 16px",
-                              background:
-                                measured
-                                  ? "#166534"
-                                  : "#F97316",
-                              color:
-                                "#fff",
-                              cursor:
-                                "pointer",
-                              fontWeight:
-                                700,
-                              whiteSpace:
-                                "nowrap",
-                            }}
-                          >
-                            {measured
-                              ? "查看健康量測"
-                              : "進入健康量測"}
-                          </button>
-                        )}
-                      </div>
-
-                      {/* ========================= */}
-                      {/* Mobile 專用內容 */}
-                      {/* ========================= */}
-
-                      <div className="silvercare-attendance-mobile-status">
+                      <div className="silvercare-attendance-mobile-status-grid">
                         <div
-                          className="silvercare-attendance-status-box"
+                          className="silvercare-attendance-mobile-status-box"
                           style={{
-                            padding:
-                              "10px 12px",
-                            borderRadius:
-                              10,
                             background:
                               checked
                                 ? "#ECFDF5"
@@ -1756,30 +1901,13 @@ export default function AttendanceSection({
                                 : "1px solid #E5E7EB",
                           }}
                         >
-                          <div
-                            style={{
-                              fontSize:
-                                11,
-                              color:
-                                "#64748B",
-                              marginBottom:
-                                4,
-                            }}
-                          >
+                          <div className="silvercare-attendance-mobile-status-label">
                             今日簽到
                           </div>
 
                           <div
+                            className="silvercare-attendance-mobile-status-value"
                             style={{
-                              display:
-                                "flex",
-                              alignItems:
-                                "center",
-                              gap: 6,
-                              fontSize:
-                                14,
-                              fontWeight:
-                                700,
                               color:
                                 checked
                                   ? "#065F46"
@@ -1798,6 +1926,8 @@ export default function AttendanceSection({
                                   checked
                                     ? "#10B981"
                                     : "#D1D5DB",
+                                flex:
+                                  "0 0 auto",
                               }}
                             />
 
@@ -1810,7 +1940,7 @@ export default function AttendanceSection({
                             <div
                               style={{
                                 marginTop:
-                                  3,
+                                  4,
                                 fontSize:
                                   11,
                                 color:
@@ -1825,50 +1955,29 @@ export default function AttendanceSection({
                         </div>
 
                         <div
-                          className="silvercare-attendance-status-box"
+                          className="silvercare-attendance-mobile-status-box"
                           style={{
-                            padding:
-                              "10px 12px",
-                            borderRadius:
-                              10,
                             background:
-                              checked
-                                ? measured
-                                  ? "#F0FDF4"
-                                  : "#FFF7ED"
-                                : "#F8FAFC",
+                              !checked
+                                ? "#F8FAFC"
+                                : measured
+                                ? "#F0FDF4"
+                                : "#FFF7ED",
                             border:
-                              checked
-                                ? measured
-                                  ? "1px solid #BBF7D0"
-                                  : "1px solid #FED7AA"
-                                : "1px solid #E5E7EB",
+                              !checked
+                                ? "1px solid #E5E7EB"
+                                : measured
+                                ? "1px solid #BBF7D0"
+                                : "1px solid #FED7AA",
                           }}
                         >
-                          <div
-                            style={{
-                              fontSize:
-                                11,
-                              color:
-                                "#64748B",
-                              marginBottom:
-                                4,
-                            }}
-                          >
+                          <div className="silvercare-attendance-mobile-status-label">
                             健康量測
                           </div>
 
                           <div
+                            className="silvercare-attendance-mobile-status-value"
                             style={{
-                              display:
-                                "flex",
-                              alignItems:
-                                "center",
-                              gap: 6,
-                              fontSize:
-                                14,
-                              fontWeight:
-                                700,
                               color:
                                 !checked
                                   ? "#9CA3AF"
@@ -1891,6 +2000,8 @@ export default function AttendanceSection({
                                     : measured
                                     ? "#22C55E"
                                     : "#F97316",
+                                flex:
+                                  "0 0 auto",
                               }}
                             />
 
@@ -1903,36 +2014,58 @@ export default function AttendanceSection({
                         </div>
                       </div>
 
-                      {/* Mobile 名稱資訊補強 */}
+                      {/* 操作 */}
 
-                      <div
-                        className="silvercare-attendance-mobile-status"
-                        style={{
-                          display:
-                            "none",
-                        }}
-                      />
-
-                      <div
-                        className="silvercare-attendance-mobile-summary"
-                        style={{
-                          display:
-                            "none",
-                        }}
-                      />
+                      <div className="silvercare-attendance-mobile-action">
+                        {!checked ? (
+                          <button
+                            type="button"
+                            onClick={() =>
+                              handleCheckIn(
+                                elder
+                              )
+                            }
+                            style={{
+                              background:
+                                colors.primary,
+                            }}
+                          >
+                            簽到
+                          </button>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={() =>
+                              onCheckInSuccess?.(
+                                elder
+                              )
+                            }
+                            style={{
+                              background:
+                                measured
+                                  ? "#166534"
+                                  : "#F97316",
+                            }}
+                          >
+                            {measured
+                              ? "查看健康量測"
+                              : "進入健康量測"}
+                          </button>
+                        )}
+                      </div>
                     </div>
                   );
                 }
-              )
-            )}
-          </div>
+              )}
+            </div>
+          )}
         </div>
 
         {/* ================================
             今日簽到紀錄
         ================================= */}
 
-        <div className="silvercare-attendance-table-wrap">
+        <div className="silvercare-attendance-mobile-records">
           <AttendanceTable
             records={
               todayRecords
