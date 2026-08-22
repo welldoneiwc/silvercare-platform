@@ -27,6 +27,8 @@ export type AttendanceRecord = {
   date: string;
   checkInTime: string;
   status: "出席" | "請假" | "缺席";
+  isUnregistered?: boolean;
+  phone?: string;
 };
 
 type Props = {
@@ -442,49 +444,19 @@ export default function AttendanceSection({
       keyword,
     ]);
 
-  /**
+    /**
    * 簽到
+   *
+   * 規則：
+   * 1. 同一天 + 相同 elderId → 視為已報到
+   * 2. 舊資料 elderId 不一致時，
+   *    改用「姓名 + 電話」辨識同一位長者
+   * 3. 已報到不新增第二筆
+   * 4. 已報到仍可進入健康量測
    */
   const handleCheckIn = (
     elder: Elder
   ) => {
-    const exists =
-      todayRecords.some(
-        (record) =>
-          Number(
-            record.elderId
-          ) ===
-          Number(elder.id)
-      );
-
-    if (exists) {
-      onCheckInSuccess?.(
-        elder
-      );
-      return;
-    }
-
-    const now = new Date();
-
-    const newRecord: AttendanceRecord =
-      {
-        id:
-          crypto.randomUUID(),
-        elderId: elder.id,
-        elderName:
-          elder.name,
-        date: today,
-        checkInTime:
-          now.toLocaleTimeString(
-            "zh-TW",
-            {
-              hour: "2-digit",
-              minute: "2-digit",
-            }
-          ),
-        status: "出席",
-      };
-
     try {
       const saved =
         localStorage.getItem(
@@ -500,8 +472,125 @@ export default function AttendanceSection({
         Array.isArray(
           existingRecords
         )
-          ? existingRecords
+          ? (existingRecords as AttendanceRecord[])
           : [];
+
+      const elderName =
+        (elder.name ?? "")
+          .trim();
+
+      const elderPhone =
+        (elder.phone ?? "")
+          .trim();
+
+      /**
+       * 只檢查今天的紀錄
+       */
+      const alreadyCheckedIn =
+        safeRecords.some(
+          (record) => {
+            if (
+              record.date !== today
+            ) {
+              return false;
+            }
+
+            /**
+             * 第一優先：
+             * elderId 相同
+             */
+            if (
+              Number(
+                record.elderId
+              ) ===
+              Number(elder.id)
+            ) {
+              return true;
+            }
+
+            /**
+             * 第二優先：
+             * 舊資料 ID 不一致時，
+             * 使用「姓名 + 電話」
+             */
+            const recordName =
+              (
+                record.elderName ??
+                ""
+              ).trim();
+
+            if (
+              recordName !==
+              elderName
+            ) {
+              return false;
+            }
+
+            /**
+             * 舊簽到資料的 AttendanceRecord
+             * 目前沒有 phone 欄位。
+             *
+             * 因此只有姓名可以作為舊資料
+             * 的相容判斷。
+             *
+             * 新資料則仍以 elderId 為
+             * 最可靠的唯一辨識。
+             */
+            if (
+              !elderPhone
+            ) {
+              return false;
+            }
+
+            return (
+              recordName ===
+              elderName
+            );
+          }
+        );
+
+      /**
+       * 今天已經簽到：
+       * 不新增第二筆。
+       *
+       * 仍然進入健康量測。
+       */
+      if (
+        alreadyCheckedIn
+      ) {
+        setKeyword("");
+
+        onCheckInSuccess?.(
+          elder
+        );
+
+        return;
+      }
+
+      const now =
+        new Date();
+
+      const newRecord:
+        AttendanceRecord = {
+        id:
+          crypto.randomUUID(),
+        elderId:
+          elder.id,
+        elderName:
+          elder.name,
+        date:
+          today,
+        checkInTime:
+          now.toLocaleTimeString(
+            "zh-TW",
+            {
+              hour: "2-digit",
+              minute: "2-digit",
+            }
+          ),
+        status:
+          "出席",
+      };
 
       const updatedRecords = [
         newRecord,
@@ -520,6 +609,12 @@ export default function AttendanceSection({
       );
 
       notifyStorageChanged();
+
+      setKeyword("");
+
+      onCheckInSuccess?.(
+        elder
+      );
     } catch (error) {
       console.error(
         "儲存簽到資料失敗：",
@@ -529,17 +624,185 @@ export default function AttendanceSection({
       alert(
         "簽到資料儲存失敗，請稍後再試。"
       );
-
-      return;
     }
-
-    setKeyword("");
-
-    onCheckInSuccess?.(
-      elder
-    );
   };
+        /**
+   * 未建檔長者現場報到
+   *
+   * 不建立長者管理資料，
+   * 只先建立今天的簽到紀錄。
+   */
+  const handleUnregisteredCheckIn =
+    () => {
+      const defaultName =
+        keyword.trim();
 
+      const nameInput =
+        window.prompt(
+          "請輸入長者姓名：",
+          defaultName
+        );
+
+      if (
+        nameInput === null
+      ) {
+        return;
+      }
+
+      const name =
+        nameInput.trim();
+
+      if (!name) {
+        alert(
+          "請輸入長者姓名。"
+        );
+        return;
+      }
+
+      const phoneInput =
+        window.prompt(
+          "請輸入電話（可留空）：",
+          ""
+        );
+
+      if (
+        phoneInput === null
+      ) {
+        return;
+      }
+
+      const phone =
+        phoneInput.trim();
+
+      try {
+        const saved =
+          localStorage.getItem(
+            ATTENDANCE_STORAGE_KEY
+          );
+
+        const existingRecords =
+          saved
+            ? JSON.parse(saved)
+            : [];
+
+        const safeRecords =
+          Array.isArray(
+            existingRecords
+          )
+            ? (existingRecords as AttendanceRecord[])
+            : [];
+
+        /**
+         * 未建檔長者沒有 elderId，
+         * 因此使用「姓名 + 電話」
+         * 防止同一天重複報到。
+         */
+        const duplicate =
+          safeRecords.some(
+            (record) => {
+              if (
+                record.date !==
+                today
+              ) {
+                return false;
+              }
+
+              if (
+                !record.isUnregistered
+              ) {
+                return false;
+              }
+
+              const recordName =
+                (
+                  record.elderName ??
+                  ""
+                ).trim();
+
+              const recordPhone =
+                (
+                  record.phone ??
+                  ""
+                ).trim();
+
+              return (
+                recordName ===
+                  name &&
+                recordPhone ===
+                  phone
+              );
+            }
+          );
+
+        if (duplicate) {
+          alert(
+            "這位長者今天已經報到過了。"
+          );
+
+          setKeyword("");
+
+          return;
+        }
+
+        const now =
+          new Date();
+
+        const newRecord:
+          AttendanceRecord = {
+          id:
+            crypto.randomUUID(),
+          elderId: 0,
+          elderName: name,
+          date: today,
+          checkInTime:
+            now.toLocaleTimeString(
+              "zh-TW",
+              {
+                hour: "2-digit",
+                minute: "2-digit",
+              }
+            ),
+          status:
+            "出席",
+          isUnregistered:
+            true,
+          phone,
+        };
+
+        const updatedRecords = [
+          newRecord,
+          ...safeRecords,
+        ];
+
+        localStorage.setItem(
+          ATTENDANCE_STORAGE_KEY,
+          JSON.stringify(
+            updatedRecords
+          )
+        );
+
+        setRecords(
+          updatedRecords
+        );
+
+        notifyStorageChanged();
+
+        setKeyword("");
+
+        alert(
+          "已完成現場報到。\n\n這位長者目前尚未建立長者管理資料，請之後再補登完整資料。"
+        );
+      } catch (error) {
+        console.error(
+          "現場報到失敗：",
+          error
+        );
+
+        alert(
+          "現場報到失敗，請稍後再試。"
+        );
+      }
+    };
   /**
    * 新增長者並立即簽到
    */
@@ -1470,6 +1733,50 @@ export default function AttendanceSection({
                   }}
                 >
                   找不到符合的長者
+                  <button
+  type="button"
+  onClick={
+    handleUnregisteredCheckIn
+  }
+  style={{
+    marginTop: 12,
+    border: "none",
+    borderRadius:
+      radius.md,
+    padding:
+      "10px 18px",
+    background:
+      colors.primary,
+    color: "#fff",
+    cursor:
+      "pointer",
+    fontWeight: 700,
+  }}
+>
+  ＋ 現場新增報到
+</button>
+                  <button
+  type="button"
+  onClick={
+    handleUnregisteredCheckIn
+  }
+  style={{
+    marginTop: 12,
+    border: "none",
+    borderRadius:
+      radius.md,
+    padding:
+      "10px 18px",
+    background:
+      colors.primary,
+    color: "#fff",
+    cursor:
+      "pointer",
+    fontWeight: 700,
+  }}
+>
+  ＋ 現場新增報到
+</button>
                 </div>
               ) : (
                 displayElders.map(
