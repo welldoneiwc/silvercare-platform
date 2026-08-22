@@ -72,6 +72,7 @@ function EyeIcon() {
       aria-hidden="true"
     >
       <path d="M2 12s3.5-6 10-6 10 6 10 6-3.5 6-10 6S2 12 2 12Z" />
+
       <circle
         cx="12"
         cy="12"
@@ -161,6 +162,34 @@ export default function ElderList({
 
   const [editingElder, setEditingElder] =
     useState<Elder | null>(null);
+
+  /**
+   * 預覽長者
+   *
+   * 點擊 👁️ 後：
+   * 1. 傳回目前長者
+   * 2. 手機版自動往下滑到詳細資料區域
+   */
+  const handlePreviewElder = (
+    elder: Elder
+  ) => {
+    onSelectElder(elder);
+
+    if (
+      typeof window !==
+      "undefined"
+    ) {
+      window.setTimeout(() => {
+        window.scrollTo({
+          top:
+            document.documentElement
+              .scrollHeight,
+          behavior:
+            "smooth",
+        });
+      }, 120);
+    }
+  };
 
   /**
    * 第一次載入 Supabase 長者資料
@@ -877,7 +906,8 @@ export default function ElderList({
           >
             正在載入長者資料...
           </div>
-        ) : filteredElders.length === 0 ? (
+        ) : filteredElders.length ===
+          0 ? (
           <div
             className="silvercare-elder-mobile-empty"
             style={{
@@ -902,7 +932,8 @@ export default function ElderList({
                   <tr>
                     <th
                       style={{
-                        textAlign: "left",
+                        textAlign:
+                          "left",
                         padding: 12,
                       }}
                     >
@@ -911,7 +942,8 @@ export default function ElderList({
 
                     <th
                       style={{
-                        textAlign: "center",
+                        textAlign:
+                          "center",
                         padding: 12,
                       }}
                     >
@@ -920,7 +952,8 @@ export default function ElderList({
 
                     <th
                       style={{
-                        textAlign: "center",
+                        textAlign:
+                          "center",
                         padding: 12,
                       }}
                     >
@@ -929,7 +962,8 @@ export default function ElderList({
 
                     <th
                       style={{
-                        textAlign: "left",
+                        textAlign:
+                          "left",
                         padding: 12,
                       }}
                     >
@@ -938,7 +972,8 @@ export default function ElderList({
 
                     <th
                       style={{
-                        textAlign: "center",
+                        textAlign:
+                          "center",
                         padding: 12,
                       }}
                     >
@@ -1006,12 +1041,13 @@ export default function ElderList({
                               aria-label="查看"
                               className="silvercare-elder-action-button"
                               onClick={() =>
-                                onSelectElder(
+                                handlePreviewElder(
                                   elder
                                 )
                               }
                               style={{
-                                border: "none",
+                                border:
+                                  "none",
                                 background:
                                   "#198754",
                                 color:
@@ -1060,7 +1096,8 @@ export default function ElderList({
                                 )
                               }
                               style={{
-                                border: "none",
+                                border:
+                                  "none",
                                 background:
                                   "#DC2626",
                                 color:
@@ -1101,7 +1138,9 @@ export default function ElderList({
 
                         {elder.phone && (
                           <div className="silvercare-elder-card-phone">
-                            {elder.phone}
+                            {
+                              elder.phone
+                            }
                           </div>
                         )}
                       </div>
@@ -1112,7 +1151,7 @@ export default function ElderList({
                           title="查看"
                           aria-label="查看"
                           onClick={() =>
-                            onSelectElder(
+                            handlePreviewElder(
                               elder
                             )
                           }
@@ -1126,7 +1165,8 @@ export default function ElderList({
                             justifyContent:
                               "center",
                             padding: 0,
-                            border: "none",
+                            border:
+                              "none",
                             borderRadius: 8,
                             background:
                               "#198754",
@@ -1196,11 +1236,13 @@ export default function ElderList({
                             justifyContent:
                               "center",
                             padding: 0,
-                            border: "none",
+                            border:
+                              "none",
                             borderRadius: 8,
                             background:
                               "#DC2626",
-                            color: "#fff",
+                            color:
+                              "#fff",
                             cursor:
                               "pointer",
                           }}

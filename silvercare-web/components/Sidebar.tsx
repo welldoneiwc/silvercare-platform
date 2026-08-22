@@ -1,10 +1,6 @@
 "use client";
 
-import { useState } from "react";
-import { useRouter } from "next/navigation";
-
 import { colors } from "../styles/theme";
-import { supabase } from "../utils/supabase";
 
 export type MenuType =
   | "dashboard"
@@ -19,6 +15,8 @@ export type MenuType =
 type Props = {
   selectedMenu: MenuType;
   onMenuChange: (menu: MenuType) => void;
+  onLogout: () => void;
+  loggingOut: boolean;
 };
 
 const menus: {
@@ -232,61 +230,9 @@ function LogoutIcon({
 export default function Sidebar({
   selectedMenu,
   onMenuChange,
+  onLogout,
+  loggingOut,
 }: Props) {
-  const router = useRouter();
-
-  const [loggingOut, setLoggingOut] =
-    useState(false);
-
-  const handleLogout = async () => {
-    if (loggingOut) {
-      return;
-    }
-
-    const confirmed =
-      window.confirm(
-        "確定要登出 SilverCare 嗎？"
-      );
-
-    if (!confirmed) {
-      return;
-    }
-
-    setLoggingOut(true);
-
-    try {
-      const { error } =
-        await supabase.auth.signOut();
-
-      if (error) {
-        console.error(
-          "登出失敗：",
-          error
-        );
-
-        alert(
-          "登出失敗，請稍後再試。"
-        );
-
-        return;
-      }
-
-      router.replace("/login");
-      router.refresh();
-    } catch (error) {
-      console.error(
-        "登出發生錯誤：",
-        error
-      );
-
-      alert(
-        "登出發生錯誤，請稍後再試。"
-      );
-    } finally {
-      setLoggingOut(false);
-    }
-  };
-
   return (
     <>
       <style>{`
@@ -319,10 +265,6 @@ export default function Sidebar({
 
         .silvercare-desktop-logout:hover {
           background: rgba(255,255,255,.10);
-        }
-
-        .silvercare-mobile-logout {
-          display: none;
         }
 
         @media (max-width: 767px) {
@@ -412,39 +354,6 @@ export default function Sidebar({
             white-space: nowrap;
             pointer-events: none;
           }
-
-          .silvercare-mobile-logout {
-            position: fixed !important;
-            top: 30px !important;
-            right: 14px !important;
-            z-index: 2147483646 !important;
-            display: inline-flex !important;
-            align-items: center;
-            justify-content: center;
-            gap: 7px;
-            min-width: 84px;
-            height: 40px;
-            padding: 0 12px;
-            border: 1px solid #d1d5db;
-            border-radius: 10px;
-            background: #ffffff;
-            box-shadow: 0 3px 12px rgba(0,0,0,.12);
-            color: #374151;
-            font-size: 13px;
-            font-weight: 700;
-            cursor: pointer;
-            box-sizing: border-box;
-            -webkit-tap-highlight-color: transparent;
-          }
-
-          .silvercare-mobile-logout:active {
-            transform: scale(0.96);
-          }
-
-          .silvercare-mobile-logout:disabled {
-            opacity: 0.7;
-            cursor: default;
-          }
         }
       `}</style>
 
@@ -454,8 +363,7 @@ export default function Sidebar({
           width: 250,
           minWidth: 250,
           minHeight: "100vh",
-          background:
-            colors.primary,
+          background: colors.primary,
           color: "#fff",
           padding: 24,
           flexDirection: "column",
@@ -475,8 +383,7 @@ export default function Sidebar({
         <div
           style={{
             height: 1,
-            background:
-              "rgba(255,255,255,.2)",
+            background: "rgba(255,255,255,.2)",
             marginBottom: 24,
           }}
         />
@@ -497,16 +404,13 @@ export default function Sidebar({
                 key={menu.key}
                 type="button"
                 onClick={() =>
-                  onMenuChange(
-                    menu.key
-                  )
+                  onMenuChange(menu.key)
                 }
                 style={{
                   display: "flex",
                   alignItems: "center",
                   gap: 12,
-                  padding:
-                    "12px 16px",
+                  padding: "12px 16px",
                   border: "none",
                   borderRadius: 10,
                   cursor: "pointer",
@@ -519,8 +423,7 @@ export default function Sidebar({
                   fontSize: 16,
                   fontWeight:
                     active ? 700 : 500,
-                  transition:
-                    "all .2s",
+                  transition: "all .2s",
                   textAlign: "left",
                   width: "100%",
                   boxSizing: "border-box",
@@ -555,8 +458,7 @@ export default function Sidebar({
             marginTop: "auto",
             paddingTop: 24,
             fontSize: 12,
-            color:
-              "rgba(255,255,255,.65)",
+            color: "rgba(255,255,255,.65)",
           }}
         >
           SilverCare v0.7
@@ -564,7 +466,7 @@ export default function Sidebar({
 
         <button
           type="button"
-          onClick={handleLogout}
+          onClick={onLogout}
           disabled={loggingOut}
           className="silvercare-desktop-logout"
           aria-label="登出"
@@ -584,65 +486,41 @@ export default function Sidebar({
         role="navigation"
         aria-label="手機功能選單"
       >
-        {mobileMenus.map(
-          (menu) => {
-            const active =
-              selectedMenu === menu.key;
+        {mobileMenus.map((menu) => {
+          const active =
+            selectedMenu === menu.key;
 
-            return (
-              <button
-                key={menu.key}
-                type="button"
-                className={
-                  active
-                    ? "active"
-                    : ""
-                }
-                aria-label={
-                  menu.label
-                }
-                aria-current={
-                  active
-                    ? "page"
-                    : undefined
-                }
-                onClick={() =>
-                  onMenuChange(
-                    menu.key
-                  )
-                }
-              >
-                <span className="silvercare-mobile-navigation-icon">
-                  <MenuIcon
-                    menu={menu.key}
-                    size={25}
-                  />
-                </span>
+          return (
+            <button
+              key={menu.key}
+              type="button"
+              className={
+                active ? "active" : ""
+              }
+              aria-label={menu.label}
+              aria-current={
+                active
+                  ? "page"
+                  : undefined
+              }
+              onClick={() =>
+                onMenuChange(menu.key)
+              }
+            >
+              <span className="silvercare-mobile-navigation-icon">
+                <MenuIcon
+                  menu={menu.key}
+                  size={25}
+                />
+              </span>
 
-                <span className="silvercare-mobile-navigation-label">
-                  {menu.label}
-                </span>
-              </button>
-            );
-          }
-        )}
+              <span className="silvercare-mobile-navigation-label">
+                {menu.label}
+              </span>
+            </button>
+          );
+        })}
       </nav>
-
-      <button
-        type="button"
-        onClick={handleLogout}
-        disabled={loggingOut}
-        className="silvercare-mobile-logout"
-        aria-label="登出"
-      >
-        <LogoutIcon size={17} />
-
-        <span>
-          {loggingOut
-            ? "登出中"
-            : "登出"}
-        </span>
-      </button>
     </>
   );
 }

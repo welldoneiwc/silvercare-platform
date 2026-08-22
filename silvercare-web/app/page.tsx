@@ -5,6 +5,8 @@ import {
   useState,
 } from "react";
 
+import { useRouter } from "next/navigation";
+
 import { colors } from "../styles/theme";
 
 import Sidebar, {
@@ -21,6 +23,8 @@ import DashboardActivities from "../components/DashboardActivities";
 import AttendanceSection from "../components/AttendanceSection";
 import FinanceSection from "../components/FinanceSection";
 
+import { supabase } from "../utils/supabase";
+
 import { useDashboardData } from "../utils/useDashboardData";
 import {
   addStorageChangedListener,
@@ -30,6 +34,8 @@ const ELDER_STORAGE_KEY =
   "silvercare-elders";
 
 export default function Home() {
+  const router = useRouter();
+
   const [selectedMenu, setSelectedMenu] =
     useState<MenuType>("dashboard");
 
@@ -43,6 +49,9 @@ export default function Home() {
     useState<Elder[]>([]);
 
   const [isMobile, setIsMobile] =
+    useState(false);
+
+  const [loggingOut, setLoggingOut] =
     useState(false);
 
   const dashboardData =
@@ -72,6 +81,58 @@ export default function Home() {
       );
     };
   }, []);
+
+  /**
+   * 登出
+   */
+  const handleLogout = async () => {
+    if (loggingOut) {
+      return;
+    }
+
+    const confirmed =
+      window.confirm(
+        "確定要登出 SilverCare 嗎？"
+      );
+
+    if (!confirmed) {
+      return;
+    }
+
+    setLoggingOut(true);
+
+    try {
+      const { error } =
+        await supabase.auth.signOut();
+
+      if (error) {
+        console.error(
+          "登出失敗：",
+          error
+        );
+
+        alert(
+          "登出失敗，請稍後再試。"
+        );
+
+        return;
+      }
+
+      router.replace("/login");
+      router.refresh();
+    } catch (error) {
+      console.error(
+        "登出發生錯誤：",
+        error
+      );
+
+      alert(
+        "登出發生錯誤，請稍後再試。"
+      );
+    } finally {
+      setLoggingOut(false);
+    }
+  };
 
   /**
    * 讀取長者資料
@@ -166,12 +227,12 @@ export default function Home() {
         <div
           style={{
             width: "100%",
-            minHeight: 88,
+            minHeight: 72,
             background:
               colors.primary,
             color: "#fff",
             padding:
-              "18px 20px",
+              "14px 16px",
             boxSizing: "border-box",
             display: "flex",
             alignItems: "center",
@@ -186,7 +247,7 @@ export default function Home() {
         >
           <div
             style={{
-              fontSize: 28,
+              fontSize: 24,
               fontWeight: 700,
               letterSpacing: 0.3,
             }}
@@ -194,15 +255,67 @@ export default function Home() {
             SilverCare
           </div>
 
-          <div
+          <button
+  type="button"
+  className="silvercare-mobile-header-logout"
+  onClick={handleLogout}
+  disabled={loggingOut}
+            aria-label="登出"
             style={{
-              display: "flex",
+              appearance: "none",
+              WebkitAppearance:
+                "none",
+              display: "inline-flex",
               alignItems: "center",
-              gap: 16,
+              justifyContent:
+                "center",
+              gap: 6,
+              minWidth: 72,
+              height: 38,
+              padding:
+                "0 11px",
+              border:
+                "1px solid rgba(255,255,255,.45)",
+              borderRadius: 9,
+              background:
+                "rgba(255,255,255,.10)",
+              color: "#fff",
+              fontSize: 13,
+              fontWeight: 700,
+              cursor: loggingOut
+                ? "default"
+                : "pointer",
+              opacity: loggingOut
+                ? 0.7
+                : 1,
+              boxSizing:
+                "border-box",
+              WebkitTapHighlightColor:
+                "transparent",
             }}
           >
-                    
-          </div>
+            <svg
+              width="16"
+              height="16"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              aria-hidden="true"
+            >
+              <path d="M10 17l5-5-5-5" />
+              <path d="M15 12H3" />
+              <path d="M12 21h7a2 2 0 0 0 2-2V5a2 2 0 0 0-2-2h-7" />
+            </svg>
+
+            <span>
+              {loggingOut
+                ? "登出中"
+                : "登出"}
+            </span>
+          </button>
         </div>
       )}
 
@@ -240,6 +353,8 @@ export default function Home() {
               );
             }
           }}
+          onLogout={handleLogout}
+          loggingOut={loggingOut}
         />
 
         <main
@@ -434,43 +549,41 @@ export default function Home() {
             </>
           )}
 
-        {/* ==================== */}
-{/* Elder */}
-{/* ==================== */}
+          {/* ==================== */}
+          {/* Elder */}
+          {/* ==================== */}
 
-{selectedMenu ===
-  "elder" && (
-  <div
-    style={{
-      display: "flex",
-      flexDirection: "column",
-      gap: 24,
-      width: "100%",
-    }}
-  >
-    {/* 長者列表 */}
-    <ElderList
-      onSelectElder={
-        setSelectedElder
-      }
-    />
+          {selectedMenu ===
+            "elder" && (
+            <div
+              style={{
+                display: "flex",
+                flexDirection: "column",
+                gap: 24,
+                width: "100%",
+              }}
+            >
+              <ElderList
+                onSelectElder={
+                  setSelectedElder
+                }
+              />
 
-    {/* 查看後的長者詳細資料 */}
-    {selectedElder && (
-      <div
-        style={{
-          width: "100%",
-        }}
-      >
-        <ElderProfile
-          elder={
-            selectedElder
-          }
-        />
-      </div>
-    )}
-  </div>
-)}
+              {selectedElder && (
+                <div
+                  style={{
+                    width: "100%",
+                  }}
+                >
+                  <ElderProfile
+                    elder={
+                      selectedElder
+                    }
+                  />
+                </div>
+              )}
+            </div>
+          )}
 
           {/* ==================== */}
           {/* Attendance */}
