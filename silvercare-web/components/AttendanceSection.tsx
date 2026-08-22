@@ -10,7 +10,12 @@ import { colors } from "../styles/theme";
 import { radius } from "../styles/radius";
 import { shadow } from "../styles/shadow";
 
-import { notifyStorageChanged } from "../utils/storageEvents";
+import {
+  addStorageChangedListener,
+  notifyStorageChanged,
+} from "../utils/storageEvents";
+
+import { supabase } from "../utils/supabase";
 
 import AttendanceTable from "./AttendanceTable";
 import type { Elder } from "./ElderList";
@@ -26,7 +31,9 @@ export type AttendanceRecord = {
 
 type Props = {
   elders: Elder[];
-  onCheckInSuccess?: (elder: Elder) => void;
+  onCheckInSuccess?: (
+    elder: Elder
+  ) => void;
 };
 
 type NewElderForm = {
@@ -35,9 +42,6 @@ type NewElderForm = {
   birthday: string;
   phone: string;
 };
-
-const ELDER_STORAGE_KEY =
-  "silvercare-elders";
 
 const ATTENDANCE_STORAGE_KEY =
   "attendance-records";
@@ -74,15 +78,113 @@ export default function AttendanceSection({
   const [localElders, setLocalElders] =
     useState<Elder[]>(elders);
 
+  const [
+    measuredElderIds,
+    setMeasuredElderIds,
+  ] = useState<number[]>([]);
+
   /**
-   * 今天已完成健康量測的長者 ID
+   * 載入 Supabase 長者資料
    */
-  const [measuredElderIds, setMeasuredElderIds] =
-    useState<number[]>([]);
+  const loadElders = async () => {
+    try {
+      const {
+        data,
+        error,
+      } = await supabase
+        .from("elders")
+        .select(
+          `
+            id,
+            name,
+            gender,
+            birthday,
+            phone,
+            elder_type,
+            living_status,
+            contact_method,
+            emergency_contact_name,
+            emergency_contact_relation,
+            emergency_contact_phone
+          `
+        )
+        .order("id", {
+          ascending: true,
+        });
+
+      if (error) {
+        console.error(
+          "讀取簽到長者資料失敗：",
+          error
+        );
+
+        setLocalElders([]);
+        return;
+      }
+
+      const safeData: Elder[] =
+        (data ?? []).map(
+          (item) => ({
+            id: Number(item.id),
+            name:
+              item.name ?? "",
+            gender:
+              item.gender ?? "",
+            birthday:
+              item.birthday ?? "",
+            phone:
+              item.phone ?? "",
+            elder_type:
+              item.elder_type ??
+              "出席型",
+            living_status:
+              item.living_status ??
+              "一般",
+            contact_method:
+              item.contact_method ??
+              "電話",
+            emergency_contact_name:
+              item.emergency_contact_name ??
+              "",
+            emergency_contact_relation:
+              item.emergency_contact_relation ??
+              "",
+            emergency_contact_phone:
+              item.emergency_contact_phone ??
+              "",
+          })
+        );
+
+      setLocalElders(
+        safeData
+      );
+    } catch (error) {
+      console.error(
+        "讀取簽到長者資料發生錯誤：",
+        error
+      );
+
+      setLocalElders([]);
+    }
+  };
 
   useEffect(() => {
-    setLocalElders(elders);
-  }, [elders]);
+    loadElders();
+  }, []);
+
+  useEffect(() => {
+    if (
+      localElders.length === 0 &&
+      elders.length > 0
+    ) {
+      setLocalElders(
+        elders
+      );
+    }
+  }, [
+    elders,
+    localElders.length,
+  ]);
 
   /**
    * 載入簽到資料
@@ -122,10 +224,6 @@ export default function AttendanceSection({
 
   /**
    * 簽到資料寫回 LocalStorage
-   *
-   * 注意：
-   * 刪除與新增時都會直接同步 LocalStorage。
-   * 這裡只負責一般 state 更新後的同步。
    */
   useEffect(() => {
     if (!loaded) {
@@ -136,10 +234,13 @@ export default function AttendanceSection({
       ATTENDANCE_STORAGE_KEY,
       JSON.stringify(records)
     );
-  }, [records, loaded]);
+  }, [
+    records,
+    loaded,
+  ]);
 
   /**
-   * 取得今天日期
+   * 今天日期
    */
   const today = useMemo(() => {
     return new Date()
@@ -148,43 +249,50 @@ export default function AttendanceSection({
   }, []);
 
   /**
-   * 重新讀取今天已完成健康量測的長者
+   * 重新讀取今天健康量測狀態
    */
   const loadTodayHealthStatus = () => {
     try {
-      const measuredIds: number[] = [];
+      const measuredIds: number[] =
+        [];
 
-      localElders.forEach((elder) => {
-        const storageKey =
-          `health-records-${elder.id}`;
+      localElders.forEach(
+        (elder) => {
+          const storageKey =
+            `health-records-${elder.id}`;
 
-        const saved =
-          localStorage.getItem(storageKey);
+          const saved =
+            localStorage.getItem(
+              storageKey
+            );
 
-        if (!saved) {
-          return;
+          if (!saved) {
+            return;
+          }
+
+          const parsed =
+            JSON.parse(saved);
+
+          if (
+            !Array.isArray(parsed)
+          ) {
+            return;
+          }
+
+          const hasTodayRecord =
+            parsed.some(
+              (record) =>
+                record &&
+                record.date === today
+            );
+
+          if (hasTodayRecord) {
+            measuredIds.push(
+              Number(elder.id)
+            );
+          }
         }
-
-        const parsed =
-          JSON.parse(saved);
-
-        if (!Array.isArray(parsed)) {
-          return;
-        }
-
-        const hasTodayRecord =
-          parsed.some(
-            (record) =>
-              record &&
-              record.date === today
-          );
-
-        if (hasTodayRecord) {
-          measuredIds.push(
-            Number(elder.id)
-          );
-        }
-      });
+      );
 
       setMeasuredElderIds(
         measuredIds
@@ -199,22 +307,18 @@ export default function AttendanceSection({
     }
   };
 
-  /**
-   * 長者資料或日期改變時，
-   * 重新確認今天的健康量測狀態。
-   */
   useEffect(() => {
     loadTodayHealthStatus();
-  }, [localElders, today]);
+  }, [
+    localElders,
+    today,
+  ]);
 
-  /**
-   * 當健康資料發生變化時，
-   * 同步更新量測狀態。
-   */
   useEffect(() => {
-    const handleStorageChanged = () => {
-      loadTodayHealthStatus();
-    };
+    const handleStorageChanged =
+      () => {
+        loadTodayHealthStatus();
+      };
 
     window.addEventListener(
       "storage",
@@ -222,7 +326,7 @@ export default function AttendanceSection({
     );
 
     const removeListener =
-      addStorageChangedListenerSafe(
+      addStorageChangedListener(
         handleStorageChanged
       );
 
@@ -234,10 +338,13 @@ export default function AttendanceSection({
 
       removeListener();
     };
-  }, [localElders, today]);
+  }, [
+    localElders,
+    today,
+  ]);
 
   /**
-   * 今天的簽到資料
+   * 今日簽到資料
    */
   const todayRecords =
     useMemo(() => {
@@ -245,10 +352,13 @@ export default function AttendanceSection({
         (record) =>
           record.date === today
       );
-    }, [records, today]);
+    }, [
+      records,
+      today,
+    ]);
 
   /**
-   * 判斷今天是否已完成健康量測
+   * 是否已完成健康量測
    */
   const hasMeasuredToday = (
     elderId: number
@@ -259,20 +369,22 @@ export default function AttendanceSection({
   };
 
   /**
-   * 判斷今天是否已簽到
+   * 是否已簽到
    */
   const hasCheckedInToday = (
     elderId: number
   ) => {
     return todayRecords.some(
       (record) =>
-        Number(record.elderId) ===
+        Number(
+          record.elderId
+        ) ===
         Number(elderId)
     );
   };
 
   /**
-   * 今天已完成健康量測的人數
+   * 今日已完成健康量測人數
    */
   const todayMeasuredCount =
     useMemo(() => {
@@ -292,10 +404,7 @@ export default function AttendanceSection({
     ]);
 
   /**
-   * 搜尋結果
-   *
-   * 沒有輸入搜尋文字時，
-   * 直接顯示全部長者。
+   * 搜尋長者
    */
   const displayElders =
     useMemo(() => {
@@ -315,8 +424,12 @@ export default function AttendanceSection({
             elder.phone ?? "";
 
           return (
-            name.includes(search) ||
-            phone.includes(search)
+            name.includes(
+              search
+            ) ||
+            phone.includes(
+              search
+            )
           );
         }
       );
@@ -334,17 +447,16 @@ export default function AttendanceSection({
     const exists =
       todayRecords.some(
         (record) =>
-          Number(record.elderId) ===
+          Number(
+            record.elderId
+          ) ===
           Number(elder.id)
       );
 
-    /**
-     * 已經簽到：
-     * 不重新建立紀錄，
-     * 直接進入健康量測。
-     */
     if (exists) {
-      onCheckInSuccess?.(elder);
+      onCheckInSuccess?.(
+        elder
+      );
       return;
     }
 
@@ -352,9 +464,11 @@ export default function AttendanceSection({
 
     const newRecord: AttendanceRecord =
       {
-        id: crypto.randomUUID(),
+        id:
+          crypto.randomUUID(),
         elderId: elder.id,
-        elderName: elder.name,
+        elderName:
+          elder.name,
         date: today,
         checkInTime:
           now.toLocaleTimeString(
@@ -379,7 +493,9 @@ export default function AttendanceSection({
           : [];
 
       const safeRecords =
-        Array.isArray(existingRecords)
+        Array.isArray(
+          existingRecords
+        )
           ? existingRecords
           : [];
 
@@ -388,9 +504,6 @@ export default function AttendanceSection({
         ...safeRecords,
       ];
 
-      /**
-       * 先直接寫入 LocalStorage。
-       */
       localStorage.setItem(
         ATTENDANCE_STORAGE_KEY,
         JSON.stringify(
@@ -398,10 +511,9 @@ export default function AttendanceSection({
         )
       );
 
-      /**
-       * 再更新 React state。
-       */
-      setRecords(updatedRecords);
+      setRecords(
+        updatedRecords
+      );
 
       notifyStorageChanged();
     } catch (error) {
@@ -419,136 +531,189 @@ export default function AttendanceSection({
 
     setKeyword("");
 
-    onCheckInSuccess?.(elder);
+    onCheckInSuccess?.(
+      elder
+    );
   };
 
   /**
    * 新增長者並立即簽到
    */
-  const handleAddElder = () => {
-    const name =
-      newElderForm.name.trim();
+  const handleAddElder =
+    async () => {
+      const name =
+        newElderForm.name.trim();
 
-    if (!name) {
-      alert("請輸入長者姓名。");
-      return;
-    }
+      if (!name) {
+        alert(
+          "請輸入長者姓名。"
+        );
+        return;
+      }
 
-    const duplicated =
-      localElders.some(
-        (elder) =>
-          elder.name.trim() ===
-          name
-      );
+      if (
+        !newElderForm.birthday
+      ) {
+        alert(
+          "請輸入出生日期。"
+        );
+        return;
+      }
 
-    if (duplicated) {
-      alert(
-        "長者名單中已有相同姓名，請先確認是否已存在。"
-      );
-      return;
-    }
+      if (
+        !newElderForm.phone.trim()
+      ) {
+        alert(
+          "請輸入電話。"
+        );
+        return;
+      }
 
-    try {
-      const saved =
-        localStorage.getItem(
-          ELDER_STORAGE_KEY
+      const duplicated =
+        localElders.some(
+          (elder) =>
+            elder.name.trim() ===
+            name
         );
 
-      const existingElders =
-        saved
-          ? (JSON.parse(saved) as Elder[])
-          : [];
+      if (duplicated) {
+        alert(
+          "長者名單中已有相同姓名，請先確認是否已存在。"
+        );
+        return;
+      }
 
-      const safeExistingElders =
-        Array.isArray(
-          existingElders
-        )
-          ? existingElders
-          : [];
-
-      const numericIds =
-        safeExistingElders
-          .map(
-            (elder) =>
-              Number(elder.id)
+      try {
+        const {
+          data,
+          error,
+        } = await supabase
+          .from("elders")
+          .insert({
+            name,
+            gender:
+              newElderForm.gender.trim(),
+            birthday:
+              newElderForm.birthday,
+            phone:
+              newElderForm.phone.trim(),
+            elder_type:
+              "出席型",
+            living_status:
+              "一般",
+            contact_method:
+              "電話",
+            emergency_contact_name:
+              "",
+            emergency_contact_relation:
+              "",
+            emergency_contact_phone:
+              "",
+          })
+          .select(
+            `
+              id,
+              name,
+              gender,
+              birthday,
+              phone,
+              elder_type,
+              living_status,
+              contact_method,
+              emergency_contact_name,
+              emergency_contact_relation,
+              emergency_contact_phone
+            `
           )
-          .filter(
-            (id) =>
-              Number.isFinite(id)
+          .single();
+
+        if (error) {
+          console.error(
+            "新增長者失敗：",
+            error
           );
 
-      const nextId =
-        numericIds.length > 0
-          ? Math.max(
-              ...numericIds
-            ) + 1
-          : 1;
+          alert(
+            `新增長者失敗：${error.message}`
+          );
 
-      const newElder: Elder = {
-  id: nextId,
-  name,
-  gender:
-    newElderForm.gender.trim(),
-  birthday:
-    newElderForm.birthday,
-  phone:
-    newElderForm.phone.trim(),
-  elder_type: "出席型",
-  living_status: "一般",
-  contact_method: "電話",
-  emergency_contact_name: "",
-  emergency_contact_relation: "",
-  emergency_contact_phone: "",
-};
+          return;
+        }
 
-      const updatedElders = [
-        ...safeExistingElders,
-        newElder,
-      ];
+        if (!data) {
+          alert(
+            "新增長者失敗：沒有取得新增資料。"
+          );
 
-      localStorage.setItem(
-        ELDER_STORAGE_KEY,
-        JSON.stringify(
-          updatedElders
-        )
-      );
+          return;
+        }
 
-      setLocalElders(
-        updatedElders
-      );
+        const newElder: Elder = {
+          id: Number(
+            data.id
+          ),
+          name:
+            data.name ?? "",
+          gender:
+            data.gender ?? "",
+          birthday:
+            data.birthday ?? "",
+          phone:
+            data.phone ?? "",
+          elder_type:
+            data.elder_type ??
+            "出席型",
+          living_status:
+            data.living_status ??
+            "一般",
+          contact_method:
+            data.contact_method ??
+            "電話",
+          emergency_contact_name:
+            data.emergency_contact_name ??
+            "",
+          emergency_contact_relation:
+            data.emergency_contact_relation ??
+            "",
+          emergency_contact_phone:
+            data.emergency_contact_phone ??
+            "",
+        };
 
-      setNewElderForm(
-        createEmptyElderForm()
-      );
+        setLocalElders(
+          (prev) => [
+            ...prev,
+            newElder,
+          ]
+        );
 
-      setShowAddElder(false);
+        setNewElderForm(
+          createEmptyElderForm()
+        );
 
-      notifyStorageChanged();
+        setShowAddElder(
+          false
+        );
 
-      handleCheckIn(newElder);
-    } catch (error) {
-      console.error(
-        "新增長者失敗：",
-        error
-      );
+        notifyStorageChanged();
 
-      alert(
-        "新增長者失敗，請稍後再試。"
-      );
-    }
-  };
+        handleCheckIn(
+          newElder
+        );
+      } catch (error) {
+        console.error(
+          "新增長者發生錯誤：",
+          error
+        );
+
+        alert(
+          "新增長者失敗，請稍後再試。"
+        );
+      }
+    };
 
   /**
    * 刪除簽到紀錄
-   *
-   * 重要：
-   * 不使用 setRecords(prev => ...) 裡面
-   * 再處理 LocalStorage。
-   *
-   * 先讀取目前 LocalStorage，
-   * 確實刪除指定 id，
-   * 寫回 LocalStorage，
-   * 最後才更新畫面。
    */
   const handleDelete = (
     id: string
@@ -565,34 +730,28 @@ export default function AttendanceSection({
           : [];
 
       const safeRecords =
-        Array.isArray(existingRecords)
+        Array.isArray(
+          existingRecords
+        )
           ? (existingRecords as AttendanceRecord[])
           : [];
 
       const updatedRecords =
         safeRecords.filter(
           (record) =>
-            String(record.id) !==
+            String(
+              record.id
+            ) !==
             String(id)
         );
 
-      /**
-       * 先確實寫入刪除後的資料。
-       */
       localStorage.setItem(
         ATTENDANCE_STORAGE_KEY,
         JSON.stringify(
           updatedRecords
         )
       );
-      console.log(
-  "🗑️ DELETE AFTER:",
-  updatedRecords
-);
 
-      /**
-       * 再更新 React 畫面。
-       */
       setRecords(
         updatedRecords
       );
@@ -611,645 +770,770 @@ export default function AttendanceSection({
   };
 
   return (
-    <div
-      style={{
-        background: "#fff",
-        borderRadius: radius.lg,
-        boxShadow: shadow.md,
-        padding: 24,
-        display: "flex",
-        flexDirection: "column",
-        gap: 24,
-      }}
-    >
-      {/* ================================
-          標題區
-      ================================= */}
-      <div
-        style={{
-          display: "flex",
-          justifyContent:
-            "space-between",
-          alignItems: "center",
-          gap: 16,
-          flexWrap: "wrap",
-        }}
-      >
-        <div>
-          <h2
-            style={{
-              margin: 0,
-              color: colors.primary,
-            }}
-          >
-            今日簽到
-          </h2>
+    <>
+      <style>{`
+        .silvercare-attendance-legend {
+          display: grid;
+          grid-template-columns: repeat(4, minmax(0, 1fr));
+          gap: 18px;
+        }
 
-          <div
-            style={{
-              marginTop: 8,
-              color:
-                colors.textLight,
-              fontSize: 14,
-            }}
-          >
-            今日已簽到：
-            {todayRecords.length} 人
+        .silvercare-attendance-desktop-header,
+        .silvercare-attendance-row {
+          display: grid;
+          grid-template-columns: 1.4fr 1fr 1fr 1.1fr;
+          gap: 16px;
+        }
 
-            <span
-              style={{
-                marginLeft: 12,
-              }}
-            >
-              今日已測量：
-              {todayMeasuredCount} 人
-            </span>
-          </div>
-        </div>
+        .silvercare-attendance-mobile-status {
+          display: none;
+        }
 
-        <button
-          type="button"
-          onClick={() => {
-            setShowAddElder(
-              (current) =>
-                !current
-            );
-
-            setNewElderForm(
-              createEmptyElderForm()
-            );
-          }}
-          style={{
-            border: "none",
-            borderRadius:
-              radius.md,
-            padding:
-              "10px 16px",
-            background:
-              colors.primary,
-            color: "#fff",
-            cursor: "pointer",
-            fontWeight: 700,
-          }}
-        >
-          新增長者
-        </button>
-      </div>
-
-      {/* ================================
-          狀態圖例
-      ================================= */}
-      <div
-        style={{
-          display: "flex",
-          alignItems: "center",
-          gap: 18,
-          flexWrap: "wrap",
-          padding:
-            "12px 18px",
-          background:
-            "#F8FAFC",
-          border:
-            "1px solid #E5E7EB",
-          borderRadius:
-            radius.md,
-          fontSize: 14,
-          color:
-            colors.primary,
-        }}
-      >
-        <span
-          style={{
-            display:
-              "inline-flex",
-            alignItems:
-              "center",
-            gap: 7,
-          }}
-        >
-          <span
-            style={{
-              width: 10,
-              height: 10,
-              borderRadius:
-                "50%",
-              background:
-                "#22C55E",
-              display:
-                "inline-block",
-            }}
-          />
-          已測量
-        </span>
-
-        <span
-          style={{
-            display:
-              "inline-flex",
-            alignItems:
-              "center",
-            gap: 7,
-          }}
-        >
-          <span
-            style={{
-              width: 10,
-              height: 10,
-              borderRadius:
-                "50%",
-              background:
-                "#F97316",
-              display:
-                "inline-block",
-            }}
-          />
-          尚未測量
-        </span>
-
-        <span
-          style={{
-            display:
-              "inline-flex",
-            alignItems:
-              "center",
-            gap: 7,
-          }}
-        >
-          <span
-            style={{
-              width: 10,
-              height: 10,
-              borderRadius:
-                "50%",
-              background:
-                "#10B981",
-              display:
-                "inline-block",
-            }}
-          />
-          已簽到
-        </span>
-
-        <span
-          style={{
-            display:
-              "inline-flex",
-            alignItems:
-              "center",
-            gap: 7,
-          }}
-        >
-          <span
-            style={{
-              width: 10,
-              height: 10,
-              borderRadius:
-                "50%",
-              background:
-                "#D1D5DB",
-              display:
-                "inline-block",
-            }}
-          />
-          尚未簽到
-        </span>
-      </div>
-
-      {/* ================================
-          新增長者
-      ================================= */}
-      {showAddElder && (
-        <div
-          style={{
-            padding: 20,
-            borderRadius:
-              radius.md,
-            background:
-              "#F8FAFC",
-            border:
-              "1px solid #E5E7EB",
-          }}
-        >
-          <h3
-            style={{
-              marginTop: 0,
-              color:
-                colors.primary,
-            }}
-          >
-          新增長者並立即簽到
-          </h3>
-
-          <div
-            style={{
-              display: "grid",
-              gridTemplateColumns:
-                "repeat(2, 1fr)",
-              gap: 16,
-            }}
-          >
-            <div>
-              <label
-                style={labelStyle}
-              >
-                姓名
-              </label>
-
-              <input
-                type="text"
-                value={
-                  newElderForm.name
-                }
-                onChange={(event) =>
-                  setNewElderForm(
-                    (current) => ({
-                      ...current,
-                      name:
-                        event.target
-                          .value,
-                    })
-                  )
-                }
-                placeholder="請輸入姓名"
-                style={inputStyle}
-              />
-            </div>
-
-            <div>
-              <label
-                style={labelStyle}
-              >
-                性別
-              </label>
-
-              <select
-                value={
-                  newElderForm.gender
-                }
-                onChange={(event) =>
-                  setNewElderForm(
-                    (current) => ({
-                      ...current,
-                      gender:
-                        event.target
-                          .value,
-                    })
-                  )
-                }
-                style={inputStyle}
-              >
-                <option value="">
-                  請選擇性別
-                </option>
-
-                <option value="男">
-                  男
-                </option>
-
-                <option value="女">
-                  女
-                </option>
-              </select>
-            </div>
-
-            <div>
-              <label
-                style={labelStyle}
-              >
-                生日
-              </label>
-
-              <input
-                type="date"
-                value={
-                  newElderForm.birthday
-                }
-                onChange={(event) =>
-                  setNewElderForm(
-                    (current) => ({
-                      ...current,
-                      birthday:
-                        event.target
-                          .value,
-                    })
-                  )
-                }
-                style={inputStyle}
-              />
-            </div>
-
-            <div>
-              <label
-                style={labelStyle}
-              >
-                電話
-              </label>
-
-              <input
-                type="text"
-                value={
-                  newElderForm.phone
-                }
-                onChange={(event) =>
-                  setNewElderForm(
-                    (current) => ({
-                      ...current,
-                      phone:
-                        event.target
-                          .value,
-                    })
-                  )
-                }
-                placeholder="請輸入電話"
-                style={inputStyle}
-              />
-            </div>
-          </div>
-
-          <div
-            style={{
-              display: "flex",
-              gap: 10,
-              marginTop: 20,
-            }}
-          >
-            <button
-              type="button"
-              onClick={
-                handleAddElder
-              }
-              style={
-                primaryButtonStyle
-              }
-            >
-              新增並立即簽到
-            </button>
-
-            <button
-              type="button"
-              onClick={() => {
-                setShowAddElder(
-                  false
-                );
-
-                setNewElderForm(
-                  createEmptyElderForm()
-                );
-              }}
-              style={
-                secondaryButtonStyle
-              }
-            >
-              取消
-            </button>
-          </div>
-        </div>
-      )}
-
-      {/* ================================
-          可選快速搜尋
-      ================================= */}
-      <div>
-        <div
-          style={{
-            marginBottom: 8,
-            color: colors.primary,
-            fontSize: 14,
-            fontWeight: 600,
-          }}
-        >
-          搜尋長者
-
-          <span
-            style={{
-              marginLeft: 8,
-              color:
-                colors.textLight,
-              fontWeight: 400,
-            }}
-          >
-            （可選）
-          </span>
-        </div>
-
-        <input
-          type="text"
-          value={keyword}
-          onChange={(e) =>
-            setKeyword(
-              e.target.value
-            )
+        @media (max-width: 767px) {
+          .silvercare-attendance-legend {
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 12px;
           }
-          placeholder="輸入姓名或電話快速找人..."
-          style={{
-            width: "100%",
-            boxSizing:
-              "border-box",
-            padding:
-              "13px 16px",
-            border:
-              "1px solid #D1D5DB",
-            borderRadius:
-              radius.md,
-            fontSize: 16,
-            outline: "none",
-          }}
-        />
-      </div>
 
-      {/* ================================
-          今日長者總表
-      ================================= */}
+          .silvercare-attendance-desktop-header {
+            display: none !important;
+          }
+
+          .silvercare-attendance-row {
+            display: flex !important;
+            flex-direction: column !important;
+            gap: 14px !important;
+            align-items: stretch !important;
+            padding: 16px !important;
+          }
+
+          .silvercare-attendance-mobile-status {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 10px;
+            width: 100%;
+          }
+
+          .silvercare-attendance-status-box {
+            min-width: 0;
+          }
+
+          .silvercare-attendance-action {
+            width: 100% !important;
+          }
+
+          .silvercare-attendance-action button {
+            width: 100% !important;
+            min-height: 46px;
+          }
+
+          .silvercare-attendance-table-wrap {
+            overflow-x: auto;
+          }
+        }
+      `}</style>
+
       <div
         style={{
-          border:
-            "1px solid #E5E7EB",
+          background: "#fff",
           borderRadius:
-            radius.md,
-          overflow: "hidden",
+            radius.lg,
+          boxShadow:
+            shadow.md,
+          padding: 24,
+          display: "flex",
+          flexDirection:
+            "column",
+          gap: 24,
         }}
       >
+        {/* ================================
+            標題區
+        ================================= */}
+
         <div
           style={{
-            display: "grid",
-            gridTemplateColumns:
-              "1.4fr 1fr 1fr 1.1fr",
+            display: "flex",
+            justifyContent:
+              "space-between",
+            alignItems:
+              "center",
             gap: 16,
+            flexWrap:
+              "wrap",
+          }}
+        >
+          <div>
+            <h2
+              style={{
+                margin: 0,
+                color:
+                  colors.primary,
+              }}
+            >
+              今日簽到
+            </h2>
+
+            <div
+              style={{
+                marginTop: 8,
+                color:
+                  colors.textLight,
+                fontSize: 14,
+              }}
+            >
+              今日已簽到：
+              {
+                todayRecords.length
+              } 人
+
+              <span
+                style={{
+                  marginLeft: 12,
+                }}
+              >
+                今日已測量：
+                {
+                  todayMeasuredCount
+                } 人
+              </span>
+            </div>
+          </div>
+
+          <button
+            type="button"
+            onClick={() => {
+              setShowAddElder(
+                (current) =>
+                  !current
+              );
+
+              setNewElderForm(
+                createEmptyElderForm()
+              );
+            }}
+            style={{
+              border: "none",
+              borderRadius:
+                radius.md,
+              padding:
+                "10px 16px",
+              background:
+                colors.primary,
+              color: "#fff",
+              cursor:
+                "pointer",
+              fontWeight: 700,
+            }}
+          >
+            新增長者
+          </button>
+        </div>
+
+        {/* ================================
+            狀態圖例
+        ================================= */}
+
+        <div
+          className="silvercare-attendance-legend"
+          style={{
             padding:
-              "14px 18px",
+              "12px 18px",
             background:
               "#F8FAFC",
-            borderBottom:
+            border:
               "1px solid #E5E7EB",
+            borderRadius:
+              radius.md,
             fontSize: 14,
-            fontWeight: 700,
             color:
               colors.primary,
           }}
         >
-          <div>
-            長者
-          </div>
+          <span
+            style={{
+              display:
+                "inline-flex",
+              alignItems:
+                "center",
+              gap: 7,
+              minWidth: 0,
+            }}
+          >
+            <span
+              style={{
+                width: 10,
+                height: 10,
+                borderRadius:
+                  "50%",
+                background:
+                  "#22C55E",
+                display:
+                  "inline-block",
+                flex: "0 0 auto",
+              }}
+            />
+            已測量
+          </span>
 
-          <div>
-            今日簽到
-          </div>
+          <span
+            style={{
+              display:
+                "inline-flex",
+              alignItems:
+                "center",
+              gap: 7,
+              minWidth: 0,
+            }}
+          >
+            <span
+              style={{
+                width: 10,
+                height: 10,
+                borderRadius:
+                  "50%",
+                background:
+                  "#F97316",
+                display:
+                  "inline-block",
+                flex: "0 0 auto",
+              }}
+            />
+            尚未測量
+          </span>
 
-          <div>
-            健康量測
-          </div>
+          <span
+            style={{
+              display:
+                "inline-flex",
+              alignItems:
+                "center",
+              gap: 7,
+              minWidth: 0,
+            }}
+          >
+            <span
+              style={{
+                width: 10,
+                height: 10,
+                borderRadius:
+                  "50%",
+                background:
+                  "#10B981",
+                display:
+                  "inline-block",
+                flex: "0 0 auto",
+              }}
+            />
+            已簽到
+          </span>
 
-          <div>
-            操作
-          </div>
+          <span
+            style={{
+              display:
+                "inline-flex",
+              alignItems:
+                "center",
+              gap: 7,
+              minWidth: 0,
+            }}
+          >
+            <span
+              style={{
+                width: 10,
+                height: 10,
+                borderRadius:
+                  "50%",
+                background:
+                  "#D1D5DB",
+                display:
+                  "inline-block",
+                flex: "0 0 auto",
+              }}
+            />
+            尚未簽到
+          </span>
         </div>
+
+        {/* ================================
+            新增長者
+        ================================= */}
+
+        {showAddElder && (
+          <div
+            style={{
+              padding: 20,
+              borderRadius:
+                radius.md,
+              background:
+                "#F8FAFC",
+              border:
+                "1px solid #E5E7EB",
+            }}
+          >
+            <h3
+              style={{
+                marginTop: 0,
+                color:
+                  colors.primary,
+              }}
+            >
+              新增長者並立即簽到
+            </h3>
+
+            <div
+              style={{
+                display:
+                  "grid",
+                gridTemplateColumns:
+                  "repeat(2, 1fr)",
+                gap: 16,
+              }}
+            >
+              <div>
+                <label
+                  style={
+                    labelStyle
+                  }
+                >
+                  姓名
+                </label>
+
+                <input
+                  type="text"
+                  value={
+                    newElderForm.name
+                  }
+                  onChange={(
+                    event
+                  ) =>
+                    setNewElderForm(
+                      (
+                        current
+                      ) => ({
+                        ...current,
+                        name:
+                          event.target
+                            .value,
+                      })
+                    )
+                  }
+                  placeholder="請輸入姓名"
+                  style={
+                    inputStyle
+                  }
+                />
+              </div>
+
+              <div>
+                <label
+                  style={
+                    labelStyle
+                  }
+                >
+                  性別
+                </label>
+
+                <select
+                  value={
+                    newElderForm.gender
+                  }
+                  onChange={(
+                    event
+                  ) =>
+                    setNewElderForm(
+                      (
+                        current
+                      ) => ({
+                        ...current,
+                        gender:
+                          event.target
+                            .value,
+                      })
+                    )
+                  }
+                  style={
+                    inputStyle
+                  }
+                >
+                  <option value="">
+                    請選擇性別
+                  </option>
+
+                  <option value="男">
+                    男
+                  </option>
+
+                  <option value="女">
+                    女
+                  </option>
+                </select>
+              </div>
+
+              <div>
+                <label
+                  style={
+                    labelStyle
+                  }
+                >
+                  生日
+                </label>
+
+                <input
+                  type="date"
+                  value={
+                    newElderForm.birthday
+                  }
+                  onChange={(
+                    event
+                  ) =>
+                    setNewElderForm(
+                      (
+                        current
+                      ) => ({
+                        ...current,
+                        birthday:
+                          event.target
+                            .value,
+                      })
+                    )
+                  }
+                  style={
+                    inputStyle
+                  }
+                />
+              </div>
+
+              <div>
+                <label
+                  style={
+                    labelStyle
+                  }
+                >
+                  電話
+                </label>
+
+                <input
+                  type="text"
+                  value={
+                    newElderForm.phone
+                  }
+                  onChange={(
+                    event
+                  ) =>
+                    setNewElderForm(
+                      (
+                        current
+                      ) => ({
+                        ...current,
+                        phone:
+                          event.target
+                            .value,
+                      })
+                    )
+                  }
+                  placeholder="請輸入電話"
+                  style={
+                    inputStyle
+                  }
+                />
+              </div>
+            </div>
+
+            <div
+              style={{
+                display:
+                  "flex",
+                gap: 10,
+                marginTop: 20,
+              }}
+            >
+              <button
+                type="button"
+                onClick={
+                  handleAddElder
+                }
+                style={
+                  primaryButtonStyle
+                }
+              >
+                新增並立即簽到
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setShowAddElder(
+                    false
+                  );
+
+                  setNewElderForm(
+                    createEmptyElderForm()
+                  );
+                }}
+                style={
+                  secondaryButtonStyle
+                }
+              >
+                取消
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* ================================
+            搜尋長者
+        ================================= */}
+
+        <div>
+          <div
+            style={{
+              marginBottom: 8,
+              color:
+                colors.primary,
+              fontSize: 14,
+              fontWeight: 600,
+            }}
+          >
+            搜尋長者
+
+            <span
+              style={{
+                marginLeft: 8,
+                color:
+                  colors.textLight,
+                fontWeight: 400,
+              }}
+            >
+              （可選）
+            </span>
+          </div>
+
+          <input
+            type="text"
+            value={keyword}
+            onChange={(e) =>
+              setKeyword(
+                e.target.value
+              )
+            }
+            placeholder="輸入姓名或電話快速找人..."
+            style={{
+              width: "100%",
+              boxSizing:
+                "border-box",
+              padding:
+                "13px 16px",
+              border:
+                "1px solid #D1D5DB",
+              borderRadius:
+                radius.md,
+              fontSize: 16,
+              outline:
+                "none",
+            }}
+          />
+        </div>
+
+        {/* ================================
+            今日長者總表
+        ================================= */}
 
         <div
           style={{
-            maxHeight:
-              "60vh",
-            overflowY:
-              "auto",
+            border:
+              "1px solid #E5E7EB",
+            borderRadius:
+              radius.md,
+            overflow: "hidden",
           }}
         >
-          {displayElders.length ===
-          0 ? (
-            <div
-              style={{
-                padding: 28,
-                textAlign:
-                  "center",
-                color:
-                  colors.textLight,
-              }}
-            >
-              找不到符合的長者
+          <div
+            className="silvercare-attendance-desktop-header"
+            style={{
+              padding:
+                "14px 18px",
+              background:
+                "#F8FAFC",
+              borderBottom:
+                "1px solid #E5E7EB",
+              fontSize: 14,
+              fontWeight: 700,
+              color:
+                colors.primary,
+            }}
+          >
+            <div>
+              長者
             </div>
-          ) : (
-            displayElders.map(
-              (elder) => {
-                const checked =
-                  hasCheckedInToday(
-                    elder.id
-                  );
 
-                const measured =
-                  hasMeasuredToday(
-                    elder.id
-                  );
+            <div>
+              今日簽到
+            </div>
 
-                return (
-                  <div
-                    key={
+            <div>
+              健康量測
+            </div>
+
+            <div>
+              操作
+            </div>
+          </div>
+
+          <div
+            style={{
+              maxHeight:
+                "60vh",
+              overflowY:
+                "auto",
+            }}
+          >
+            {displayElders.length ===
+            0 ? (
+              <div
+                style={{
+                  padding: 28,
+                  textAlign:
+                    "center",
+                  color:
+                    colors.textLight,
+                }}
+              >
+                找不到符合的長者
+              </div>
+            ) : (
+              displayElders.map(
+                (elder) => {
+                  const checked =
+                    hasCheckedInToday(
                       elder.id
-                    }
-                    style={{
-                      display:
-                        "grid",
-                      gridTemplateColumns:
-                        "1.4fr 1fr 1fr 1.1fr",
-                      gap: 16,
-                      alignItems:
-                        "center",
-                      padding:
-                        "16px 18px",
-                      borderBottom:
-                        "1px solid #E5E7EB",
-                      background:
-                        measured &&
-                        checked
-                          ? "#F0FDF4"
-                          : checked
-                          ? "#FFF7ED"
-                          : "#fff",
-                    }}
-                  >
-                    {/* 長者 */}
-                    <div>
-                      <div
-                        style={{
-                          fontSize: 16,
-                          fontWeight: 700,
-                          color:
-                            colors.primary,
-                        }}
-                      >
-                        {
-                          elder.name
-                        }
-                      </div>
+                    );
 
-                      {elder.phone && (
+                  const measured =
+                    hasMeasuredToday(
+                      elder.id
+                    );
+
+                  const record =
+                    todayRecords.find(
+                      (
+                        item
+                      ) =>
+                        Number(
+                          item.elderId
+                        ) ===
+                        Number(
+                          elder.id
+                        )
+                    );
+
+                  return (
+                    <div
+                      key={
+                        elder.id
+                      }
+                      className="silvercare-attendance-row"
+                      style={{
+                        alignItems:
+                          "center",
+                        padding:
+                          "16px 18px",
+                        borderBottom:
+                          "1px solid #E5E7EB",
+                        background:
+                          measured &&
+                          checked
+                            ? "#F0FDF4"
+                            : checked
+                            ? "#FFF7ED"
+                            : "#fff",
+                      }}
+                    >
+                      {/* Desktop：長者 */}
+
+                      <div>
                         <div
                           style={{
-                            marginTop: 4,
-                            fontSize: 13,
+                            fontSize:
+                              16,
+                            fontWeight:
+                              700,
                             color:
-                              colors.textLight,
+                              colors.primary,
                           }}
                         >
                           {
-                            elder.phone
+                            elder.name
                           }
                         </div>
-                      )}
-                    </div>
 
-                    {/* 今日簽到 */}
-                    <div>
-                      {checked ? (
-                        <div>
-                          <span
+                        {elder.phone && (
+                          <div
                             style={{
-                              display:
-                                "inline-flex",
-                              alignItems:
-                                "center",
-                              gap: 5,
-                              padding:
-                                "7px 11px",
-                              borderRadius:
-                                999,
-                              background:
-                                "#D1FAE5",
+                              marginTop:
+                                4,
+                              fontSize:
+                                13,
                               color:
-                                "#065F46",
-                              fontSize: 13,
-                              fontWeight: 700,
+                                colors.textLight,
                             }}
                           >
+                            {
+                              elder.phone
+                            }
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Desktop：今日簽到 */}
+
+                      <div>
+                        {checked ? (
+                          <div>
                             <span
                               style={{
-                                width: 8,
-                                height: 8,
+                                display:
+                                  "inline-flex",
+                                alignItems:
+                                  "center",
+                                gap: 5,
+                                padding:
+                                  "7px 11px",
                                 borderRadius:
-                                  "50%",
+                                  999,
                                 background:
-                                  "#10B981",
+                                  "#D1FAE5",
+                                color:
+                                  "#065F46",
+                                fontSize:
+                                  13,
+                                fontWeight:
+                                  700,
                               }}
-                            />
-                            已簽到
-                          </span>
+                            >
+                              <span
+                                style={{
+                                  width:
+                                    8,
+                                  height:
+                                    8,
+                                  borderRadius:
+                                    "50%",
+                                  background:
+                                    "#10B981",
+                                }}
+                              />
 
-                          {(() => {
-                            const record =
-                              todayRecords.find(
-                                (
-                                  item
-                                ) =>
-                                  Number(
-                                    item.elderId
-                                  ) ===
-                                  Number(
-                                    elder.id
-                                  )
-                              );
+                              已簽到
+                            </span>
 
-                            return record ? (
+                            {record && (
                               <div
                                 style={{
-                                  marginTop: 5,
-                                  fontSize: 12,
+                                  marginTop:
+                                    5,
+                                  fontSize:
+                                    12,
                                   color:
                                     colors.textLight,
                                 }}
@@ -1258,237 +1542,410 @@ export default function AttendanceSection({
                                   record.checkInTime
                                 }
                               </div>
-                            ) : null;
-                          })()}
-                        </div>
-                      ) : (
-                        <span
-                          style={{
-                            display:
-                              "inline-flex",
-                            alignItems:
-                              "center",
-                            gap: 6,
-                            padding:
-                              "7px 11px",
-                            borderRadius:
-                              999,
-                            background:
-                              "#F3F4F6",
-                            color:
-                              "#6B7280",
-                            fontSize: 13,
-                            fontWeight: 700,
-                          }}
-                        >
-                          <span
-                            style={{
-                              width: 8,
-                              height: 8,
-                              borderRadius:
-                                "50%",
-                              background:
-                                "#D1D5DB",
-                            }}
-                          />
-                          尚未簽到
-                        </span>
-                      )}
-                    </div>
-
-                    {/* 健康量測 */}
-                    <div>
-                      {!checked ? (
-                        <span
-                          style={{
-                            color:
-                              "#9CA3AF",
-                            fontSize: 14,
-                          }}
-                        >
-                          —
-                        </span>
-                      ) : (
-                        <button
-                          type="button"
-                          onClick={() =>
-                            onCheckInSuccess?.(
-                              elder
-                            )
-                          }
-                          style={{
-                            border:
-                              "none",
-                            borderRadius:
-                              999,
-                            padding:
-                              "7px 12px",
-                            background:
-                              measured
-                                ? "#DCFCE7"
-                                : "#FFEDD5",
-                            color:
-                              measured
-                                ? "#166534"
-                                : "#C2410C",
-                            cursor:
-                              "pointer",
-                            fontSize: 13,
-                            fontWeight: 700,
-                          }}
-                        >
+                            )}
+                          </div>
+                        ) : (
                           <span
                             style={{
                               display:
-                                "inline-block",
-                              width: 8,
-                              height: 8,
+                                "inline-flex",
+                              alignItems:
+                                "center",
+                              gap: 6,
+                              padding:
+                                "7px 11px",
                               borderRadius:
-                                "50%",
+                                999,
+                              background:
+                                "#F3F4F6",
+                              color:
+                                "#6B7280",
+                              fontSize:
+                                13,
+                              fontWeight:
+                                700,
+                            }}
+                          >
+                            <span
+                              style={{
+                                width:
+                                  8,
+                                height:
+                                  8,
+                                borderRadius:
+                                  "50%",
+                                background:
+                                  "#D1D5DB",
+                              }}
+                            />
+
+                            尚未簽到
+                          </span>
+                        )}
+                      </div>
+
+                      {/* Desktop：健康量測 */}
+
+                      <div>
+                        {!checked ? (
+                          <span
+                            style={{
+                              color:
+                                "#9CA3AF",
+                              fontSize:
+                                14,
+                            }}
+                          >
+                            —
+                          </span>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={() =>
+                              onCheckInSuccess?.(
+                                elder
+                              )
+                            }
+                            style={{
+                              border:
+                                "none",
+                              borderRadius:
+                                999,
+                              padding:
+                                "7px 12px",
                               background:
                                 measured
-                                  ? "#22C55E"
-                                  : "#F97316",
-                              marginRight: 7,
+                                  ? "#DCFCE7"
+                                  : "#FFEDD5",
+                              color:
+                                measured
+                                  ? "#166534"
+                                  : "#C2410C",
+                              cursor:
+                                "pointer",
+                              fontSize:
+                                13,
+                              fontWeight:
+                                700,
                             }}
-                          />
+                          >
+                            <span
+                              style={{
+                                display:
+                                  "inline-block",
+                                width:
+                                  8,
+                                height:
+                                  8,
+                                borderRadius:
+                                  "50%",
+                                background:
+                                  measured
+                                    ? "#22C55E"
+                                    : "#F97316",
+                                marginRight:
+                                  7,
+                              }}
+                            />
 
-                         {measured
-  ? "已測量"
-  : "尚未測量"}
-                        </button>
-                      )}
-                    </div>
+                            {measured
+                              ? "已測量"
+                              : "尚未測量"}
+                          </button>
+                        )}
+                      </div>
 
-                    {/* 操作 */}
-                    <div
-                      style={{
-                        display:
-                          "flex",
-                        gap: 8,
-                        alignItems:
-                          "center",
-                        flexWrap:
-                          "wrap",
-                      }}
-                    >
-                      {!checked ? (
-                        <button
-                          type="button"
-                          onClick={() =>
-                            handleCheckIn(
-                              elder
-                            )
-                          }
+                      {/* Desktop：操作 */}
+
+                      <div
+                        style={{
+                          display:
+                            "flex",
+                          gap: 8,
+                          alignItems:
+                            "center",
+                          flexWrap:
+                            "wrap",
+                        }}
+                        className="silvercare-attendance-action"
+                      >
+                        {!checked ? (
+                          <button
+                            type="button"
+                            onClick={() =>
+                              handleCheckIn(
+                                elder
+                              )
+                            }
+                            style={{
+                              border:
+                                "none",
+                              borderRadius:
+                                radius.md,
+                              padding:
+                                "9px 18px",
+                              background:
+                                colors.primary,
+                              color:
+                                "#fff",
+                              cursor:
+                                "pointer",
+                              fontWeight:
+                                700,
+                              whiteSpace:
+                                "nowrap",
+                            }}
+                          >
+                            簽到
+                          </button>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={() =>
+                              onCheckInSuccess?.(
+                                elder
+                              )
+                            }
+                            style={{
+                              border:
+                                "none",
+                              borderRadius:
+                                radius.md,
+                              padding:
+                                "9px 16px",
+                              background:
+                                measured
+                                  ? "#166534"
+                                  : "#F97316",
+                              color:
+                                "#fff",
+                              cursor:
+                                "pointer",
+                              fontWeight:
+                                700,
+                              whiteSpace:
+                                "nowrap",
+                            }}
+                          >
+                            {measured
+                              ? "查看健康量測"
+                              : "進入健康量測"}
+                          </button>
+                        )}
+                      </div>
+
+                      {/* ========================= */}
+                      {/* Mobile 專用內容 */}
+                      {/* ========================= */}
+
+                      <div className="silvercare-attendance-mobile-status">
+                        <div
+                          className="silvercare-attendance-status-box"
                           style={{
-                            border:
-                              "none",
-                            borderRadius:
-                              radius.md,
                             padding:
-                              "9px 18px",
+                              "10px 12px",
+                            borderRadius:
+                              10,
                             background:
-                              colors.primary,
-                            color:
-                              "#fff",
-                            cursor:
-                              "pointer",
-                            fontWeight: 700,
-                            whiteSpace:
-                              "nowrap",
+                              checked
+                                ? "#ECFDF5"
+                                : "#F8FAFC",
+                            border:
+                              checked
+                                ? "1px solid #A7F3D0"
+                                : "1px solid #E5E7EB",
                           }}
                         >
-                          簽到
-                        </button>
-                      ) : (
-                        <button
-                          type="button"
-                          onClick={() =>
-                            onCheckInSuccess?.(
-                              elder
-                            )
-                          }
+                          <div
+                            style={{
+                              fontSize:
+                                11,
+                              color:
+                                "#64748B",
+                              marginBottom:
+                                4,
+                            }}
+                          >
+                            今日簽到
+                          </div>
+
+                          <div
+                            style={{
+                              display:
+                                "flex",
+                              alignItems:
+                                "center",
+                              gap: 6,
+                              fontSize:
+                                14,
+                              fontWeight:
+                                700,
+                              color:
+                                checked
+                                  ? "#065F46"
+                                  : "#6B7280",
+                            }}
+                          >
+                            <span
+                              style={{
+                                width:
+                                  9,
+                                height:
+                                  9,
+                                borderRadius:
+                                  "50%",
+                                background:
+                                  checked
+                                    ? "#10B981"
+                                    : "#D1D5DB",
+                              }}
+                            />
+
+                            {checked
+                              ? "已簽到"
+                              : "尚未簽到"}
+                          </div>
+
+                          {record && (
+                            <div
+                              style={{
+                                marginTop:
+                                  3,
+                                fontSize:
+                                  11,
+                                color:
+                                  colors.textLight,
+                              }}
+                            >
+                              {
+                                record.checkInTime
+                              }
+                            </div>
+                          )}
+                        </div>
+
+                        <div
+                          className="silvercare-attendance-status-box"
                           style={{
-                            border:
-                              "none",
-                            borderRadius:
-                              radius.md,
                             padding:
-                              "9px 16px",
+                              "10px 12px",
+                            borderRadius:
+                              10,
                             background:
-                              measured
-                                ? "#166534"
-                                : "#F97316",
-                            color:
-                              "#fff",
-                            cursor:
-                              "pointer",
-                            fontWeight: 700,
-                            whiteSpace:
-                              "nowrap",
+                              checked
+                                ? measured
+                                  ? "#F0FDF4"
+                                  : "#FFF7ED"
+                                : "#F8FAFC",
+                            border:
+                              checked
+                                ? measured
+                                  ? "1px solid #BBF7D0"
+                                  : "1px solid #FED7AA"
+                                : "1px solid #E5E7EB",
                           }}
                         >
-                          {measured
-                            ? "查看健康量測"
-                            : "進入健康量測"}
-                        </button>
-                      )}
+                          <div
+                            style={{
+                              fontSize:
+                                11,
+                              color:
+                                "#64748B",
+                              marginBottom:
+                                4,
+                            }}
+                          >
+                            健康量測
+                          </div>
+
+                          <div
+                            style={{
+                              display:
+                                "flex",
+                              alignItems:
+                                "center",
+                              gap: 6,
+                              fontSize:
+                                14,
+                              fontWeight:
+                                700,
+                              color:
+                                !checked
+                                  ? "#9CA3AF"
+                                  : measured
+                                  ? "#166534"
+                                  : "#C2410C",
+                            }}
+                          >
+                            <span
+                              style={{
+                                width:
+                                  9,
+                                height:
+                                  9,
+                                borderRadius:
+                                  "50%",
+                                background:
+                                  !checked
+                                    ? "#D1D5DB"
+                                    : measured
+                                    ? "#22C55E"
+                                    : "#F97316",
+                              }}
+                            />
+
+                            {!checked
+                              ? "尚未簽到"
+                              : measured
+                              ? "已測量"
+                              : "尚未測量"}
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Mobile 名稱資訊補強 */}
+
+                      <div
+                        className="silvercare-attendance-mobile-status"
+                        style={{
+                          display:
+                            "none",
+                        }}
+                      />
+
+                      <div
+                        className="silvercare-attendance-mobile-summary"
+                        style={{
+                          display:
+                            "none",
+                        }}
+                      />
                     </div>
-                  </div>
-                );
-              }
-            )
-          )}
+                  );
+                }
+              )
+            )}
+          </div>
+        </div>
+
+        {/* ================================
+            今日簽到紀錄
+        ================================= */}
+
+        <div className="silvercare-attendance-table-wrap">
+          <AttendanceTable
+            records={
+              todayRecords
+            }
+            onDelete={
+              handleDelete
+            }
+          />
         </div>
       </div>
-
-      {/* ================================
-          今日簽到紀錄
-      ================================= */}
-      <AttendanceTable
-        records={todayRecords}
-        onDelete={
-          handleDelete
-        }
-      />
-    </div>
+    </>
   );
 }
-
-/**
- * 安全包裝 storage changed listener。
- */
-const addStorageChangedListenerSafe = (
-  callback: () => void
-) => {
-  try {
-    const {
-      addStorageChangedListener,
-    } = require(
-      "../utils/storageEvents"
-    ) as {
-      addStorageChangedListener?: (
-        callback: () => void
-      ) => () => void;
-    };
-
-    if (
-      typeof addStorageChangedListener ===
-      "function"
-    ) {
-      return addStorageChangedListener(
-        callback
-      );
-    }
-  } catch (error) {
-    console.error(
-      "讀取 storageEvents 失敗：",
-      error
-    );
-  }
-
-  return () => {};
-};
 
 const labelStyle:
   React.CSSProperties = {
@@ -1502,8 +1959,10 @@ const labelStyle:
 const inputStyle:
   React.CSSProperties = {
   width: "100%",
-  boxSizing: "border-box",
-  padding: "10px 12px",
+  boxSizing:
+    "border-box",
+  padding:
+    "10px 12px",
   border:
     "1px solid #D1D5DB",
   borderRadius: 8,
@@ -1515,11 +1974,13 @@ const primaryButtonStyle:
   React.CSSProperties = {
   border: "none",
   borderRadius: 8,
-  padding: "11px 18px",
+  padding:
+    "11px 18px",
   background:
     colors.primary,
   color: "#fff",
-  cursor: "pointer",
+  cursor:
+    "pointer",
   fontWeight: 700,
 };
 
@@ -1528,9 +1989,11 @@ const secondaryButtonStyle:
   border:
     "1px solid #D1D5DB",
   borderRadius: 8,
-  padding: "11px 18px",
+  padding:
+    "11px 18px",
   background: "#fff",
   color: "#374151",
-  cursor: "pointer",
+  cursor:
+    "pointer",
   fontWeight: 600,
 };
