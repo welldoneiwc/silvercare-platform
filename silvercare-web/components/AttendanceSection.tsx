@@ -1724,60 +1724,42 @@ export default function AttendanceSection({
               {displayElders.length ===
               0 ? (
                 <div
-                  style={{
-                    padding: 28,
-                    textAlign:
-                      "center",
-                    color:
-                      colors.textLight,
-                  }}
-                >
-                  找不到符合的長者
-                  <button
-  type="button"
-  onClick={
-    handleUnregisteredCheckIn
-  }
   style={{
-    marginTop: 12,
-    border: "none",
-    borderRadius:
-      radius.md,
-    padding:
-      "10px 18px",
-    background:
-      colors.primary,
-    color: "#fff",
-    cursor:
-      "pointer",
-    fontWeight: 700,
+    padding: 28,
+    textAlign:
+      "center",
+    color:
+      colors.textLight,
   }}
 >
-  ＋ 現場新增報到
-</button>
-                  <button
-  type="button"
-  onClick={
-    handleUnregisteredCheckIn
-  }
-  style={{
-    marginTop: 12,
-    border: "none",
-    borderRadius:
-      radius.md,
-    padding:
-      "10px 18px",
-    background:
-      colors.primary,
-    color: "#fff",
-    cursor:
-      "pointer",
-    fontWeight: 700,
-  }}
->
-  ＋ 現場新增報到
-</button>
-                </div>
+  <div>
+    找不到符合的長者
+  </div>
+
+  <button
+    type="button"
+    onClick={
+      handleUnregisteredCheckIn
+    }
+    style={{
+      marginTop: 14,
+      border: "none",
+      borderRadius:
+        radius.md,
+      padding:
+        "10px 18px",
+      background:
+        colors.primary,
+      color: "#fff",
+      cursor:
+        "pointer",
+      fontWeight: 700,
+      fontSize: 14,
+    }}
+  >
+    ＋ 現場新增報到
+  </button>
+</div>
               ) : (
                 displayElders.map(
                   (elder) => {
@@ -2111,7 +2093,7 @@ export default function AttendanceSection({
         <div
           className="silvercare-attendance-mobile"
         >
-          {displayElders.length ===
+                  {displayElders.length ===
           0 ? (
             <div
               style={{
@@ -2126,7 +2108,33 @@ export default function AttendanceSection({
                   radius.md,
               }}
             >
-              找不到符合的長者
+              <div>
+                找不到符合的長者
+              </div>
+
+              <button
+                type="button"
+                onClick={
+                  handleUnregisteredCheckIn
+                }
+                style={{
+                  marginTop: 14,
+                  border: "none",
+                  borderRadius:
+                    radius.md,
+                  padding:
+                    "11px 18px",
+                  background:
+                    colors.primary,
+                  color: "#fff",
+                  cursor:
+                    "pointer",
+                  fontWeight: 700,
+                  fontSize: 15,
+                }}
+              >
+                ＋ 現場新增報到
+              </button>
             </div>
           ) : (
             <div className="silvercare-attendance-mobile-list">
