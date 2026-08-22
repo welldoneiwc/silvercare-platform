@@ -6,6 +6,22 @@ const supabaseUrl =
 const supabasePublishableKey =
   process.env
     .NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY;
+    console.log(
+  "Supabase URL:",
+  supabaseUrl
+);
+
+console.log(
+  "Supabase Key exists:",
+  Boolean(
+    supabasePublishableKey
+  )
+);
+
+console.log(
+  "Supabase Key length:",
+  supabasePublishableKey?.length
+);
 
 if (
   !supabaseUrl ||

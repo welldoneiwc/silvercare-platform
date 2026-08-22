@@ -222,10 +222,10 @@ export default function ElderList({
           });
 
         if (error) {
-          console.error(
-            "讀取長者資料失敗：",
-            error
-          );
+         console.error(
+  "讀取長者資料失敗：",
+  JSON.stringify(error, null, 2)
+);
 
           setElders([]);
           setLoaded(true);
