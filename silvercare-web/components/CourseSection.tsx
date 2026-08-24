@@ -120,94 +120,85 @@ export default function CourseSection() {
   ) {
     try {
       /*
+       * ============================
        * 編輯既有課程
+       * ============================
        */
       if (
-        course.id !== undefined
+        course.id !== undefined &&
+        course.id !== null
       ) {
-     const {
-  data: updatedCourse,
-  error,
-} = await supabase
-  .from("courses")
-  .update({
-    date: course.date,
-    title: course.title,
-    teacher: course.teacher,
-    start_time: course.startTime,
-    end_time: course.endTime,
-    capacity: course.capacity,
-    classroom: course.classroom,
-    note: course.note,
-  })
-  .eq("id", course.id)
-  .select();
+        const courseId =
+          Number(course.id);
 
-console.log(
-  "🟢 課程更新結果：",
-  {
-    courseId: course.id,
-    updatedCourse,
-  }
-);
+        console.log(
+          "🟡 準備更新課程：",
+          {
+            originalId: course.id,
+            courseId,
+            title: course.title,
+          }
+        );
 
-if (error) {
-  console.error(
-    "更新課程失敗：",
-    error
-  );
+        /*
+         * 先確認 Database 裡真的有這筆課程
+         */
+        const {
+          data: existingCourse,
+          error: findError,
+        } = await supabase
+          .from("courses")
+          .select("id")
+          .eq("id", courseId)
+          .maybeSingle();
 
-  alert(
-    "更新課程失敗，請稍後再試。"
-  );
+        console.log(
+          "🔎 查詢原課程結果：",
+          {
+            existingCourse,
+            findError,
+          }
+        );
 
-  return;
-}
-
-if (
-  !updatedCourse ||
-  updatedCourse.length === 0
-) {
-  console.error(
-    "🔴 沒有找到要更新的課程：",
-    course.id
-  );
-
-  alert(
-    "課程沒有更新成功：找不到對應的課程資料。"
-  );
-
-  return;
-}
-
-        if (error) {
+        if (findError) {
           console.error(
-            "更新課程失敗：",
-            error
+            "查詢課程失敗：",
+            findError
           );
 
           alert(
-            "更新課程失敗，請稍後再試。"
+            "查詢課程資料失敗，請稍後再試。"
           );
 
           return;
         }
-      } else {
-        /*
-         * 新增課程
-         *
-         * ID 暫時維持前端 Date.now()
-         * 與原本 SilverCare 架構一致
-         */
-        const newId =
-          Date.now();
 
+        if (!existingCourse) {
+          console.error(
+            "🔴 找不到對應課程 ID：",
+            courseId
+          );
+
+          alert(
+            "課程沒有更新成功：找不到對應的課程資料。"
+          );
+
+          return;
+        }
+
+        /*
+         * 執行更新
+         *
+         * 注意：
+         * 這裡不再使用 .select()
+         * 避免手機版因更新後回傳資料問題
+         * 被誤判成更新失敗。
+         */
         const {
-          error,
+          error: updateError,
         } = await supabase
           .from("courses")
-          .insert({
-            id: newId,
+          .update({
             date: course.date,
             title: course.title,
             teacher:
@@ -221,25 +212,87 @@ if (
             classroom:
               course.classroom,
             note: course.note,
-          });
+          })
+          .eq("id", courseId);
 
-        if (error) {
+        console.log(
+          "🟢 課程更新完成：",
+          {
+            courseId,
+            updateError,
+          }
+        );
+
+        if (updateError) {
           console.error(
-            "新增課程失敗：",
-            error
+            "更新課程失敗：",
+            updateError
           );
 
           alert(
-            "新增課程失敗，請稍後再試。"
+            "更新課程失敗，請稍後再試。"
           );
 
           return;
         }
+
+        /*
+         * 再重新讀取 Database
+         * 確認最新資料真的已經寫入
+         */
+        await loadCourses();
+
+        setOpenModal(false);
+        setEditingCourse(null);
+
+        return;
       }
 
       /*
-       * 儲存成功後重新讀取
-       * 確保畫面與 Database 一致
+       * ============================
+       * 新增課程
+       * ============================
+       */
+
+      const newId =
+        Date.now();
+
+      const {
+        error: insertError,
+      } = await supabase
+        .from("courses")
+        .insert({
+          id: newId,
+          date: course.date,
+          title: course.title,
+          teacher:
+            course.teacher,
+          start_time:
+            course.startTime,
+          end_time:
+            course.endTime,
+          capacity:
+            course.capacity,
+          classroom:
+            course.classroom,
+          note: course.note,
+        });
+
+      if (insertError) {
+        console.error(
+          "新增課程失敗：",
+          insertError
+        );
+
+        alert(
+          "新增課程失敗，請稍後再試。"
+        );
+
+        return;
+      }
+
+      /*
+       * 新增成功後重新讀取
        */
       await loadCourses();
 
