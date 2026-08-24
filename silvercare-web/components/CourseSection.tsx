@@ -131,14 +131,20 @@ export default function CourseSection() {
         const courseId =
           Number(course.id);
 
-        console.log(
-          "🟡 準備更新課程：",
-          {
-            originalId: course.id,
-            courseId,
-            title: course.title,
-          }
-        );
+       alert(
+  `手機正在更新課程\n\n` +
+  `ID：${courseId}\n` +
+  `名稱：${course.title}`
+);
+
+console.log(
+  "🟡 準備更新課程：",
+  {
+    originalId: course.id,
+    courseId,
+    title: course.title,
+  }
+);
 
         /*
          * 先確認 Database 裡真的有這筆課程
