@@ -26,8 +26,8 @@ type Props = {
   editingCourse: Course | null;
   onClose: () => void;
   onSave: (
-    course: Course
-  ) => void;
+  course: Course
+) => Promise<void>;
 };
 
 function getTodayDate() {
@@ -454,126 +454,94 @@ export default function AddCourseModal({
             取消
           </button>
 
-          {/* 儲存 */}
-          <button
-            onClick={() => {
-              if (!date) {
-                alert(
-                  "請選擇課程日期"
-                );
-                return;
-              }
+         {/* 儲存 */}
+<button
+  type="button"
+  onClick={async () => {
+    if (!date) {
+      alert("請選擇課程日期");
+      return;
+    }
 
-              if (!title.trim()) {
-                alert(
-                  "請輸入課程名稱"
-                );
-                return;
-              }
+    if (!title.trim()) {
+      alert("請輸入課程名稱");
+      return;
+    }
 
-              if (!teacher.trim()) {
-                alert(
-                  "請輸入授課老師"
-                );
-                return;
-              }
+    if (!teacher.trim()) {
+      alert("請輸入授課老師");
+      return;
+    }
 
-              if (
-                !startTime ||
-                !endTime
-              ) {
-                alert(
-                  "請選擇課程時間"
-                );
-                return;
-              }
+    if (!startTime || !endTime) {
+      alert("請選擇課程時間");
+      return;
+    }
 
-              if (
-                startTime >= endTime
-              ) {
-                alert(
-                  "結束時間必須晚於開始時間"
-                );
-                return;
-              }
+    if (startTime >= endTime) {
+      alert("結束時間必須晚於開始時間");
+      return;
+    }
 
-              const course: Course = {
-                ...(editingCourse?.id !==
-                undefined
-                  ? {
-                      id: editingCourse.id,
-                    }
-                  : {}),
+    const course: Course = {
+      ...(editingCourse?.id !== undefined
+        ? {
+            id: editingCourse.id,
+          }
+        : {}),
 
-                date,
+      date,
 
-                title:
-                  title.trim(),
+      title: title.trim(),
 
-                teacher:
-                  teacher.trim(),
+      teacher: teacher.trim(),
 
-                startTime,
+      startTime,
 
-                endTime,
+      endTime,
 
-                capacity:
-                  Number(
-                    capacity
-                  ) || 0,
+      capacity: Number(capacity) || 0,
 
-                classroom:
-                  classroom.trim(),
+      classroom: classroom.trim(),
 
-                note:
-                  note.trim(),
-              };
+      note: note.trim(),
+    };
 
-              onSave(course);
+    try {
+      await onSave(course);
 
-              setDate("");
-
-              setTitle("");
-
-              setTeacher("");
-
-              setStartTime(
-                "09:00"
-              );
-
-              setEndTime(
-                "10:00"
-              );
-
-              setCapacity(
-                "20"
-              );
-
-              setClassroom("");
-
-              setNote("");
-            }}
-            style={{
-              background:
-                colors.primary,
-              color:
-                "#fff",
-              border:
-                "none",
-              borderRadius:
-                radius.md,
-              padding:
-                "10px 20px",
-              cursor:
-                "pointer",
-              fontWeight:
-                600,
-            }}
-          >
-            {editingCourse
-              ? "儲存修改"
-              : "新增課程"}
-          </button>
+      /*
+       * 儲存成功後才清空表單
+       */
+      setDate("");
+      setTitle("");
+      setTeacher("");
+      setStartTime("09:00");
+      setEndTime("10:00");
+      setCapacity("20");
+      setClassroom("");
+      setNote("");
+    } catch (error) {
+      console.error(
+        "課程儲存失敗：",
+        error
+      );
+    }
+  }}
+  style={{
+    background: colors.primary,
+    color: "#fff",
+    border: "none",
+    borderRadius: radius.md,
+    padding: "10px 20px",
+    cursor: "pointer",
+    fontWeight: 600,
+  }}
+>
+  {editingCourse
+    ? "儲存修改"
+    : "新增課程"}
+</button>
         </div>
       </div>
     </div>

@@ -125,26 +125,60 @@ export default function CourseSection() {
       if (
         course.id !== undefined
       ) {
-        const {
-          error,
-        } = await supabase
-          .from("courses")
-          .update({
-            date: course.date,
-            title: course.title,
-            teacher:
-              course.teacher,
-            start_time:
-              course.startTime,
-            end_time:
-              course.endTime,
-            capacity:
-              course.capacity,
-            classroom:
-              course.classroom,
-            note: course.note,
-          })
-          .eq("id", course.id);
+     const {
+  data: updatedCourse,
+  error,
+} = await supabase
+  .from("courses")
+  .update({
+    date: course.date,
+    title: course.title,
+    teacher: course.teacher,
+    start_time: course.startTime,
+    end_time: course.endTime,
+    capacity: course.capacity,
+    classroom: course.classroom,
+    note: course.note,
+  })
+  .eq("id", course.id)
+  .select();
+
+console.log(
+  "🟢 課程更新結果：",
+  {
+    courseId: course.id,
+    updatedCourse,
+  }
+);
+
+if (error) {
+  console.error(
+    "更新課程失敗：",
+    error
+  );
+
+  alert(
+    "更新課程失敗，請稍後再試。"
+  );
+
+  return;
+}
+
+if (
+  !updatedCourse ||
+  updatedCourse.length === 0
+) {
+  console.error(
+    "🔴 沒有找到要更新的課程：",
+    course.id
+  );
+
+  alert(
+    "課程沒有更新成功：找不到對應的課程資料。"
+  );
+
+  return;
+}
 
         if (error) {
           console.error(
