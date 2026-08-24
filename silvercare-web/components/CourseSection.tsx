@@ -74,10 +74,8 @@ export default function CourseSection() {
         (data ?? []).map(
           (item) => ({
             id: item.id,
-            date:
-              item.date ?? "",
-            title:
-              item.title ?? "",
+            date: item.date ?? "",
+            title: item.title ?? "",
             teacher:
               item.teacher ?? "",
             startTime:
@@ -90,8 +88,7 @@ export default function CourseSection() {
               ),
             classroom:
               item.classroom ?? "",
-            note:
-              item.note ?? "",
+            note: item.note ?? "",
           })
         );
 
@@ -123,31 +120,82 @@ export default function CourseSection() {
   ) {
     try {
       /*
-       * ============================
        * 編輯既有課程
-       * ============================
        */
       if (
         course.id !== undefined
       ) {
         console.log(
-          "🟡 準備更新課程：",
+          "🟢 準備 UPDATE 課程：",
           {
-            id: course.id,
+            courseId: course.id,
             title: course.title,
           }
         );
 
-        alert(
-          `① 準備 UPDATE\n\nID：${course.id}\n名稱：${course.title}`
+        const { error } =
+          await supabase
+            .from("courses")
+            .update({
+              date: course.date,
+              title: course.title,
+              teacher:
+                course.teacher,
+              start_time:
+                course.startTime,
+              end_time:
+                course.endTime,
+              capacity:
+                course.capacity,
+              classroom:
+                course.classroom,
+              note: course.note,
+            })
+            .eq(
+              "id",
+              course.id
+            );
+
+        if (error) {
+          console.error(
+            "更新課程失敗：",
+            error
+          );
+
+          alert(
+            "更新課程失敗，請稍後再試。"
+          );
+
+          return;
+        }
+
+        console.log(
+          "🟢 課程 UPDATE 成功：",
+          course.id
+        );
+      } else {
+        /*
+         * 新增課程
+         *
+         * ID 暫時使用前端 Date.now()
+         */
+        const newId =
+          Date.now();
+
+        console.log(
+          "🟢 準備 INSERT 課程：",
+          {
+            courseId: newId,
+            title: course.title,
+          }
         );
 
         const {
-          data: updatedCourse,
           error,
         } = await supabase
           .from("courses")
-          .update({
+          .insert({
+            id: newId,
             date: course.date,
             title: course.title,
             teacher:
@@ -160,156 +208,36 @@ export default function CourseSection() {
               course.capacity,
             classroom:
               course.classroom,
-            note:
-              course.note,
-          })
-          .eq(
-            "id",
-            course.id
-          )
-          .select("*");
+            note: course.note,
+          });
 
-        console.log(
-          "🟢 UPDATE 回應：",
-          {
-            courseId:
-              course.id,
-            updatedCourse,
-            error,
-          }
-        );
-
-        /*
-         * UPDATE 發生 Supabase error
-         */
         if (error) {
           console.error(
-            "🔴 更新課程失敗：",
+            "新增課程失敗：",
             error
           );
 
           alert(
-            `② UPDATE 失敗\n\nCode：${error.code}\nMessage：${error.message}\nDetails：${error.details ?? ""}`
+            "新增課程失敗，請稍後再試。"
           );
 
           return;
         }
 
-        /*
-         * UPDATE 沒有找到資料
-         */
-        if (
-          !updatedCourse ||
-          updatedCourse.length === 0
-        ) {
-          console.error(
-            "🔴 UPDATE 沒有找到對應課程：",
-            course.id
-          );
-
-          alert(
-            `② UPDATE 沒有找到對應課程\n\nID：${course.id}\n\n請確認 Supabase courses 資料表的 id 是否相同。`
-          );
-
-          return;
-        }
-
-        /*
-         * UPDATE 成功
-         */
         console.log(
-          "🟢 課程更新成功：",
-          updatedCourse[0]
+          "🟢 課程 INSERT 成功：",
+          newId
         );
-
-        alert(
-          `② UPDATE 成功！\n\nID：${updatedCourse[0].id}\n名稱：${updatedCourse[0].title}`
-        );
-
-        /*
-         * 重新從 Supabase 讀取
-         */
-        await loadCourses();
-
-        /*
-         * 關閉 Modal
-         */
-        setOpenModal(false);
-
-        setEditingCourse(
-          null
-        );
-
-        return;
       }
 
       /*
-       * ============================
-       * 新增課程
-       * ============================
-       */
-
-      const newId =
-        Date.now();
-
-      console.log(
-        "🟡 準備新增課程：",
-        {
-          id: newId,
-          title: course.title,
-        }
-      );
-
-      const {
-        error,
-      } = await supabase
-        .from("courses")
-        .insert({
-          id: newId,
-          date: course.date,
-          title: course.title,
-          teacher:
-            course.teacher,
-          start_time:
-            course.startTime,
-          end_time:
-            course.endTime,
-          capacity:
-            course.capacity,
-          classroom:
-            course.classroom,
-          note:
-            course.note,
-        });
-
-      if (error) {
-        console.error(
-          "新增課程失敗：",
-          error
-        );
-
-        alert(
-          `新增課程失敗\n\n${error.message}`
-        );
-
-        return;
-      }
-
-      console.log(
-        "🟢 課程新增成功：",
-        newId
-      );
-
-      /*
-       * 新增成功後重新讀取
+       * 儲存成功後重新讀取
+       * 確保畫面與 Database 一致
        */
       await loadCourses();
 
       setOpenModal(false);
-
-      setEditingCourse(
-        null
-      );
+      setEditingCourse(null);
     } catch (error) {
       console.error(
         "儲存課程發生錯誤：",
@@ -323,9 +251,7 @@ export default function CourseSection() {
   }
 
   /*
-   * ============================
    * 刪除課程
-   * ============================
    */
   async function handleDelete(
     id: number
@@ -389,9 +315,7 @@ export default function CourseSection() {
   }
 
   /*
-   * ============================
    * 開啟課程報名管理
-   * ============================
    */
   function handleRegistration(
     course: Course
@@ -402,9 +326,7 @@ export default function CourseSection() {
   }
 
   /*
-   * ============================
    * 關閉課程報名管理
-   * ============================
    */
   function handleCloseRegistration() {
     setRegistrationCourse(
@@ -435,11 +357,6 @@ export default function CourseSection() {
     );
   }
 
-  /*
-   * ============================
-   * 課程管理畫面
-   * ============================
-   */
   return (
     <div
       style={{
@@ -456,7 +373,7 @@ export default function CourseSection() {
         gap: 24,
       }}
     >
-      {/* 標題 + 新增課程 */}
+      {/* 課程管理標題 */}
       <div
         style={{
           display: "flex",
@@ -483,9 +400,7 @@ export default function CourseSection() {
               null
             );
 
-            setOpenModal(
-              true
-            );
+            setOpenModal(true);
           }}
           style={{
             padding:
@@ -514,9 +429,7 @@ export default function CourseSection() {
             course
           );
 
-          setOpenModal(
-            true
-          );
+          setOpenModal(true);
         }}
         onDelete={
           handleDelete
@@ -526,17 +439,14 @@ export default function CourseSection() {
         }
       />
 
-      {/* 新增 / 編輯 Modal */}
+      {/* 新增 / 編輯課程 Modal */}
       <AddCourseModal
         open={openModal}
         editingCourse={
           editingCourse
         }
         onClose={() => {
-          setOpenModal(
-            false
-          );
-
+          setOpenModal(false);
           setEditingCourse(
             null
           );
