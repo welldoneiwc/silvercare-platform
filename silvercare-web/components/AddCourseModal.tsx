@@ -26,8 +26,8 @@ type Props = {
   editingCourse: Course | null;
   onClose: () => void;
   onSave: (
-  course: Course
-) => Promise<void>;
+    course: Course
+  ) => Promise<void>;
 };
 
 function getTodayDate() {
@@ -78,7 +78,9 @@ export default function AddCourseModal({
     useState("");
 
   useEffect(() => {
-    if (!open) return;
+    if (!open) {
+      return;
+    }
 
     if (editingCourse) {
       setDate(
@@ -86,31 +88,34 @@ export default function AddCourseModal({
       );
 
       setTitle(
-        editingCourse.title
+        editingCourse.title || ""
       );
 
       setTeacher(
-        editingCourse.teacher
+        editingCourse.teacher || ""
       );
 
       setStartTime(
-        editingCourse.startTime
+        editingCourse.startTime || ""
       );
 
       setEndTime(
-        editingCourse.endTime
+        editingCourse.endTime || ""
       );
 
       setCapacity(
-        editingCourse.capacity.toString()
+        editingCourse.capacity !==
+          undefined
+          ? editingCourse.capacity.toString()
+          : "20"
       );
 
       setClassroom(
-        editingCourse.classroom
+        editingCourse.classroom || ""
       );
 
       setNote(
-        editingCourse.note
+        editingCourse.note || ""
       );
     } else {
       setDate(
@@ -159,11 +164,14 @@ export default function AddCourseModal({
         alignItems:
           "center",
         zIndex: 999,
+        padding: 16,
+        boxSizing: "border-box",
       }}
     >
       <div
         style={{
           width: 560,
+          maxWidth: "100%",
           maxHeight: "90vh",
           overflowY: "auto",
           background: "#fff",
@@ -172,6 +180,7 @@ export default function AddCourseModal({
           boxShadow:
             shadow.lg,
           padding: 24,
+          boxSizing: "border-box",
         }}
       >
         <h2
@@ -341,6 +350,7 @@ export default function AddCourseModal({
 
             <input
               type="number"
+              min="1"
               value={capacity}
               onChange={(e) =>
                 setCapacity(
@@ -437,6 +447,7 @@ export default function AddCourseModal({
         >
           {/* 取消 */}
           <button
+            type="button"
             onClick={onClose}
             style={{
               padding:
@@ -454,96 +465,138 @@ export default function AddCourseModal({
             取消
           </button>
 
-         {/* 儲存 */}
-<button
-  type="button"
-  onClick={async () => {
-    if (!date) {
-      alert("請選擇課程日期");
-      return;
-    }
+          {/* 儲存 */}
+          <button
+            type="button"
+            onClick={async () => {
+              if (!date) {
+                alert(
+                  "請選擇課程日期"
+                );
+                return;
+              }
 
-    if (!title.trim()) {
-      alert("請輸入課程名稱");
-      return;
-    }
+              if (!title.trim()) {
+                alert(
+                  "請輸入課程名稱"
+                );
+                return;
+              }
 
-    if (!teacher.trim()) {
-      alert("請輸入授課老師");
-      return;
-    }
+              if (!teacher.trim()) {
+                alert(
+                  "請輸入授課老師"
+                );
+                return;
+              }
 
-    if (!startTime || !endTime) {
-      alert("請選擇課程時間");
-      return;
-    }
+              if (
+                !startTime ||
+                !endTime
+              ) {
+                alert(
+                  "請選擇課程時間"
+                );
+                return;
+              }
 
-    if (startTime >= endTime) {
-      alert("結束時間必須晚於開始時間");
-      return;
-    }
+              if (
+                startTime >=
+                endTime
+              ) {
+                alert(
+                  "結束時間必須晚於開始時間"
+                );
+                return;
+              }
 
-    const course: Course = {
-      ...(editingCourse?.id !== undefined
-        ? {
-            id: editingCourse.id,
-          }
-        : {}),
+              const numericCapacity =
+                Number(capacity);
 
-      date,
+              if (
+                !Number.isFinite(
+                  numericCapacity
+                ) ||
+                numericCapacity <= 0
+              ) {
+                alert(
+                  "請輸入有效的人數上限"
+                );
+                return;
+              }
 
-      title: title.trim(),
+              const course: Course =
+                {
+                  ...(editingCourse?.id !==
+                  undefined
+                    ? {
+                        id:
+                          editingCourse.id,
+                      }
+                    : {}),
 
-      teacher: teacher.trim(),
+                  date,
 
-      startTime,
+                  title:
+                    title.trim(),
 
-      endTime,
+                  teacher:
+                    teacher.trim(),
 
-      capacity: Number(capacity) || 0,
+                  startTime,
 
-      classroom: classroom.trim(),
+                  endTime,
 
-      note: note.trim(),
-    };
+                  capacity:
+                    numericCapacity,
 
-    try {
-      await onSave(course);
+                  classroom:
+                    classroom.trim(),
 
-      /*
-       * 儲存成功後才清空表單
-       */
-      setDate("");
-      setTitle("");
-      setTeacher("");
-      setStartTime("09:00");
-      setEndTime("10:00");
-      setCapacity("20");
-      setClassroom("");
-      setNote("");
-    } catch (error) {
-      console.error(
-        "課程儲存失敗：",
-        error
-      );
-    }
-  }}
-  style={{
-    background: colors.primary,
-    color: "#fff",
-    border: "none",
-    borderRadius: radius.md,
-    padding: "10px 20px",
-    cursor: "pointer",
-    fontWeight: 600,
-  }}
->
-  {editingCourse
-    ? "儲存修改"
-    : "新增課程"}
-</button>
+                  note:
+                    note.trim(),
+                };
+
+              try {
+                /*
+                 * CourseSection.handleSave
+                 * 成功或失敗都由它自己處理。
+                 *
+                 * 這裡只等待它完成。
+                 */
+                await onSave(course);
+              } catch (error) {
+                console.error(
+                  "課程儲存失敗：",
+                  error
+                );
+
+                alert(
+                  "課程儲存失敗，請查看主控台錯誤訊息。"
+                );
+              }
+            }}
+            style={{
+              background:
+                colors.primary,
+              color: "#fff",
+              border: "none",
+              borderRadius:
+                radius.md,
+              padding:
+                "10px 20px",
+              cursor:
+                "pointer",
+              fontWeight: 600,
+            }}
+          >
+            {editingCourse
+              ? "儲存修改"
+              : "新增課程"}
+          </button>
         </div>
       </div>
     </div>
   );
 }
+
