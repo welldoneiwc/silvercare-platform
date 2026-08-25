@@ -9,6 +9,8 @@ import { colors } from "../styles/theme";
 import { radius } from "../styles/radius";
 import { shadow } from "../styles/shadow";
 
+import { supabase } from "../utils/supabase";
+
 export type Activity = {
   id: number;
   date: string;
@@ -48,68 +50,91 @@ export default function ActivitySection() {
   const [
     editingActivity,
     setEditingActivity,
-  ] = useState<Activity | null>(
-    null
-  );
+  ] = useState<Activity | null>(null);
 
   const [form, setForm] =
     useState(emptyForm);
 
+  const [saving, setSaving] =
+    useState(false);
+
   /*
-   * 第一次載入 LocalStorage
+   * ========================================
+   * 讀取活動
+   * ========================================
+   *
+   * 正式資料來源改為 Supabase。
+   *
+   * 如果 Supabase 目前完全沒有資料，
+   * 但舊手機 LocalStorage 有活動，
+   * 第一次會自動搬到 Supabase。
    */
-  useEffect(() => {
-    const savedActivities =
-      localStorage.getItem(
-        STORAGE_KEY
+ useEffect(() => {
+  const loadActivities = async () => {
+    try {
+      const { data, error } = await supabase
+        .from("activities")
+        .select(
+          `
+            id,
+            date,
+            title,
+            type,
+            start_time,
+            end_time,
+            location,
+            capacity,
+            note
+          `
+        )
+        .order("date", {
+          ascending: true,
+        })
+        .order("start_time", {
+          ascending: true,
+        });
+
+      if (error) {
+        throw error;
+      }
+
+      const mappedActivities: Activity[] =
+        (data ?? []).map((item) => ({
+          id: Number(item.id),
+          date: item.date,
+          title: item.title,
+          type: item.type ?? "",
+          startTime:
+            item.start_time ?? "",
+          endTime:
+            item.end_time ?? "",
+          location:
+            item.location ?? "",
+          capacity:
+            Number(item.capacity ?? 0),
+          note: item.note ?? "",
+        }));
+
+      setActivities(mappedActivities);
+    } catch (error) {
+      console.error(
+        "讀取活動資料失敗：",
+        error
       );
 
-    if (!savedActivities) {
       setActivities([]);
-    } else {
-      try {
-        const parsed =
-          JSON.parse(
-            savedActivities
-          );
-
-        if (Array.isArray(parsed)) {
-          setActivities(parsed);
-        } else {
-          setActivities([]);
-        }
-      } catch (error) {
-        console.error(
-          "讀取活動資料失敗：",
-          error
-        );
-
-        setActivities([]);
-      }
+    } finally {
+      setLoaded(true);
     }
+  };
 
-    setLoaded(true);
-  }, []);
-
-  /*
-   * 寫回活動 LocalStorage
-   *
-   * 第一次讀取完成後才執行。
-   */
-  useEffect(() => {
-    if (!loaded) return;
-
-    localStorage.setItem(
-      STORAGE_KEY,
-      JSON.stringify(activities)
-    );
-  }, [
-    activities,
-    loaded,
-  ]);
+  void loadActivities();
+}, []);
 
   /*
+   * ========================================
    * 開啟新增
+   * ========================================
    */
   const handleOpenAdd = () => {
     setEditingActivity(null);
@@ -125,7 +150,9 @@ export default function ActivitySection() {
   };
 
   /*
+   * ========================================
    * 開啟編輯
+   * ========================================
    */
   const handleOpenEdit = (
     activity: Activity
@@ -143,9 +170,7 @@ export default function ActivitySection() {
       location:
         activity.location,
       capacity:
-        String(
-          activity.capacity
-        ),
+        String(activity.capacity),
       note: activity.note,
     });
 
@@ -153,84 +178,103 @@ export default function ActivitySection() {
   };
 
   /*
+   * ========================================
    * 儲存活動
+   * ========================================
    */
-  const handleSave = () => {
-    if (!form.title.trim()) {
-      alert("請輸入活動名稱");
-      return;
-    }
+const handleSave = async () => {
+  if (!form.title.trim()) {
+    alert("請輸入活動名稱");
+    return;
+  }
 
-    if (!form.date) {
-      alert("請選擇活動日期");
-      return;
-    }
+  if (!form.date) {
+    alert("請選擇活動日期");
+    return;
+  }
 
-    if (!form.startTime) {
-      alert("請選擇開始時間");
-      return;
-    }
+  if (!form.startTime) {
+    alert("請選擇開始時間");
+    return;
+  }
 
-    if (!form.endTime) {
-      alert("請選擇結束時間");
-      return;
-    }
+  if (!form.endTime) {
+    alert("請選擇結束時間");
+    return;
+  }
 
-    const capacity =
-      Number(form.capacity);
+  const capacity = Number(form.capacity);
 
-    if (
-      !form.capacity ||
-      capacity <= 0
-    ) {
-      alert("請輸入正確的活動人數");
-      return;
-    }
+  if (!form.capacity || capacity <= 0) {
+    alert("請輸入正確的活動人數");
+    return;
+  }
+
+  try {
+    const activityData = {
+      date: form.date,
+      title: form.title.trim(),
+      type: form.type.trim(),
+      start_time: form.startTime,
+      end_time: form.endTime,
+      location: form.location.trim(),
+      capacity,
+      note: form.note.trim(),
+    };
 
     if (editingActivity) {
+      const { data, error } = await supabase
+        .from("activities")
+        .update(activityData)
+        .eq("id", editingActivity.id)
+        .select()
+        .single();
+
+      if (error) {
+        throw error;
+      }
+
+      const updatedActivity: Activity = {
+        id: Number(data.id),
+        date: data.date,
+        title: data.title,
+        type: data.type ?? "",
+        startTime: data.start_time ?? "",
+        endTime: data.end_time ?? "",
+        location: data.location ?? "",
+        capacity: Number(data.capacity ?? 0),
+        note: data.note ?? "",
+      };
+
       setActivities((prev) =>
         prev.map((item) =>
-          item.id ===
-          editingActivity.id
-            ? {
-                ...item,
-                date: form.date,
-                title:
-                  form.title.trim(),
-                type:
-                  form.type.trim(),
-                startTime:
-                  form.startTime,
-                endTime:
-                  form.endTime,
-                location:
-                  form.location.trim(),
-                capacity,
-                note:
-                  form.note.trim(),
-              }
+          item.id === editingActivity.id
+            ? updatedActivity
             : item
         )
       );
     } else {
-      const newActivity: Activity =
-        {
-          id: Date.now(),
-          date: form.date,
-          title:
-            form.title.trim(),
-          type:
-            form.type.trim(),
-          startTime:
-            form.startTime,
-          endTime:
-            form.endTime,
-          location:
-            form.location.trim(),
-          capacity,
-          note:
-            form.note.trim(),
-        };
+      const { data, error } = await supabase
+        .from("activities")
+        .insert(activityData)
+        .select()
+        .single();
+
+      if (error) {
+        throw error;
+      }
+
+      const newActivity: Activity = {
+        id: Number(data.id),
+        date: data.date,
+        title: data.title,
+        type: data.type ?? "",
+        startTime: data.start_time ?? "",
+        endTime: data.end_time ?? "",
+        location: data.location ?? "",
+        capacity: Number(data.capacity ?? 0),
+        note: data.note ?? "",
+      };
 
       setActivities((prev) => [
         ...prev,
@@ -241,12 +285,27 @@ export default function ActivitySection() {
     setOpenModal(false);
     setEditingActivity(null);
     setForm(emptyForm);
-  };
+  } catch (error) {
+    console.error(
+      "儲存活動失敗：",
+      error
+    );
+
+    alert(
+      "儲存活動失敗：" +
+        (error instanceof Error
+          ? error.message
+          : String(error))
+    );
+  }
+};
 
   /*
+   * ========================================
    * 刪除活動
+   * ========================================
    */
-  const handleDelete = (
+  const handleDelete = async (
     id: number
   ) => {
     const confirmed =
@@ -256,25 +315,68 @@ export default function ActivitySection() {
 
     if (!confirmed) return;
 
-    setActivities((prev) =>
-      prev.filter(
-        (item) =>
-          item.id !== id
-      )
-    );
+    try {
+      const {
+        data,
+        error,
+      } = await supabase
+        .from("activities")
+        .delete()
+        .eq("id", id)
+        .select("id");
+
+      if (error) {
+        throw error;
+      }
+
+      if (!data || data.length === 0) {
+        throw new Error(
+          "Database 沒有刪除任何資料"
+        );
+      }
+
+      setActivities((prev) =>
+        prev.filter(
+          (item) =>
+            item.id !== id
+        )
+      );
+
+      alert("活動刪除成功！");
+    } catch (error) {
+      console.error(
+        "刪除活動失敗：",
+        error
+      );
+
+      const message =
+        error instanceof Error
+          ? error.message
+          : String(error);
+
+      alert(
+        `刪除活動失敗：\n${message}`
+      );
+    }
   };
 
   /*
+   * ========================================
    * 關閉 Modal
+   * ========================================
    */
   const handleClose = () => {
+    if (saving) return;
+
     setOpenModal(false);
     setEditingActivity(null);
     setForm(emptyForm);
   };
 
   /*
+   * ========================================
    * 日期格式
+   * ========================================
    */
   const formatDate = (
     date: string
@@ -291,6 +393,11 @@ export default function ActivitySection() {
     return `${parts[0]}/${parts[1]}/${parts[2]}`;
   };
 
+  /*
+   * ========================================
+   * UI
+   * ========================================
+   */
   return (
     <div
       style={{
@@ -315,6 +422,8 @@ export default function ActivitySection() {
             "space-between",
           alignItems:
             "center",
+          gap: 16,
+          flexWrap: "wrap",
         }}
       >
         <div>
@@ -335,269 +444,335 @@ export default function ActivitySection() {
               fontSize: 14,
             }}
           >
-            共{" "}
-            {activities.length}
-            {" "}筆活動
+            共 {activities.length} 筆活動
           </div>
         </div>
 
         <button
           type="button"
-          onClick={
-            handleOpenAdd
-          }
+          onClick={handleOpenAdd}
           style={{
-            padding:
-              "10px 18px",
+            width: 46,
+            height: 46,
             borderRadius:
               radius.md,
             border: "none",
-            cursor:
-              "pointer",
+            cursor: "pointer",
             background:
               colors.primary,
             color: "#fff",
-            fontWeight: 600,
+            fontWeight: 700,
+            fontSize: 26,
+            display: "flex",
+            alignItems:
+              "center",
+            justifyContent:
+              "center",
+            flexShrink: 0,
           }}
+          aria-label="新增活動"
+          title="新增活動"
         >
-          ＋ 新增活動
+          +
         </button>
       </div>
 
       {/* 活動列表 */}
       <div
         style={{
-          background: "#fff",
-          borderRadius:
-            radius.lg,
-          overflow: "hidden",
+          display: "flex",
+          flexDirection:
+            "column",
+          gap: 14,
         }}
       >
-        <table
-          style={{
-            width: "100%",
-            borderCollapse:
-              "collapse",
-          }}
-        >
-          <thead>
-            <tr
-              style={{
-                background:
-                  "#F7FAFC",
-              }}
-            >
-              <th
-                style={thStyle}
+        {activities.length ===
+        0 ? (
+          <div
+            style={{
+              background: "#fff",
+              borderRadius:
+                radius.lg,
+              padding: 40,
+              textAlign:
+                "center",
+              color:
+                colors.textLight,
+            }}
+          >
+            尚無活動資料
+          </div>
+        ) : (
+          activities.map(
+            (activity) => (
+              <div
+                key={activity.id}
+                style={{
+                  background:
+                    "#fff",
+                  borderRadius:
+                    radius.lg,
+                  padding:
+                    "20px 22px",
+                  boxShadow:
+                    "0 2px 10px rgba(0,0,0,0.05)",
+                  border:
+                    "1px solid #E5E7EB",
+                  display: "flex",
+                  alignItems:
+                    "center",
+                  gap: 20,
+                  flexWrap:
+                    "wrap",
+                }}
               >
-                活動名稱
-              </th>
-
-              <th
-                style={thStyle}
-              >
-                類型
-              </th>
-
-              <th
-                style={thStyle}
-              >
-                日期
-              </th>
-
-              <th
-                style={thStyle}
-              >
-                時間
-              </th>
-
-              <th
-                style={thStyle}
-              >
-                地點
-              </th>
-
-              <th
-                style={thStyle}
-              >
-                人數
-              </th>
-
-              <th
-                style={thStyle}
-              >
-                操作
-              </th>
-            </tr>
-          </thead>
-
-          <tbody>
-            {activities.length ===
-            0 ? (
-              <tr>
-                <td
-                  colSpan={7}
+                {/* 活動名稱 */}
+                <div
                   style={{
-                    textAlign:
-                      "center",
-                    padding: 40,
-                    color:
-                      colors.textLight,
+                    flex:
+                      "1 1 220px",
+                    minWidth: 0,
                   }}
                 >
-                  尚無活動資料
-                </td>
-              </tr>
-            ) : (
-              activities.map(
-                (activity) => (
-                  <tr
-                    key={
-                      activity.id
+                  <div
+                    style={{
+                      fontSize: 18,
+                      fontWeight: 700,
+                      color:
+                        colors.primary,
+                      marginBottom: 6,
+                      overflowWrap:
+                        "anywhere",
+                    }}
+                  >
+                    {activity.title}
+                  </div>
+
+                  <div
+                    style={{
+                      color:
+                        "#6B7280",
+                      fontSize: 13,
+                    }}
+                  >
+                    {activity.type ||
+                      "一般活動"}
+                  </div>
+                </div>
+
+                {/* 日期 */}
+                <div
+                  style={{
+                    flex:
+                      "0 1 130px",
+                  }}
+                >
+                  <div
+                    style={
+                      infoLabelStyle
                     }
                   >
-                    <td
-                      style={
-                        tdStyle
-                      }
-                    >
-                      {
-                        activity.title
-                      }
-                    </td>
+                    日期
+                  </div>
 
-                    <td
-                      style={
-                        tdStyle
-                      }
-                    >
-                      {activity.type ||
-                        "-"}
-                    </td>
+                  <div
+                    style={
+                      infoValueStyle
+                    }
+                  >
+                    {formatDate(
+                      activity.date
+                    )}
+                  </div>
+                </div>
 
-                    <td
-                      style={
-                        tdStyle
-                      }
-                    >
-                      {formatDate(
-                        activity.date
-                      )}
-                    </td>
+                {/* 時間 */}
+                <div
+                  style={{
+                    flex:
+                      "0 1 150px",
+                  }}
+                >
+                  <div
+                    style={
+                      infoLabelStyle
+                    }
+                  >
+                    時間
+                  </div>
 
-                    <td
-                      style={
-                        tdStyle
-                      }
-                    >
-                      {
-                        activity.startTime
-                      }
-                      {" ~ "}
-                      {
-                        activity.endTime
-                      }
-                    </td>
+                  <div
+                    style={
+                      infoValueStyle
+                    }
+                  >
+                    {activity.startTime ||
+                      "-"}
+                    {" ~ "}
+                    {activity.endTime ||
+                      "-"}
+                  </div>
+                </div>
 
-                    <td
-                      style={
-                        tdStyle
-                      }
-                    >
-                      {
-                        activity.location ||
-                        "-"
-                      }
-                    </td>
+                {/* 地點 */}
+                <div
+                  style={{
+                    flex:
+                      "0 1 170px",
+                    minWidth: 0,
+                  }}
+                >
+                  <div
+                    style={
+                      infoLabelStyle
+                    }
+                  >
+                    地點
+                  </div>
 
-                    <td
-                      style={
-                        tdStyle
-                      }
-                    >
-                      {
-                        activity.capacity
-                      }
-                      {" 人"}
-                    </td>
+                  <div
+                    style={{
+                      ...infoValueStyle,
+                      overflowWrap:
+                        "anywhere",
+                    }}
+                  >
+                    {activity.location ||
+                      "-"}
+                  </div>
+                </div>
 
-                    <td
-                      style={
-                        tdStyle
-                      }
-                    >
-                      <div
-                        style={{
-                          display:
-                            "flex",
-                          justifyContent:
-                            "center",
-                          gap: 8,
-                          flexWrap:
-                            "wrap",
-                        }}
-                      >
-                        <button
-                          type="button"
-                          onClick={() =>
-                            handleOpenEdit(
-                              activity
-                            )
-                          }
-                          style={{
-                            background:
-                              "#2563EB",
-                            color:
-                              "#fff",
-                            border:
-                              "none",
-                            borderRadius:
-                              radius.sm,
-                            padding:
-                              "6px 12px",
-                            cursor:
-                              "pointer",
-                            fontSize:
-                              13,
-                          }}
-                        >
-                          編輯
-                        </button>
+                {/* 人數 */}
+                <div
+                  style={{
+                    flex:
+                      "0 1 80px",
+                  }}
+                >
+                  <div
+                    style={
+                      infoLabelStyle
+                    }
+                  >
+                    人數
+                  </div>
 
-                        <button
-                          type="button"
-                          onClick={() =>
-                            handleDelete(
-                              activity.id
-                            )
-                          }
-                          style={{
-                            background:
-                              "#DC2626",
-                            color:
-                              "#fff",
-                            border:
-                              "none",
-                            borderRadius:
-                              radius.sm,
-                            padding:
-                              "6px 12px",
-                            cursor:
-                              "pointer",
-                            fontSize:
-                              13,
-                          }}
-                        >
-                          刪除
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                )
-              )
-            )}
-          </tbody>
-        </table>
+                  <div
+                    style={
+                      infoValueStyle
+                    }
+                  >
+                    {activity.capacity} 人
+                  </div>
+                </div>
+
+                {/* 操作 icon */}
+                <div
+                  style={{
+                    display:
+                      "flex",
+                    alignItems:
+                      "center",
+                    gap: 8,
+                    marginLeft:
+                      "auto",
+                  }}
+                >
+                  <button
+                    type="button"
+                    onClick={() =>
+                      handleOpenEdit(
+                        activity
+                      )
+                    }
+                    style={{
+                      width: 42,
+                      height: 42,
+                      border: "none",
+                      borderRadius:
+                        10,
+                      background:
+                        "#2563EB",
+                      color: "#fff",
+                      cursor:
+                        "pointer",
+                      display:
+                        "flex",
+                      alignItems:
+                        "center",
+                      justifyContent:
+                        "center",
+                    }}
+                    aria-label="編輯活動"
+                    title="編輯活動"
+                  >
+                    <svg
+                      width="19"
+                      height="19"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="2"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      aria-hidden="true"
+                    >
+                      <path d="M12 20h9" />
+                      <path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4Z" />
+                    </svg>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() =>
+                      void handleDelete(
+                        activity.id
+                      )
+                    }
+                    style={{
+                      width: 42,
+                      height: 42,
+                      border: "none",
+                      borderRadius:
+                        10,
+                      background:
+                        "#DC2626",
+                      color: "#fff",
+                      cursor:
+                        "pointer",
+                      display:
+                        "flex",
+                      alignItems:
+                        "center",
+                      justifyContent:
+                        "center",
+                    }}
+                    aria-label="刪除活動"
+                    title="刪除活動"
+                  >
+                    <svg
+                      width="19"
+                      height="19"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="2"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      aria-hidden="true"
+                    >
+                      <path d="M3 6h18" />
+                      <path d="M8 6V4h8v2" />
+                      <path d="M19 6l-1 14H6L5 6" />
+                      <path d="M10 11v5" />
+                      <path d="M14 11v5" />
+                    </svg>
+                  </button>
+                </div>
+              </div>
+            )
+          )
+        )}
       </div>
 
       {/* 新增 / 編輯 Modal */}
@@ -614,13 +789,16 @@ export default function ActivitySection() {
             alignItems:
               "center",
             zIndex: 999,
+            padding: 20,
+            boxSizing:
+              "border-box",
           }}
         >
           <div
             style={{
               width: 560,
               maxWidth:
-                "calc(100vw - 40px)",
+                "100%",
               background: "#fff",
               borderRadius:
                 radius.lg,
@@ -631,13 +809,14 @@ export default function ActivitySection() {
                 "90vh",
               overflowY:
                 "auto",
+              boxSizing:
+                "border-box",
             }}
           >
             <h2
               style={{
                 marginTop: 0,
-                marginBottom:
-                  24,
+                marginBottom: 24,
                 color:
                   colors.primary,
               }}
@@ -655,6 +834,7 @@ export default function ActivitySection() {
                 gap: 16,
               }}
             >
+              {/* 活動名稱 */}
               <div
                 style={{
                   gridColumn:
@@ -691,6 +871,7 @@ export default function ActivitySection() {
                 />
               </div>
 
+              {/* 日期 */}
               <div>
                 <label
                   style={
@@ -721,6 +902,7 @@ export default function ActivitySection() {
                 />
               </div>
 
+              {/* 類型 */}
               <div>
                 <label
                   style={
@@ -774,6 +956,7 @@ export default function ActivitySection() {
                 </select>
               </div>
 
+              {/* 開始時間 */}
               <div>
                 <label
                   style={
@@ -804,6 +987,7 @@ export default function ActivitySection() {
                 />
               </div>
 
+              {/* 結束時間 */}
               <div>
                 <label
                   style={
@@ -834,6 +1018,7 @@ export default function ActivitySection() {
                 />
               </div>
 
+              {/* 地點 */}
               <div>
                 <label
                   style={
@@ -865,6 +1050,7 @@ export default function ActivitySection() {
                 />
               </div>
 
+              {/* 人數 */}
               <div>
                 <label
                   style={
@@ -897,6 +1083,7 @@ export default function ActivitySection() {
                 />
               </div>
 
+              {/* 備註 */}
               <div
                 style={{
                   gridColumn:
@@ -936,6 +1123,7 @@ export default function ActivitySection() {
               </div>
             </div>
 
+            {/* Modal 按鈕 */}
             <div
               style={{
                 display: "flex",
@@ -950,6 +1138,7 @@ export default function ActivitySection() {
                 onClick={
                   handleClose
                 }
+                disabled={saving}
                 style={{
                   padding:
                     "10px 18px",
@@ -960,7 +1149,11 @@ export default function ActivitySection() {
                   borderRadius:
                     radius.md,
                   cursor:
-                    "pointer",
+                    saving
+                      ? "default"
+                      : "pointer",
+                  opacity:
+                    saving ? 0.6 : 1,
                 }}
               >
                 取消
@@ -968,9 +1161,10 @@ export default function ActivitySection() {
 
               <button
                 type="button"
-                onClick={
-                  handleSave
+                onClick={() =>
+                  void handleSave()
                 }
+                disabled={saving}
                 style={{
                   background:
                     colors.primary,
@@ -981,13 +1175,19 @@ export default function ActivitySection() {
                   padding:
                     "10px 20px",
                   cursor:
-                    "pointer",
+                    saving
+                      ? "default"
+                      : "pointer",
                   fontWeight: 600,
+                  opacity:
+                    saving ? 0.7 : 1,
                 }}
               >
-                {editingActivity
-                  ? "儲存修改"
-                  : "新增活動"}
+                {saving
+                  ? "儲存中..."
+                  : editingActivity
+                    ? "儲存修改"
+                    : "新增活動"}
               </button>
             </div>
           </div>
@@ -997,24 +1197,18 @@ export default function ActivitySection() {
   );
 }
 
-const thStyle:
+const infoLabelStyle:
   React.CSSProperties = {
-  padding: "12px",
-  textAlign: "center",
-  borderBottom:
-    "1px solid #E5E7EB",
-  color: colors.primary,
-  fontWeight: 600,
-  fontSize: 14,
+  fontSize: 12,
+  color: "#9CA3AF",
+  marginBottom: 5,
 };
 
-const tdStyle:
+const infoValueStyle:
   React.CSSProperties = {
-  padding: "14px 12px",
-  textAlign: "center",
-  borderBottom:
-    "1px solid #F3F4F6",
   fontSize: 14,
+  fontWeight: 600,
+  color: "#374151",
 };
 
 const labelStyle:
@@ -1035,3 +1229,4 @@ const inputStyle:
   boxSizing: "border-box",
   background: "#fff",
 };
+
