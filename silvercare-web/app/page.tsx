@@ -54,6 +54,18 @@ export default function Home() {
   const [loggingOut, setLoggingOut] =
     useState(false);
 
+  /* ============================
+   * AI 智慧查詢
+   * ============================ */
+  const [aiQuery, setAiQuery] =
+    useState("");
+
+  const [aiLoading, setAiLoading] =
+    useState(false);
+
+  const [aiResult, setAiResult] =
+    useState("");
+
   const dashboardData =
     useDashboardData();
 
@@ -206,6 +218,481 @@ export default function Home() {
     setSelectedMenu("health");
   };
 
+  /**
+   * AI 智慧查詢
+   *
+   * 第一階段：
+   * 直接查詢 Supabase 的長者與課程資料。
+   */
+ const handleAiQuery = async (
+  inputQuery?: string
+) => {
+  const query = (
+    inputQuery ?? aiQuery
+  ).trim();
+
+  if (!query) {
+    alert(
+      "請先輸入想查詢的內容。"
+    );
+    return;
+  }
+
+  setAiLoading(true);
+  setAiResult("");
+
+  try {
+    /*
+     * ========================================
+     * ① 查詢長者
+     * ========================================
+     */
+    if (
+      query.includes("長者") ||
+      query.includes("老人") ||
+      query.includes("人數")
+    ) {
+      const {
+        data,
+        error,
+      } = await supabase
+        .from("elders")
+        .select(
+          `
+            id,
+            name,
+            gender,
+            birthday,
+            phone,
+            elder_type,
+            living_status,
+            contact_method,
+            emergency_contact_name,
+            emergency_contact_relation,
+            emergency_contact_phone
+          `
+        )
+        .order("id", {
+          ascending: true,
+        });
+
+      if (error) {
+        throw error;
+      }
+
+      const elders = data ?? [];
+
+      /*
+       * 查詢長者人數
+       */
+      if (
+        query.includes("幾位") ||
+        query.includes("多少") ||
+        query.includes("人數")
+      ) {
+        setAiResult(
+          `👴 目前共有 ${elders.length} 位長者。`
+        );
+
+        return;
+      }
+
+      /*
+       * 查詢長者名單
+       */
+      if (
+        query.includes("哪些") ||
+        query.includes("名單") ||
+        query.includes("有誰")
+      ) {
+        if (elders.length === 0) {
+          setAiResult(
+            "目前沒有長者資料。"
+          );
+
+          return;
+        }
+
+        const elderList =
+          elders
+            .map(
+              (
+                elder,
+                index
+              ) =>
+                `${index + 1}. ${elder.name}`
+            )
+            .join("\n");
+
+        setAiResult(
+          `👴 目前共有 ${elders.length} 位長者：\n\n${elderList}`
+        );
+
+        return;
+      }
+    }
+
+    /*
+     * ========================================
+     * ② 查詢課程
+     *
+     * 支援：
+     * 今天有哪些課程？
+     * 9月有哪些課程？
+     * 2026年9月有哪些課程？
+     * ========================================
+     */
+    if (
+      query.includes("課程") ||
+      query.includes("上課")
+    ) {
+      const monthMatch =
+        query.match(
+          /(\d{1,2})月/
+        );
+
+      const yearMatch =
+        query.match(
+          /(\d{4})年/
+        );
+
+      const now =
+        new Date();
+
+      const currentYear =
+        now.getFullYear();
+
+      const targetYear =
+        yearMatch
+          ? Number(
+              yearMatch[1]
+            )
+          : currentYear;
+
+      /*
+       * ----------------------------------------
+       * ②-1 指定月份
+       * ----------------------------------------
+       */
+      if (monthMatch) {
+        const targetMonth =
+          Number(
+            monthMatch[1]
+          );
+
+        if (
+          targetMonth < 1 ||
+          targetMonth > 12
+        ) {
+          setAiResult(
+            "月份格式不正確，請輸入 1～12 月。"
+          );
+
+          return;
+        }
+
+        const monthString =
+          String(
+            targetMonth
+          ).padStart(
+            2,
+            "0"
+          );
+
+        const monthStart =
+          `${targetYear}-${monthString}-01`;
+
+        const nextMonthDate =
+          new Date(
+            targetYear,
+            targetMonth,
+            1
+          );
+
+        const nextYear =
+          nextMonthDate.getFullYear();
+
+        const nextMonth =
+          String(
+            nextMonthDate.getMonth() + 1
+          ).padStart(
+            2,
+            "0"
+          );
+
+        const nextMonthStart =
+          `${nextYear}-${nextMonth}-01`;
+
+        const {
+          data,
+          error,
+        } = await supabase
+          .from("courses")
+          .select(
+            `
+              id,
+              date,
+              title,
+              teacher,
+              start_time,
+              end_time,
+              capacity,
+              classroom,
+              note
+            `
+          )
+          .gte(
+            "date",
+            monthStart
+          )
+          .lt(
+            "date",
+            nextMonthStart
+          )
+          .order(
+            "date",
+            {
+              ascending: true,
+            }
+          )
+          .order(
+            "start_time",
+            {
+              ascending: true,
+            }
+          );
+
+        if (error) {
+          throw error;
+        }
+
+        const courses =
+          data ?? [];
+
+        if (
+          courses.length === 0
+        ) {
+          setAiResult(
+            `📚 ${targetYear} 年 ${targetMonth} 月目前沒有課程。`
+          );
+
+          return;
+        }
+
+        const courseList =
+          courses
+            .map(
+              (
+                course,
+                index
+              ) => {
+                const time =
+                  course.start_time &&
+                  course.end_time
+                    ? `${course.start_time}–${course.end_time}`
+                    : course.start_time ||
+                      "時間未設定";
+
+                const teacher =
+                  course.teacher
+                    ? `\n   教師：${course.teacher}`
+                    : "";
+
+                const classroom =
+                  course.classroom
+                    ? `\n   教室：${course.classroom}`
+                    : "";
+
+                return (
+                  `${index + 1}. ${course.title}` +
+                  `\n   日期：${course.date}` +
+                  `\n   時間：${time}` +
+                  teacher +
+                  classroom
+                );
+              }
+            )
+            .join("\n\n");
+
+        setAiResult(
+          `📚 ${targetYear} 年 ${targetMonth} 月共有 ${courses.length} 堂課程：\n\n${courseList}`
+        );
+
+        return;
+      }
+
+      /*
+       * ----------------------------------------
+       * ②-2 查詢今天課程
+       * ----------------------------------------
+       */
+      if (
+        query.includes("今天") ||
+        query.includes("今日")
+      ) {
+        const today =
+          new Date();
+
+        const year =
+          today.getFullYear();
+
+        const month =
+          String(
+            today.getMonth() + 1
+          ).padStart(
+            2,
+            "0"
+          );
+
+        const day =
+          String(
+            today.getDate()
+          ).padStart(
+            2,
+            "0"
+          );
+
+        const todayString =
+          `${year}-${month}-${day}`;
+
+        const {
+          data,
+          error,
+        } = await supabase
+          .from("courses")
+          .select(
+            `
+              id,
+              date,
+              title,
+              teacher,
+              start_time,
+              end_time,
+              capacity,
+              classroom,
+              note
+            `
+          )
+          .eq(
+            "date",
+            todayString
+          )
+          .order(
+            "start_time",
+            {
+              ascending: true,
+            }
+          );
+
+        if (error) {
+          throw error;
+        }
+
+        const courses =
+          data ?? [];
+
+        if (
+          courses.length === 0
+        ) {
+          setAiResult(
+            "📚 今天目前沒有課程。"
+          );
+
+          return;
+        }
+
+        const courseList =
+          courses
+            .map(
+              (
+                course,
+                index
+              ) => {
+                const time =
+                  course.start_time &&
+                  course.end_time
+                    ? `${course.start_time}–${course.end_time}`
+                    : course.start_time ||
+                      "時間未設定";
+
+                const teacher =
+                  course.teacher
+                    ? `\n   教師：${course.teacher}`
+                    : "";
+
+                const classroom =
+                  course.classroom
+                    ? `\n   教室：${course.classroom}`
+                    : "";
+
+                return (
+                  `${index + 1}. ${course.title}` +
+                  `\n   時間：${time}` +
+                  teacher +
+                  classroom
+                );
+              }
+            )
+            .join("\n\n");
+
+        setAiResult(
+          `📚 今天共有 ${courses.length} 堂課程：\n\n${courseList}`
+        );
+
+        return;
+      }
+    }
+
+    /*
+     * ========================================
+     * ③ 尚未支援的問題
+     * ========================================
+     */
+    setAiResult(
+      `已收到您的查詢：「${query}」\n\n` +
+        "目前 AI 第一階段已經可以查詢：\n" +
+        "• 長者人數\n" +
+        "• 長者名單\n" +
+        "• 今天的課程\n" +
+        "• 指定月份的課程\n\n" +
+        "下一階段再接上出席、健康量測、活動與財務資料。"
+    );
+  } catch (error) {
+    console.error(
+      "AI 查詢發生錯誤：",
+      error
+    );
+
+    const message =
+      error instanceof Error
+        ? error.message
+        : String(error);
+
+    setAiResult(
+      "AI 查詢目前無法完成。\n\n" +
+        message
+    );
+  } finally {
+    setAiLoading(false);
+  }
+};
+
+  /**
+   * AI 快速查詢
+   */
+  const handleAiQuickQuery = (
+    query: string
+  ) => {
+    setAiQuery(query);
+
+    /*
+     * 直接把 query 傳給查詢函式，
+     * 避免 React setState 尚未完成，
+     * 導致查到上一個問題。
+     */
+    void handleAiQuery(query);
+  };
+
   return (
     <div
       style={{
@@ -256,10 +743,10 @@ export default function Home() {
           </div>
 
           <button
-  type="button"
-  className="silvercare-mobile-header-logout"
-  onClick={handleLogout}
-  disabled={loggingOut}
+            type="button"
+            className="silvercare-mobile-header-logout"
+            onClick={handleLogout}
+            disabled={loggingOut}
             aria-label="登出"
             style={{
               appearance: "none",
@@ -398,6 +885,282 @@ export default function Home() {
           {selectedMenu ===
             "dashboard" && (
             <>
+              {/* ==================== */}
+              {/* AI 智慧查詢 */}
+              {/* ==================== */}
+
+              <div
+                style={{
+                  background:
+                    "linear-gradient(135deg, #F4FAF8 0%, #FFFFFF 100%)",
+                  borderRadius: 18,
+                  padding: isMobile
+                    ? 20
+                    : 28,
+                  marginBottom: 28,
+                  border:
+                    "1px solid #D6E8E2",
+                  boxShadow:
+                    "0 2px 12px rgba(22,58,67,0.06)",
+                  boxSizing:
+                    "border-box",
+                }}
+              >
+                <div
+                  style={{
+                    display: "flex",
+                    alignItems:
+                      "flex-start",
+                    gap: 14,
+                    marginBottom: 18,
+                  }}
+                >
+                  <div
+                    style={{
+                      width: 46,
+                      height: 46,
+                      borderRadius: 14,
+                      background:
+                        colors.primary,
+                      color: "#fff",
+                      display: "flex",
+                      alignItems:
+                        "center",
+                      justifyContent:
+                        "center",
+                      fontSize: 24,
+                      flexShrink: 0,
+                    }}
+                  >
+                    🤖
+                  </div>
+
+                  <div>
+                    <h2
+                      style={{
+                        margin: 0,
+                        color:
+                          colors.primary,
+                        fontSize:
+                          isMobile
+                            ? 21
+                            : 24,
+                      }}
+                    >
+                      SilverCare AI 智慧查詢
+                    </h2>
+
+                    <p
+                      style={{
+                        margin:
+                          "6px 0 0",
+                        color:
+                          "#6B7280",
+                        fontSize: 14,
+                        lineHeight:
+                          1.6,
+                      }}
+                    >
+                      想查什麼？直接用中文問我
+                    </p>
+                  </div>
+                </div>
+
+                <div
+                  style={{
+                    display: "flex",
+                    flexDirection:
+                      isMobile
+                        ? "column"
+                        : "row",
+                    gap: 10,
+                  }}
+                >
+                  <input
+                    type="text"
+                    value={aiQuery}
+                    onChange={(e) =>
+                      setAiQuery(
+                        e.target.value
+                      )
+                    }
+                    onKeyDown={(e) => {
+                      if (
+                        e.key ===
+                        "Enter"
+                      ) {
+                        void handleAiQuery();
+                      }
+                    }}
+                    placeholder="例如：今天哪些長者還沒有量血壓？"
+                    disabled={
+                      aiLoading
+                    }
+                    style={{
+                      flex: 1,
+                      minWidth: 0,
+                      height: 48,
+                      padding:
+                        "0 16px",
+                      border:
+                        "1px solid #CBD5E1",
+                      borderRadius: 10,
+                      outline: "none",
+                      background:
+                        "#fff",
+                      color:
+                        "#1F2937",
+                      fontSize: 15,
+                      boxSizing:
+                        "border-box",
+                    }}
+                  />
+
+                  <button
+                    type="button"
+                    onClick={() =>
+                      void handleAiQuery()
+                    }
+                    disabled={
+                      aiLoading
+                    }
+                    style={{
+                      height: 48,
+                      padding:
+                        "0 22px",
+                      border: "none",
+                      borderRadius: 10,
+                      background:
+                        colors.primary,
+                      color: "#fff",
+                      fontWeight: 700,
+                      fontSize: 15,
+                      cursor:
+                        aiLoading
+                          ? "default"
+                          : "pointer",
+                      opacity:
+                        aiLoading
+                          ? 0.65
+                          : 1,
+                      whiteSpace:
+                        "nowrap",
+                    }}
+                  >
+                    {aiLoading
+                      ? "查詢中..."
+                      : "🔍 查詢"}
+                  </button>
+                </div>
+
+                <div
+                  style={{
+                    marginTop: 16,
+                  }}
+                >
+                  <div
+                    style={{
+                      color:
+                        "#6B7280",
+                      fontSize: 13,
+                      marginBottom: 9,
+                    }}
+                  >
+                    試試看：
+                  </div>
+
+                  <div
+                    style={{
+                      display: "flex",
+                      flexWrap:
+                        "wrap",
+                      gap: 8,
+                    }}
+                  >
+                    {[
+                      "今天有哪些課程？",
+                      "今天哪些長者還沒量測？",
+                      "最近出席比較少的長者",
+                      "這個月有哪些費用？",
+                    ].map(
+                      (query) => (
+                        <button
+                          key={query}
+                          type="button"
+                          onClick={() =>
+                            handleAiQuickQuery(
+                              query
+                            )
+                          }
+                          disabled={
+                            aiLoading
+                          }
+                          style={{
+                            border:
+                              "1px solid #D6E8E2",
+                            background:
+                              "#fff",
+                            color:
+                              colors.primary,
+                            borderRadius: 999,
+                            padding:
+                              "7px 12px",
+                            fontSize: 13,
+                            cursor:
+                              aiLoading
+                                ? "default"
+                                : "pointer",
+                            opacity:
+                              aiLoading
+                                ? 0.6
+                                : 1,
+                          }}
+                        >
+                          {query}
+                        </button>
+                      )
+                    )}
+                  </div>
+                </div>
+
+                {aiResult && (
+                  <div
+                    style={{
+                      marginTop: 18,
+                      padding: 16,
+                      background:
+                        "#fff",
+                      borderRadius: 12,
+                      border:
+                        "1px solid #D6E8E2",
+                      color:
+                        "#374151",
+                      whiteSpace:
+                        "pre-wrap",
+                      lineHeight: 1.7,
+                      fontSize: 14,
+                    }}
+                  >
+                    <div
+                      style={{
+                        fontWeight: 700,
+                        color:
+                          colors.primary,
+                        marginBottom: 6,
+                      }}
+                    >
+                      🤖 AI 回覆
+                    </div>
+
+                    {aiResult}
+                  </div>
+                )}
+              </div>
+
+              {/* ==================== */}
+              {/* Dashboard Summary */}
+              {/* ==================== */}
+
               <div
                 style={{
                   display: "grid",
