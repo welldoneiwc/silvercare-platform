@@ -138,6 +138,13 @@ export default function CourseRegistration({
   const [saving, setSaving] =
     useState(false);
 
+  const [
+    cancellingId,
+    setCancellingId,
+  ] = useState<number | null>(
+    null
+  );
+
   /**
    * 讀取課程與長者資料
    *
@@ -216,9 +223,6 @@ export default function CourseRegistration({
 
   /**
    * 從 Supabase 讀取目前課程的報名資料
-   *
-   * 只有登入且符合 supervisor RLS
-   * 的管理端才可以讀取。
    */
   useEffect(() => {
     if (!selectedCourse?.id) {
@@ -410,8 +414,6 @@ export default function CourseRegistration({
 
   /**
    * 已經報名的系統長者 ID
-   *
-   * 由姓名／電話對應到目前長者資料。
    */
   const registeredElderIds =
     useMemo(() => {
@@ -759,17 +761,15 @@ export default function CourseRegistration({
     };
 
   /**
-   * 目前這一版先不執行取消報名。
+   * 取消報名
    *
-   * 因為真正的取消功能需要同時處理：
-   * 1. Supabase DELETE
-   * 2. 正取名額釋出
-   * 3. 第一位候補自動遞補
-   *
-   * 這部分下一步會用資料庫函式完整處理。
+   * 使用 Supabase RPC：
+   * - 正取取消 → 釋放名額
+   * - 若有候補 → 第一位候補自動遞補
+   * - 候補取消 → 自動重新整理候補順位
    */
   const handleCancelRegistration =
-    (
+    async (
       registrationId: number
     ) => {
       const registration =
@@ -780,12 +780,93 @@ export default function CourseRegistration({
         );
 
       if (!registration) {
+        alert(
+          "找不到這筆報名資料。"
+        );
         return;
       }
 
-      alert(
-        "取消報名功能正在進行雲端同步設定，請稍候。"
+      const confirmed =
+        window.confirm(
+          `確定要取消「${registration.name}」的報名嗎？`
+        );
+
+      if (!confirmed) {
+        return;
+      }
+
+      setCancellingId(
+        registrationId
       );
+
+      try {
+        const {
+          data,
+          error,
+        } = await supabase.rpc(
+          "cancel_course_registration",
+          {
+            p_registration_id:
+              registrationId,
+          }
+        );
+
+        if (error) {
+          console.error(
+            "取消課程報名失敗：",
+            error
+          );
+
+          alert(
+            "取消報名失敗，請稍後再試。"
+          );
+
+          return;
+        }
+
+        const result =
+          Array.isArray(data)
+            ? data[0]
+            : data;
+
+        if (
+          !result?.success
+        ) {
+          alert(
+            result?.message ||
+              "目前無法取消報名。"
+          );
+
+          return;
+        }
+
+        if (
+          result.promoted_name
+        ) {
+          alert(
+            `已取消「${registration.name}」的報名。\n「${result.promoted_name}」已從候補遞補為正取。`
+          );
+        } else {
+          alert(
+            `已取消「${registration.name}」的報名。`
+          );
+        }
+
+        await reloadRegistrations();
+      } catch (error) {
+        console.error(
+          "取消課程報名發生錯誤：",
+          error
+        );
+
+        alert(
+          "取消報名發生錯誤，請稍後再試。"
+        );
+      } finally {
+        setCancellingId(
+          null
+        );
+      }
     };
 
   return (
@@ -1080,8 +1161,7 @@ export default function CourseRegistration({
 
               <select
                 value={
-                  selectedElderId ??
-                  ""
+                  selectedElderId ?? ""
                 }
                 onChange={(e) => {
                   const value =
@@ -1435,6 +1515,10 @@ export default function CourseRegistration({
                             registration.id
                           )
                         }
+                        disabled={
+                          cancellingId ===
+                          registration.id
+                        }
                         style={{
                           background:
                             "#DC2626",
@@ -1447,10 +1531,21 @@ export default function CourseRegistration({
                           padding:
                             "6px 12px",
                           cursor:
-                            "pointer",
+                            cancellingId ===
+                            registration.id
+                              ? "not-allowed"
+                              : "pointer",
+                          opacity:
+                            cancellingId ===
+                            registration.id
+                              ? 0.5
+                              : 1,
                         }}
                       >
-                        取消報名
+                        {cancellingId ===
+                        registration.id
+                          ? "取消中..."
+                          : "取消報名"}
                       </button>
                     </td>
                   </tr>
@@ -1569,6 +1664,18 @@ export default function CourseRegistration({
                 >
                   狀態
                 </th>
+
+                <th
+                  style={{
+                    padding: 12,
+                    textAlign:
+                      "center",
+                    borderBottom:
+                      "1px solid #E5E7EB",
+                  }}
+                >
+                  操作
+                </th>
               </tr>
             </thead>
 
@@ -1648,6 +1755,56 @@ export default function CourseRegistration({
                       }}
                     >
                       候補
+                    </td>
+
+                    <td
+                      style={{
+                        padding: 12,
+                        textAlign:
+                          "center",
+                        borderBottom:
+                          "1px solid #F3F4F6",
+                      }}
+                    >
+                      <button
+                        type="button"
+                        onClick={() =>
+                          handleCancelRegistration(
+                            registration.id
+                          )
+                        }
+                        disabled={
+                          cancellingId ===
+                          registration.id
+                        }
+                        style={{
+                          background:
+                            "#DC2626",
+                          color:
+                            "#fff",
+                          border:
+                            "none",
+                          borderRadius:
+                            radius.sm,
+                          padding:
+                            "6px 12px",
+                          cursor:
+                            cancellingId ===
+                            registration.id
+                              ? "not-allowed"
+                              : "pointer",
+                          opacity:
+                            cancellingId ===
+                            registration.id
+                              ? 0.5
+                              : 1,
+                        }}
+                      >
+                        {cancellingId ===
+                        registration.id
+                          ? "取消中..."
+                          : "取消報名"}
+                      </button>
                     </td>
                   </tr>
                 )
