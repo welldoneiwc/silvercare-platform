@@ -5,13 +5,11 @@ import {
   useState,
 } from "react";
 
-import {
-  addStorageChangedListener,
-} from "../utils/storageEvents";
-
 import { colors } from "../styles/theme";
 import { radius } from "../styles/radius";
 import { shadow } from "../styles/shadow";
+
+import { supabase } from "../utils/supabase";
 
 type Activity = {
   id: number;
@@ -25,14 +23,10 @@ type Activity = {
   note: string;
 };
 
-const STORAGE_KEY =
-  "silvercare-activities";
-
 function formatDate(date: string) {
   if (!date) return "-";
 
-  const parts =
-    date.split("-");
+  const parts = date.split("-");
 
   if (parts.length !== 3) {
     return date;
@@ -52,63 +46,63 @@ export default function DashboardActivities() {
     useState<Activity[]>([]);
 
   useEffect(() => {
-    function loadActivities() {
-      if (
-        typeof window ===
-        "undefined"
-      ) {
-        return;
-      }
-
-      const saved =
-        localStorage.getItem(
-          STORAGE_KEY
-        );
-
-      if (!saved) {
-        setActivities([]);
-        return;
-      }
-
+    const loadActivities = async () => {
       try {
-        const parsed =
-          JSON.parse(saved);
+        const { data, error } = await supabase
+          .from("activities")
+          .select(
+            `
+              id,
+              date,
+              title,
+              type,
+              start_time,
+              end_time,
+              location,
+              capacity,
+              note
+            `
+          )
+          .order("date", {
+            ascending: true,
+          })
+          .order("start_time", {
+            ascending: true,
+          });
 
-        if (Array.isArray(parsed)) {
-          setActivities(parsed);
-        } else {
-          setActivities([]);
+        if (error) {
+          throw error;
         }
+
+        const mappedActivities: Activity[] =
+          (data ?? []).map((item) => ({
+            id: Number(item.id),
+            date: item.date,
+            title: item.title,
+            type: item.type ?? "",
+            startTime:
+              item.start_time ?? "",
+            endTime:
+              item.end_time ?? "",
+            location:
+              item.location ?? "",
+            capacity:
+              Number(item.capacity ?? 0),
+            note: item.note ?? "",
+          }));
+
+        setActivities(mappedActivities);
       } catch (error) {
         console.error(
-          "讀取活動公告失敗：",
+          "讀取近期活動失敗：",
           error
         );
 
         setActivities([]);
       }
-    }
-
-    loadActivities();
-
-    const removeListener =
-      addStorageChangedListener(
-        loadActivities
-      );
-
-    window.addEventListener(
-      "storage",
-      loadActivities
-    );
-
-    return () => {
-      removeListener();
-
-      window.removeEventListener(
-        "storage",
-        loadActivities
-      );
     };
+
+    void loadActivities();
   }, []);
 
   const today = getToday();
@@ -125,9 +119,7 @@ export default function DashboardActivities() {
             b.date
           );
 
-        if (
-          dateCompare !== 0
-        ) {
+        if (dateCompare !== 0) {
           return dateCompare;
         }
 
@@ -141,10 +133,8 @@ export default function DashboardActivities() {
     <div
       style={{
         background: "#fff",
-        borderRadius:
-          radius.lg,
-        boxShadow:
-          shadow.md,
+        borderRadius: radius.lg,
+        boxShadow: shadow.md,
         padding: 24,
       }}
     >
@@ -161,8 +151,7 @@ export default function DashboardActivities() {
           <h2
             style={{
               margin: 0,
-              color:
-                colors.primary,
+              color: colors.primary,
               fontSize: 22,
             }}
           >
@@ -181,18 +170,14 @@ export default function DashboardActivities() {
         </div>
       </div>
 
-      {upcomingActivities.length ===
-      0 ? (
+      {upcomingActivities.length === 0 ? (
         <div
           style={{
             padding: 32,
             textAlign: "center",
-            color:
-              colors.textLight,
-            background:
-              "#F9FAFB",
-            borderRadius:
-              radius.md,
+            color: colors.textLight,
+            background: "#F9FAFB",
+            borderRadius: radius.md,
           }}
         >
           目前沒有近期活動
@@ -201,17 +186,14 @@ export default function DashboardActivities() {
         <div
           style={{
             display: "flex",
-            flexDirection:
-              "column",
+            flexDirection: "column",
             gap: 12,
           }}
         >
           {upcomingActivities.map(
             (activity) => (
               <div
-                key={
-                  activity.id
-                }
+                key={activity.id}
                 style={{
                   padding:
                     "16px 18px",
@@ -246,15 +228,14 @@ export default function DashboardActivities() {
                           colors.primary,
                       }}
                     >
-                      {
-                        activity.title
-                      }
+                      {activity.title}
                     </div>
 
                     <div
                       style={{
                         marginTop: 8,
-                        display: "flex",
+                        display:
+                          "flex",
                         flexWrap:
                           "wrap",
                         gap: 8,
@@ -272,21 +253,15 @@ export default function DashboardActivities() {
 
                       <span>
                         🕐{" "}
-                        {
-                          activity.startTime
-                        }
+                        {activity.startTime}
                         {" ~ "}
-                        {
-                          activity.endTime
-                        }
+                        {activity.endTime}
                       </span>
 
                       <span>
                         📍{" "}
-                        {
-                          activity.location ||
-                          "-"
-                        }
+                        {activity.location ||
+                          "-"}
                       </span>
                     </div>
                   </div>
@@ -307,10 +282,8 @@ export default function DashboardActivities() {
                         "nowrap",
                     }}
                   >
-                    {
-                      activity.type ||
-                      "活動"
-                    }
+                    {activity.type ||
+                      "活動"}
                   </div>
                 </div>
               </div>
