@@ -23,9 +23,6 @@ export type Activity = {
   note: string;
 };
 
-const STORAGE_KEY =
-  "silvercare-activities";
-
 const emptyForm = {
   date: "",
   title: "",
@@ -62,74 +59,71 @@ export default function ActivitySection() {
    * ========================================
    * 讀取活動
    * ========================================
-   *
-   * 正式資料來源改為 Supabase。
-   *
-   * 如果 Supabase 目前完全沒有資料，
-   * 但舊手機 LocalStorage 有活動，
-   * 第一次會自動搬到 Supabase。
    */
- useEffect(() => {
-  const loadActivities = async () => {
-    try {
-      const { data, error } = await supabase
-        .from("activities")
-        .select(
-          `
-            id,
-            date,
-            title,
-            type,
-            start_time,
-            end_time,
-            location,
-            capacity,
-            note
-          `
-        )
-        .order("date", {
-          ascending: true,
-        })
-        .order("start_time", {
-          ascending: true,
-        });
+  useEffect(() => {
+    const loadActivities = async () => {
+      try {
+        const { data, error } =
+          await supabase
+            .from("activities")
+            .select(
+              `
+                id,
+                date,
+                title,
+                type,
+                start_time,
+                end_time,
+                location,
+                capacity,
+                note
+              `
+            )
+            .order("date", {
+              ascending: true,
+            })
+            .order("start_time", {
+              ascending: true,
+            });
 
-      if (error) {
-        throw error;
+        if (error) {
+          throw error;
+        }
+
+        const mappedActivities: Activity[] =
+          (data ?? []).map((item) => ({
+            id: Number(item.id),
+            date: item.date,
+            title: item.title,
+            type: item.type ?? "",
+            startTime:
+              item.start_time ?? "",
+            endTime:
+              item.end_time ?? "",
+            location:
+              item.location ?? "",
+            capacity:
+              Number(item.capacity ?? 0),
+            note: item.note ?? "",
+          }));
+
+        setActivities(
+          mappedActivities
+        );
+      } catch (error) {
+        console.error(
+          "讀取活動資料失敗：",
+          error
+        );
+
+        setActivities([]);
+      } finally {
+        setLoaded(true);
       }
+    };
 
-      const mappedActivities: Activity[] =
-        (data ?? []).map((item) => ({
-          id: Number(item.id),
-          date: item.date,
-          title: item.title,
-          type: item.type ?? "",
-          startTime:
-            item.start_time ?? "",
-          endTime:
-            item.end_time ?? "",
-          location:
-            item.location ?? "",
-          capacity:
-            Number(item.capacity ?? 0),
-          note: item.note ?? "",
-        }));
-
-      setActivities(mappedActivities);
-    } catch (error) {
-      console.error(
-        "讀取活動資料失敗：",
-        error
-      );
-
-      setActivities([]);
-    } finally {
-      setLoaded(true);
-    }
-  };
-
-  void loadActivities();
-}, []);
+    void loadActivities();
+  }, []);
 
   /*
    * ========================================
@@ -179,126 +173,189 @@ export default function ActivitySection() {
 
   /*
    * ========================================
+   * 分享活動
+   * ========================================
+   */
+  const handleShare = async (
+    activity: Activity
+  ) => {
+    try {
+      const shareUrl =
+        `${window.location.origin}/activity/share?id=${activity.id}`;
+
+      await navigator.clipboard.writeText(
+        shareUrl
+      );
+
+      alert(
+        "活動連結已複製！\n\n可以直接貼到 LINE、WhatsApp 或其他群組。"
+      );
+    } catch (error) {
+      console.error(
+        "複製活動連結失敗：",
+        error
+      );
+
+      window.prompt(
+        "請複製以下活動連結：",
+        `${window.location.origin}/activity/share?id=${activity.id}`
+      );
+    }
+  };
+
+  /*
+   * ========================================
    * 儲存活動
    * ========================================
    */
-const handleSave = async () => {
-  if (!form.title.trim()) {
-    alert("請輸入活動名稱");
-    return;
-  }
-
-  if (!form.date) {
-    alert("請選擇活動日期");
-    return;
-  }
-
-  if (!form.startTime) {
-    alert("請選擇開始時間");
-    return;
-  }
-
-  if (!form.endTime) {
-    alert("請選擇結束時間");
-    return;
-  }
-
-  const capacity = Number(form.capacity);
-
-  if (!form.capacity || capacity <= 0) {
-    alert("請輸入正確的活動人數");
-    return;
-  }
-
-  try {
-    const activityData = {
-      date: form.date,
-      title: form.title.trim(),
-      type: form.type.trim(),
-      start_time: form.startTime,
-      end_time: form.endTime,
-      location: form.location.trim(),
-      capacity,
-      note: form.note.trim(),
-    };
-
-    if (editingActivity) {
-      const { data, error } = await supabase
-        .from("activities")
-        .update(activityData)
-        .eq("id", editingActivity.id)
-        .select()
-        .single();
-
-      if (error) {
-        throw error;
-      }
-
-      const updatedActivity: Activity = {
-        id: Number(data.id),
-        date: data.date,
-        title: data.title,
-        type: data.type ?? "",
-        startTime: data.start_time ?? "",
-        endTime: data.end_time ?? "",
-        location: data.location ?? "",
-        capacity: Number(data.capacity ?? 0),
-        note: data.note ?? "",
-      };
-
-      setActivities((prev) =>
-        prev.map((item) =>
-          item.id === editingActivity.id
-            ? updatedActivity
-            : item
-        )
-      );
-    } else {
-      const { data, error } = await supabase
-        .from("activities")
-        .insert(activityData)
-        .select()
-        .single();
-
-      if (error) {
-        throw error;
-      }
-
-      const newActivity: Activity = {
-        id: Number(data.id),
-        date: data.date,
-        title: data.title,
-        type: data.type ?? "",
-        startTime: data.start_time ?? "",
-        endTime: data.end_time ?? "",
-        location: data.location ?? "",
-        capacity: Number(data.capacity ?? 0),
-        note: data.note ?? "",
-      };
-
-      setActivities((prev) => [
-        ...prev,
-        newActivity,
-      ]);
+  const handleSave = async () => {
+    if (!form.title.trim()) {
+      alert("請輸入活動名稱");
+      return;
     }
 
-    setOpenModal(false);
-    setEditingActivity(null);
-    setForm(emptyForm);
-  } catch (error) {
-    console.error(
-      "儲存活動失敗：",
-      error
-    );
+    if (!form.date) {
+      alert("請選擇活動日期");
+      return;
+    }
 
-    alert(
-      "儲存活動失敗：" +
-        (error instanceof Error
-          ? error.message
-          : String(error))
-    );
-  }
-};
+    if (!form.startTime) {
+      alert("請選擇開始時間");
+      return;
+    }
+
+    if (!form.endTime) {
+      alert("請選擇結束時間");
+      return;
+    }
+
+    const capacity =
+      Number(form.capacity);
+
+    if (
+      !form.capacity ||
+      capacity <= 0
+    ) {
+      alert(
+        "請輸入正確的活動人數"
+      );
+      return;
+    }
+
+    setSaving(true);
+
+    try {
+      const activityData = {
+        date: form.date,
+        title: form.title.trim(),
+        type: form.type.trim(),
+        start_time: form.startTime,
+        end_time: form.endTime,
+        location:
+          form.location.trim(),
+        capacity,
+        note: form.note.trim(),
+      };
+
+      if (editingActivity) {
+        const { data, error } =
+          await supabase
+            .from("activities")
+            .update(activityData)
+            .eq(
+              "id",
+              editingActivity.id
+            )
+            .select()
+            .single();
+
+        if (error) {
+          throw error;
+        }
+
+        const updatedActivity: Activity =
+          {
+            id: Number(data.id),
+            date: data.date,
+            title: data.title,
+            type: data.type ?? "",
+            startTime:
+              data.start_time ?? "",
+            endTime:
+              data.end_time ?? "",
+            location:
+              data.location ?? "",
+            capacity:
+              Number(
+                data.capacity ?? 0
+              ),
+            note: data.note ?? "",
+          };
+
+        setActivities((prev) =>
+          prev.map((item) =>
+            item.id ===
+            editingActivity.id
+              ? updatedActivity
+              : item
+          )
+        );
+      } else {
+        const { data, error } =
+          await supabase
+            .from("activities")
+            .insert(activityData)
+            .select()
+            .single();
+
+        if (error) {
+          throw error;
+        }
+
+        const newActivity: Activity =
+          {
+            id: Number(data.id),
+            date: data.date,
+            title: data.title,
+            type: data.type ?? "",
+            startTime:
+              data.start_time ?? "",
+            endTime:
+              data.end_time ?? "",
+            location:
+              data.location ?? "",
+            capacity:
+              Number(
+                data.capacity ?? 0
+              ),
+            note: data.note ?? "",
+          };
+
+        setActivities((prev) => [
+          ...prev,
+          newActivity,
+        ]);
+      }
+
+      setOpenModal(false);
+      setEditingActivity(null);
+      setForm(emptyForm);
+    } catch (error) {
+      console.error(
+        "儲存活動失敗：",
+        error
+      );
+
+      alert(
+        "儲存活動失敗：" +
+          (error instanceof Error
+            ? error.message
+            : String(error))
+      );
+    } finally {
+      setSaving(false);
+    }
+  };
 
   /*
    * ========================================
@@ -329,7 +386,10 @@ const handleSave = async () => {
         throw error;
       }
 
-      if (!data || data.length === 0) {
+      if (
+        !data ||
+        data.length === 0
+      ) {
         throw new Error(
           "Database 沒有刪除任何資料"
         );
@@ -678,6 +738,77 @@ const handleSave = async () => {
                       "auto",
                   }}
                 >
+                  {/* 分享 */}
+                  <button
+                    type="button"
+                    onClick={() =>
+                      void handleShare(
+                        activity
+                      )
+                    }
+                    style={{
+                      width: 42,
+                      height: 42,
+                      border: "none",
+                      borderRadius:
+                        10,
+                      background:
+                        "#0F766E",
+                      color: "#fff",
+                      cursor:
+                        "pointer",
+                      display:
+                        "flex",
+                      alignItems:
+                        "center",
+                      justifyContent:
+                        "center",
+                    }}
+                    aria-label="分享活動"
+                    title="分享活動"
+                  >
+                    <svg
+                      width="19"
+                      height="19"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="2"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      aria-hidden="true"
+                    >
+                      <circle
+                        cx="18"
+                        cy="5"
+                        r="3"
+                      />
+                      <circle
+                        cx="6"
+                        cy="12"
+                        r="3"
+                      />
+                      <circle
+                        cx="18"
+                        cy="19"
+                        r="3"
+                      />
+                      <line
+                        x1="8.59"
+                        y1="13.51"
+                        x2="15.42"
+                        y2="17.49"
+                      />
+                      <line
+                        x1="15.41"
+                        y1="6.51"
+                        x2="8.59"
+                        y2="10.49"
+                      />
+                    </svg>
+                  </button>
+
+                  {/* 編輯 */}
                   <button
                     type="button"
                     onClick={() =>
@@ -722,6 +853,7 @@ const handleSave = async () => {
                     </svg>
                   </button>
 
+                  {/* 刪除 */}
                   <button
                     type="button"
                     onClick={() =>
@@ -1229,4 +1361,3 @@ const inputStyle:
   boxSizing: "border-box",
   background: "#fff",
 };
-
