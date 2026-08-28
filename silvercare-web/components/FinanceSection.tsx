@@ -4084,9 +4084,10 @@ const responsiveFinanceStyles = `
       touch-action: manipulation !important;
     }
 
-    .finance-section-root button {
-      touch-action: manipulation;
-    }
+   .finance-section-root button {
+  touch-action: manipulation;
+  white-space: nowrap;
+}
 
     /*
      * ========================================
