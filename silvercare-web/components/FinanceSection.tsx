@@ -48,12 +48,17 @@ type RegistrationRecord = {
 type ElderOption = {
   id: string | number;
   name: string;
-  phone: string;
+  phone?: string;
 };
 
 export type FinanceCharge = {
   id: string;
   month: string;
+  /*
+   * 保留 name 欄位是為了相容既有 Database 資料。
+   * UI 不再讓使用者輸入「收費項目」；
+   * 實際顯示以「對應課程」為主，收費細節放在備註。
+   */
   name: string;
   courseId: string;
   amount: number;
@@ -132,142 +137,114 @@ const normalizeNumber = (
 ) => {
   const number = Number(value);
 
-  return Number.isFinite(number)
-    ? number
-    : 0;
-};
-
-const todayString = () =>
-  new Date()
-    .toISOString()
-    .slice(0, 10);
-
-const readLocalArray = <T,>(
-  key: string
-): T[] => {
-  try {
-    const saved =
-      localStorage.getItem(key);
-
-    if (!saved) {
-      return [];
-    }
-
-    const parsed =
-      JSON.parse(saved);
-
-    return Array.isArray(parsed)
-      ? (parsed as T[])
-      : [];
-  } catch {
-    return [];
+  if (!Number.isFinite(number)) {
+    return 0;
   }
+
+  return number;
 };
 
-const mapCourse = (
+const mapChargeFromDatabase = (
   row: DatabaseRow
-): CourseOption => ({
-  id:
-    row.id === null ||
-    row.id === undefined
-      ? ""
-      : (row.id as string | number),
-  title:
-    normalizeString(
-      row.title
-    ) ||
-    normalizeString(
+): FinanceCharge => {
+  return {
+    id: normalizeString(row.id),
+    month: normalizeString(
+      row.month
+    ),
+    name: normalizeString(
       row.name
     ),
-});
+    courseId: normalizeString(
+      row.course_id
+    ),
+    amount: normalizeNumber(
+      row.amount
+    ),
+    note: normalizeString(
+      row.note
+    ),
+    createdAt:
+      normalizeString(
+        row.created_at
+      ) ||
+      new Date().toISOString(),
+  };
+};
 
-const mapCharge = (
+const mapPayerFromDatabase = (
   row: DatabaseRow
-): FinanceCharge => ({
-  id: normalizeString(row.id),
-  month: normalizeString(
-    row.month
-  ),
-  name: normalizeString(
-    row.name
-  ),
-  courseId: normalizeString(
-    row.course_id
-  ),
-  amount: normalizeNumber(
-    row.amount
-  ),
-  note: normalizeString(
-    row.note
-  ),
-  createdAt:
-    normalizeString(
-      row.created_at
-    ) ||
-    new Date().toISOString(),
-});
-
-const mapPayer = (
-  row: DatabaseRow
-): FinancePayer => ({
-  id: normalizeString(row.id),
-  chargeId: normalizeString(
-    row.charge_id
-  ),
-  elderId:
-    row.elder_id === null ||
-    row.elder_id === undefined ||
-    row.elder_id === ""
-      ? undefined
-      : normalizeString(
-          row.elder_id
-        ),
-  name: normalizeString(
-    row.name
-  ),
-  phone: normalizeString(
-    row.phone
-  ),
-  source:
+): FinancePayer => {
+  const source =
     row.source === "manual"
       ? "manual"
-      : "registration",
-  createdAt:
-    normalizeString(
-      row.created_at
-    ) ||
-    new Date().toISOString(),
-});
+      : "registration";
 
-const mapPayment = (
+  return {
+    id: normalizeString(row.id),
+    chargeId: normalizeString(
+      row.charge_id
+    ),
+    elderId:
+      row.elder_id === null ||
+      row.elder_id === undefined ||
+      row.elder_id === ""
+        ? undefined
+        : normalizeString(
+            row.elder_id
+          ),
+    name: normalizeString(
+      row.name
+    ),
+    phone: normalizeString(
+      row.phone
+    ),
+    source,
+    createdAt:
+      normalizeString(
+        row.created_at
+      ) ||
+      new Date().toISOString(),
+  };
+};
+
+const mapPaymentFromDatabase = (
   row: DatabaseRow
-): FinancePayment => ({
-  id: normalizeString(row.id),
-  chargeId: normalizeString(
-    row.charge_id
-  ),
-  payerId: normalizeString(
-    row.payer_id
-  ),
-  amount: normalizeNumber(
-    row.amount
-  ),
-  paidAt: normalizeString(
-    row.paid_at
-  ),
-  note: normalizeString(
-    row.note
-  ),
-  createdAt:
-    normalizeString(
-      row.created_at
-    ) ||
-    new Date().toISOString(),
-});
+): FinancePayment => {
+  return {
+    id: normalizeString(row.id),
+    chargeId: normalizeString(
+      row.charge_id
+    ),
+    payerId: normalizeString(
+      row.payer_id
+    ),
+    amount: normalizeNumber(
+      row.amount
+    ),
+    paidAt: normalizeString(
+      row.paid_at
+    ),
+    note: normalizeString(
+      row.note
+    ),
+    createdAt:
+      normalizeString(
+        row.created_at
+      ) ||
+      new Date().toISOString(),
+  };
+};
 
 export default function FinanceSection() {
   const [charges, setCharges] =
     useState<FinanceCharge[]>([]);
+
+  const savingChargeRef =
+    useRef(false);
+
+  const deletingChargeRef =
+    useRef<string | null>(null);
 
   const [payers, setPayers] =
     useState<FinancePayer[]>([]);
@@ -277,6 +254,12 @@ export default function FinanceSection() {
 
   const [courses, setCourses] =
     useState<CourseOption[]>([]);
+
+  const [showAddCourse, setShowAddCourse] =
+    useState(false);
+
+  const [newCourseTitle, setNewCourseTitle] =
+    useState("");
 
   const [registrations, setRegistrations] =
     useState<RegistrationRecord[]>([]);
@@ -298,12 +281,6 @@ export default function FinanceSection() {
 
   const [showManualPayerForm, setShowManualPayerForm] =
     useState(false);
-
-  const [showAddCourse, setShowAddCourse] =
-    useState(false);
-
-  const [newCourseTitle, setNewCourseTitle] =
-    useState("");
 
   const [chargeMonth, setChargeMonth] =
     useState(
@@ -345,274 +322,364 @@ export default function FinanceSection() {
   const [manualNote, setManualNote] =
     useState("");
 
-  const savingChargeRef =
-    useRef(false);
+  useEffect(() => {
+    const loadFinanceData =
+      async () => {
+        try {
+          const [
+            chargesResult,
+            payersResult,
+            paymentsResult,
+          ] = await Promise.all([
+            supabase
+              .from("finance_charges")
+              .select("*")
+              .order(
+                "created_at",
+                {
+                  ascending: false,
+                }
+              ),
 
-  const deletingChargeRef =
-    useRef<string | null>(null);
+            supabase
+              .from("finance_payers")
+              .select("*")
+              .order(
+                "created_at",
+                {
+                  ascending: true,
+                }
+              ),
 
-  const loadingRef =
-    useRef(false);
+            supabase
+              .from("finance_payments")
+              .select("*")
+              .order(
+                "created_at",
+                {
+                  ascending: false,
+                }
+              ),
+          ]);
 
-  const selectedCharge =
-    useMemo(
-      () =>
-        charges.find(
-          (charge) =>
-            charge.id ===
-            selectedChargeId
-        ) || null,
-      [charges, selectedChargeId]
-    );
+          if (chargesResult.error) {
+            throw chargesResult.error;
+          }
 
-  const selectedChargePayers =
-    useMemo(
-      () =>
-        selectedChargeId
-          ? payers.filter(
-              (payer) =>
-                payer.chargeId ===
-                selectedChargeId
+          if (payersResult.error) {
+            throw payersResult.error;
+          }
+
+          if (paymentsResult.error) {
+            throw paymentsResult.error;
+          }
+
+          const cloudCharges =
+            (chargesResult.data || []).map(
+              (row) =>
+                mapChargeFromDatabase(
+                  row as DatabaseRow
+                )
+            );
+
+          const cloudPayers =
+            (payersResult.data || []).map(
+              (row) =>
+                mapPayerFromDatabase(
+                  row as DatabaseRow
+                )
+            );
+
+          const cloudPayments =
+            (paymentsResult.data || []).map(
+              (row) =>
+                mapPaymentFromDatabase(
+                  row as DatabaseRow
+                )
+            );
+
+          setCharges(
+            cloudCharges
+          );
+
+          setPayers(
+            cloudPayers
+          );
+
+          setPayments(
+            cloudPayments
+          );
+
+          saveLocalFinanceBackup(
+            cloudCharges,
+            cloudPayers,
+            cloudPayments
+          );
+        } catch (error) {
+          console.error(
+            "載入財務資料失敗：",
+            error
+          );
+
+          try {
+            const savedCharges =
+              localStorage.getItem(
+                FINANCE_CHARGES_STORAGE_KEY
+              );
+
+            const savedPayers =
+              localStorage.getItem(
+                FINANCE_PAYERS_STORAGE_KEY
+              );
+
+            const savedPayments =
+              localStorage.getItem(
+                FINANCE_PAYMENTS_STORAGE_KEY
+              );
+
+            if (savedCharges) {
+              setCharges(
+                JSON.parse(
+                  savedCharges
+                )
+              );
+            }
+
+            if (savedPayers) {
+              setPayers(
+                JSON.parse(
+                  savedPayers
+                )
+              );
+            }
+
+            if (savedPayments) {
+              setPayments(
+                JSON.parse(
+                  savedPayments
+                )
+              );
+            }
+          } catch (localError) {
+            console.error(
+              "讀取財務 LocalStorage 備份失敗：",
+              localError
+            );
+          }
+        } finally {
+          setLoaded(true);
+        }
+      };
+
+    loadFinanceData();
+  }, []);
+
+  useEffect(() => {
+    const loadCourses =
+      async () => {
+        try {
+          const {
+            data,
+            error,
+          } = await supabase
+            .from("courses")
+            .select(
+              "id,title"
             )
-          : [],
-      [payers, selectedChargeId]
-    );
-
-  const selectedChargePayments =
-    useMemo(
-      () =>
-        selectedChargeId
-          ? payments.filter(
-              (payment) =>
-                payment.chargeId ===
-                selectedChargeId
+            .order(
+              "date",
+              {
+                ascending: true,
+              }
             )
-          : [],
-      [payments, selectedChargeId]
-    );
+            .order(
+              "start_time",
+              {
+                ascending: true,
+              }
+            );
 
-  const getCourseName = (
-    courseId: string
-  ) => {
-    const course =
-      courses.find(
-        (item) =>
-          normalizeString(
-            item.id
-          ) ===
-          normalizeString(
-            courseId
-          )
-      );
+          if (error) {
+            throw error;
+          }
 
-    return (
-      course?.title ||
-      "未指定課程"
-    );
-  };
+          const cloudCourses =
+            (data || []).map(
+              (course) => ({
+                id: course.id,
+                title:
+                  course.title || "",
+              })
+            );
 
-  const getChargeDisplayName = (
-    charge: FinanceCharge
-  ) =>
-    getCourseName(
-      charge.courseId
-    ) !== "未指定課程"
-      ? getCourseName(
-          charge.courseId
-        )
-      : charge.name ||
-        "未指定課程";
+          setCourses(
+            cloudCourses
+          );
 
-  const getPayerName = (
-    payerId: string
-  ) =>
-    payers.find(
-      (payer) =>
-        payer.id === payerId
-    )?.name || "未知繳費者";
+          localStorage.setItem(
+            COURSE_STORAGE_KEY,
+            JSON.stringify(
+              cloudCourses
+            )
+          );
+        } catch (error) {
+          console.error(
+            "讀取課程資料失敗：",
+            error
+          );
 
-  const getPayerPaidAmount = (
-    payerId: string,
-    chargeId: string
-  ) =>
-    payments
-      .filter(
-        (payment) =>
-          payment.payerId ===
-            payerId &&
-          payment.chargeId ===
-            chargeId
-      )
-      .reduce(
-        (sum, payment) =>
-          sum + payment.amount,
-        0
-      );
+          try {
+            const saved =
+              localStorage.getItem(
+                COURSE_STORAGE_KEY
+              );
 
-  const getPayerOutstandingAmount = (
-    payerId: string,
-    chargeId: string
-  ) => {
-    const charge =
-      charges.find(
-        (item) =>
-          item.id === chargeId
-      );
+            if (saved) {
+              const parsed =
+                JSON.parse(saved);
 
-    if (!charge) {
-      return 0;
-    }
+              if (
+                Array.isArray(parsed)
+              ) {
+                setCourses(
+                  parsed
+                );
+              }
+            }
+          } catch (localError) {
+            console.error(
+              "讀取課程 LocalStorage 失敗：",
+              localError
+            );
+          }
+        }
+      };
 
-    return Math.max(
-      charge.amount -
-        getPayerPaidAmount(
-          payerId,
-          chargeId
-        ),
-      0
-    );
-  };
+    loadCourses();
+  }, []);
 
-  const getChargeBilledAmount = (
-    chargeId: string
-  ) => {
-    const charge =
-      charges.find(
-        (item) =>
-          item.id === chargeId
-      );
+  useEffect(() => {
+    const loadRegistrations =
+      () => {
+        try {
+          const saved =
+            localStorage.getItem(
+              REGISTRATION_STORAGE_KEY
+            );
 
-    if (!charge) {
-      return 0;
-    }
+          if (!saved) {
+            setRegistrations([]);
+            return;
+          }
 
-    const count =
-      payers.filter(
-        (payer) =>
-          payer.chargeId ===
-          chargeId
-      ).length;
+          const parsed =
+            JSON.parse(saved);
 
-    return (
-      charge.amount * count
-    );
-  };
+          if (
+            Array.isArray(parsed)
+          ) {
+            setRegistrations(
+              parsed
+            );
+          }
+        } catch (error) {
+          console.error(
+            "讀取報名資料失敗：",
+            error
+          );
 
-  const getChargePaidAmount = (
-    chargeId: string
-  ) =>
-    payments
-      .filter(
-        (payment) =>
-          payment.chargeId ===
-          chargeId
-      )
-      .reduce(
-        (sum, payment) =>
-          sum + payment.amount,
-        0
-      );
+          setRegistrations([]);
+        }
+      };
 
-  const getChargeOutstandingAmount = (
-    chargeId: string
-  ) =>
-    Math.max(
-      getChargeBilledAmount(
-        chargeId
-      ) -
-        getChargePaidAmount(
-          chargeId
-        ),
-      0
-    );
+    loadRegistrations();
+  }, []);
 
-  const totalBilled =
-    charges.reduce(
-      (sum, charge) =>
-        sum +
-        getChargeBilledAmount(
-          charge.id
-        ),
-      0
-    );
+  useEffect(() => {
+    const loadElders =
+      async () => {
+        try {
+          const {
+            data,
+            error,
+          } = await supabase
+            .from("elders")
+            .select(
+              "id,name,phone"
+            )
+            .order(
+              "name",
+              {
+                ascending: true,
+              }
+            );
 
-  const totalPaid =
-    charges.reduce(
-      (sum, charge) =>
-        sum +
-        getChargePaidAmount(
-          charge.id
-        ),
-      0
-    );
+          if (error) {
+            throw error;
+          }
 
-  const totalOutstanding =
-    Math.max(
-      totalBilled -
-        totalPaid,
-      0
-    );
+          const cloudElders =
+            (data || []).map(
+              (elder) => ({
+                id: elder.id,
+                name:
+                  elder.name || "",
+                phone:
+                  elder.phone || "",
+              })
+            );
 
-  const outstandingPayers =
-    payers.filter(
-      (payer) =>
-        getPayerOutstandingAmount(
-          payer.id,
-          payer.chargeId
-        ) > 0
-    );
+          setElders(
+            cloudElders
+          );
 
-  const resetChargeForm = () => {
-    const empty =
-      createEmptyChargeForm();
+          localStorage.setItem(
+            ELDER_STORAGE_KEY,
+            JSON.stringify(
+              cloudElders
+            )
+          );
+        } catch (error) {
+          console.error(
+            "讀取長者資料失敗：",
+            error
+          );
 
-    setChargeMonth(
-      empty.month
-    );
-    setChargeCourseId(
-      empty.courseId
-    );
-    setChargeAmount(
-      empty.amount
-    );
-    setChargeNote(
-      empty.note
-    );
-    setEditingChargeId(
-      null
-    );
-  };
+          try {
+            const saved =
+              localStorage.getItem(
+                ELDER_STORAGE_KEY
+              );
 
-  const resetPaymentForm = () => {
-    const empty =
-      createEmptyPaymentForm();
+            if (saved) {
+              const parsed =
+                JSON.parse(saved);
 
-    setPaymentPayerId(
-      empty.payerId
-    );
-    setPaymentAmount(
-      empty.amount
-    );
-    setPaymentDate(
-      empty.paidAt
-    );
-    setPaymentNote(
-      empty.note
-    );
-  };
+              if (
+                Array.isArray(parsed)
+              ) {
+                setElders(
+                  parsed
+                );
+              }
+            }
+          } catch (localError) {
+            console.error(
+              "讀取長者 LocalStorage 失敗：",
+              localError
+            );
+          }
+        }
+      };
 
-  const resetManualPayerForm = () => {
-    setManualName("");
-    setManualPhone("");
-    setManualElderId("");
-    setManualNote("");
-  };
+    loadElders();
+  }, []);
 
-  const saveLocalFinanceBackup = (
+  function saveLocalFinanceBackup(
     nextCharges: FinanceCharge[],
     nextPayers: FinancePayer[],
     nextPayments: FinancePayment[]
-  ) => {
+  ) {
     try {
       localStorage.setItem(
         FINANCE_CHARGES_STORAGE_KEY,
@@ -636,523 +703,262 @@ export default function FinanceSection() {
       );
     } catch (error) {
       console.error(
-        "更新財務 LocalStorage 備份失敗：",
+        "儲存財務 LocalStorage 備份失敗：",
         error
       );
     }
+  }
+
+  const getCourseName = (
+    courseId: string
+  ) => {
+    const course =
+      courses.find(
+        (item) =>
+          String(item.id) ===
+          String(courseId)
+      );
+
+    return (
+      course?.title ||
+      "未指定課程"
+    );
   };
 
-  const loadFinanceData =
-    async () => {
-      if (loadingRef.current) {
-        return;
-      }
+  const getChargeDisplayName = (
+    charge: FinanceCharge
+  ) => {
+    const courseName =
+      getCourseName(
+        charge.courseId
+      );
 
-      loadingRef.current = true;
+    if (
+      courseName &&
+      courseName !==
+        "未指定課程"
+    ) {
+      return courseName;
+    }
 
-      try {
-        const [
-          chargesResult,
-          payersResult,
-          paymentsResult,
-          coursesResult,
-          eldersResult,
-        ] = await Promise.all([
-          supabase
-            .from("finance_charges")
-            .select("*")
-            .order(
-              "created_at",
-              {
-                ascending: false,
-              }
-            ),
+    if (charge.name) {
+      return charge.name;
+    }
 
-          supabase
-            .from("finance_payers")
-            .select("*")
-            .order(
-              "created_at",
-              {
-                ascending: true,
-              }
-            ),
+    return "未指定課程";
+  };
 
-          supabase
-            .from("finance_payments")
-            .select("*")
-            .order(
-              "created_at",
-              {
-                ascending: false,
-              }
-            ),
+  const getChargeBilledAmount = (
+    chargeId: string
+  ) => {
+    const charge =
+      charges.find(
+        (item) =>
+          item.id ===
+          chargeId
+      );
 
-          supabase
-            .from("courses")
-            .select("*")
-            .order(
-              "date",
-              {
-                ascending: true,
-              }
-            )
-            .order(
-              "start_time",
-              {
-                ascending: true,
-              }
-            ),
+    if (!charge) {
+      return 0;
+    }
 
-          supabase
-            .from("elders")
-            .select("*")
-            .order(
-              "id",
-              {
-                ascending: true,
-              }
-            ),
-        ]);
+    const count =
+      payers.filter(
+        (payer) =>
+          payer.chargeId ===
+          chargeId
+      ).length;
 
-        if (chargesResult.error) {
-          throw chargesResult.error;
-        }
+    return (
+      count * charge.amount
+    );
+  };
 
-        if (payersResult.error) {
-          throw payersResult.error;
-        }
+  const getChargePaidAmount = (
+    chargeId: string
+  ) => {
+    return payments
+      .filter(
+        (payment) =>
+          payment.chargeId ===
+          chargeId
+      )
+      .reduce(
+        (sum, payment) =>
+          sum +
+          normalizeNumber(
+            payment.amount
+          ),
+        0
+      );
+  };
 
-        if (paymentsResult.error) {
-          throw paymentsResult.error;
-        }
+  const getChargeOutstandingAmount = (
+    chargeId: string
+  ) => {
+    return Math.max(
+      0,
+      getChargeBilledAmount(
+        chargeId
+      ) -
+        getChargePaidAmount(
+          chargeId
+        )
+    );
+  };
 
-        if (coursesResult.error) {
-          console.error(
-            "讀取課程雲端資料失敗：",
-            coursesResult.error
-          );
-        }
+  const getPayerPaidAmount = (
+    payerId: string,
+    chargeId: string
+  ) => {
+    return payments
+      .filter(
+        (payment) =>
+          payment.payerId ===
+            payerId &&
+          payment.chargeId ===
+            chargeId
+      )
+      .reduce(
+        (sum, payment) =>
+          sum +
+          normalizeNumber(
+            payment.amount
+          ),
+        0
+      );
+  };
 
-        if (eldersResult.error) {
-          console.error(
-            "讀取長者雲端資料失敗：",
-            eldersResult.error
-          );
-        }
+  const getPayerOutstandingAmount = (
+    payerId: string,
+    chargeId: string
+  ) => {
+    const charge =
+      charges.find(
+        (item) =>
+          item.id ===
+          chargeId
+      );
 
-        const cloudCharges =
-          (
-            chargesResult.data ||
-            []
-          ).map(
-            (row) =>
-              mapCharge(
-                row as DatabaseRow
-              )
-          );
+    if (!charge) {
+      return 0;
+    }
 
-        const cloudPayers =
-          (
-            payersResult.data ||
-            []
-          ).map(
-            (row) =>
-              mapPayer(
-                row as DatabaseRow
-              )
-          );
+    return Math.max(
+      0,
+      charge.amount -
+        getPayerPaidAmount(
+          payerId,
+          chargeId
+        )
+    );
+  };
 
-        const cloudPayments =
-          (
-            paymentsResult.data ||
-            []
-          ).map(
-            (row) =>
-              mapPayment(
-                row as DatabaseRow
-              )
-          );
-
-        let cloudCourses =
-          (
-            coursesResult.data ||
-            []
-          ).map(
-            (row) =>
-              mapCourse(
-                row as DatabaseRow
-              )
-          );
-
-        let cloudElders =
-          (
-            eldersResult.data ||
-            []
-          ).map(
-            (row) => ({
-              id:
-                row.id as
-                  | string
-                  | number,
-              name:
-                normalizeString(
-                  row.name
-                ),
-              phone:
-                normalizeString(
-                  row.phone
-                ),
-            })
-          );
-
-        if (
-          cloudCourses.length ===
-          0
-        ) {
-          cloudCourses =
-            readLocalArray<
-              CourseOption
-            >(
-              COURSE_STORAGE_KEY
-            );
-        }
-
-        if (
-          cloudElders.length ===
-          0
-        ) {
-          cloudElders =
-            readLocalArray<
-              ElderOption
-            >(
-              ELDER_STORAGE_KEY
-            );
-        }
-
-        setCharges(
-          cloudCharges
-        );
-
-        setPayers(
-          cloudPayers
-        );
-
-        setPayments(
-          cloudPayments
-        );
-
-        setCourses(
-          cloudCourses
-        );
-
-        setElders(
-          cloudElders
-        );
-
-        setRegistrations(
-          readLocalArray<RegistrationRecord>(
-            REGISTRATION_STORAGE_KEY
-          )
-        );
-
-        saveLocalFinanceBackup(
-          cloudCharges,
-          cloudPayers,
-          cloudPayments
-        );
-
-        try {
-          localStorage.setItem(
-            COURSE_STORAGE_KEY,
-            JSON.stringify(
-              cloudCourses
-            )
-          );
-        } catch {
-          // ignore
-        }
-      } catch (error) {
-        console.error(
-          "讀取財務資料失敗：",
-          error
-        );
-
-        setCharges(
-          readLocalArray<FinanceCharge>(
-            FINANCE_CHARGES_STORAGE_KEY
-          )
-        );
-
-        setPayers(
-          readLocalArray<FinancePayer>(
-            FINANCE_PAYERS_STORAGE_KEY
-          )
-        );
-
-        setPayments(
-          readLocalArray<FinancePayment>(
-            FINANCE_PAYMENTS_STORAGE_KEY
-          )
-        );
-
-        setCourses(
-          readLocalArray<CourseOption>(
-            COURSE_STORAGE_KEY
-          )
-        );
-
-        setElders(
-          readLocalArray<ElderOption>(
-            ELDER_STORAGE_KEY
-          )
-        );
-
-        setRegistrations(
-          readLocalArray<RegistrationRecord>(
-            REGISTRATION_STORAGE_KEY
-          )
-        );
-
-        alert(
-          "讀取雲端財務資料失敗。\n\n" +
-            (error instanceof Error
-              ? error.message
-              : String(error))
-        );
-      } finally {
-        setLoaded(true);
-        loadingRef.current = false;
-      }
-    };
-
-  useEffect(() => {
-    void loadFinanceData();
-  }, []);
-
-  useEffect(() => {
-    const reloadReferenceData =
-      async () => {
-        try {
-          const [
-            coursesResult,
-            eldersResult,
-          ] = await Promise.all([
-            supabase
-              .from("courses")
-              .select("*")
-              .order(
-                "date",
-                {
-                  ascending: true,
-                }
-              )
-              .order(
-                "start_time",
-                {
-                  ascending: true,
-                }
-              ),
-
-            supabase
-              .from("elders")
-              .select("*")
-              .order(
-                "id",
-                {
-                  ascending: true,
-                }
-              ),
-          ]);
-
-          if (
-            !coursesResult.error &&
-            coursesResult.data
-          ) {
-            const nextCourses =
-              coursesResult.data.map(
-                (row) =>
-                  mapCourse(
-                    row as DatabaseRow
-                  )
-              );
-
-            setCourses(
-              nextCourses
-            );
-
-            try {
-              localStorage.setItem(
-                COURSE_STORAGE_KEY,
-                JSON.stringify(
-                  nextCourses
-                )
-              );
-            } catch {
-              // ignore
-            }
-          }
-
-          if (
-            !eldersResult.error &&
-            eldersResult.data
-          ) {
-            setElders(
-              eldersResult.data.map(
-                (row) => ({
-                  id:
-                    row.id as
-                      | string
-                      | number,
-                  name:
-                    normalizeString(
-                      row.name
-                    ),
-                  phone:
-                    normalizeString(
-                      row.phone
-                    ),
-                })
-              )
-            );
-          }
-
-          setRegistrations(
-            readLocalArray<RegistrationRecord>(
-              REGISTRATION_STORAGE_KEY
-            )
-          );
-        } catch (error) {
-          console.error(
-            "重新載入課程／長者資料失敗：",
-            error
-          );
-        }
-      };
-
-    const handleStorage =
-      () => {
-        void reloadReferenceData();
-      };
-
-    window.addEventListener(
-      "storage",
-      handleStorage
+  const totalBilled =
+    charges.reduce(
+      (sum, charge) =>
+        sum +
+        getChargeBilledAmount(
+          charge.id
+        ),
+      0
     );
 
-    return () => {
-      window.removeEventListener(
-        "storage",
-        handleStorage
+  const totalPaid =
+    payments.reduce(
+      (sum, payment) =>
+        sum +
+        normalizeNumber(
+          payment.amount
+        ),
+      0
+    );
+
+  const totalOutstanding =
+    Math.max(
+      0,
+      totalBilled -
+        totalPaid
+    );
+
+  const outstandingPayers =
+    useMemo(() => {
+      return payers.filter(
+        (payer) =>
+          getPayerOutstandingAmount(
+            payer.id,
+            payer.chargeId
+          ) > 0
+      );
+    }, [
+      payers,
+      payments,
+      charges,
+    ]);
+
+  const selectedCharge =
+    selectedChargeId
+      ? charges.find(
+          (charge) =>
+            charge.id ===
+            selectedChargeId
+        ) || null
+      : null;
+
+  const resetChargeForm =
+    () => {
+      const empty =
+        createEmptyChargeForm();
+
+      setEditingChargeId(
+        null
+      );
+
+      setChargeMonth(
+        empty.month
+      );
+
+      setChargeCourseId(
+        empty.courseId
+      );
+
+      setChargeAmount(
+        empty.amount
+      );
+
+      setChargeNote(
+        empty.note
       );
     };
-  }, []);
 
-  const handleAddCourse =
-    async () => {
-      const title =
-        newCourseTitle.trim();
+  const handleEditCharge = (
+    charge: FinanceCharge
+  ) => {
+    setEditingChargeId(
+      charge.id
+    );
 
-      if (!title) {
-        alert(
-          "請輸入新課程名稱。"
-        );
-        return;
-      }
+    setChargeMonth(
+      charge.month
+    );
 
-      try {
-        const newCourseId =
-          Date.now();
+    setChargeCourseId(
+      charge.courseId
+    );
 
-        const {
-          error,
-        } = await supabase
-          .from("courses")
-          .insert({
-            id: newCourseId,
-            date: todayString(),
-            title,
-            teacher: "",
-            start_time: "",
-            end_time: "",
-            capacity: 0,
-            classroom: "",
-            note: "",
-          });
+    setChargeAmount(
+      charge.amount
+    );
 
-        if (error) {
-          console.error(
-            "新增課程失敗：",
-            error
-          );
+    setChargeNote(
+      charge.note
+    );
 
-          alert(
-            "新增課程失敗：\n\n" +
-              error.message
-          );
-
-          return;
-        }
-
-        const newCourse: CourseOption =
-          {
-            id: newCourseId,
-            title,
-          };
-
-        const nextCourses = [
-          ...courses.filter(
-            (course) =>
-              normalizeString(
-                course.id
-              ) !==
-              normalizeString(
-                newCourse.id
-              )
-          ),
-          newCourse,
-        ];
-
-        setCourses(
-          nextCourses
-        );
-
-        localStorage.setItem(
-          COURSE_STORAGE_KEY,
-          JSON.stringify(
-            nextCourses
-          )
-        );
-
-        setChargeCourseId(
-          normalizeString(
-            newCourse.id
-          )
-        );
-
-        setNewCourseTitle("");
-
-        setShowAddCourse(
-          false
-        );
-
-        alert(
-          `課程「${newCourse.title}」新增成功！`
-        );
-      } catch (error) {
-        console.error(
-          "新增課程發生錯誤：",
-          error
-        );
-
-        alert(
-          "新增課程失敗：\n\n" +
-            (error instanceof Error
-              ? error.message
-              : String(error))
-        );
-      }
-    };
+    window.scrollTo({
+      top: 0,
+      behavior: "smooth",
+    });
+  };
 
   const handleSaveCharge =
     async () => {
@@ -1176,9 +982,14 @@ export default function FinanceSection() {
         return;
       }
 
-      if (chargeAmount <= 0) {
+      if (
+        !Number.isFinite(
+          chargeAmount
+        ) ||
+        chargeAmount <= 0
+      ) {
         alert(
-          "收費金額必須大於 0。"
+          "請輸入正確的每人收費金額。"
         );
         return;
       }
@@ -1192,16 +1003,37 @@ export default function FinanceSection() {
             chargeCourseId
           );
 
-        const chargeName =
-          courseName !==
-          "未指定課程"
-            ? courseName
-            : "收費";
-
         if (
           editingChargeId
         ) {
           const {
+            data: existingCharge,
+            error: findError,
+          } = await supabase
+            .from(
+              "finance_charges"
+            )
+            .select(
+              "id"
+            )
+            .eq(
+              "id",
+              editingChargeId
+            )
+            .maybeSingle();
+
+          if (findError) {
+            throw findError;
+          }
+
+          if (!existingCharge) {
+            throw new Error(
+              "找不到要修改的收費項目。"
+            );
+          }
+
+          const {
+            data,
             error,
           } = await supabase
             .from(
@@ -1211,136 +1043,116 @@ export default function FinanceSection() {
               month:
                 chargeMonth,
               name:
-                chargeName,
+                courseName,
               course_id:
                 chargeCourseId,
               amount:
                 chargeAmount,
               note:
-                chargeNote.trim(),
+                chargeNote,
             })
             .eq(
               "id",
               editingChargeId
-            );
+            )
+            .select("*")
+            .maybeSingle();
 
           if (error) {
-            console.error(
-              "更新收費項目失敗：",
-              error
-            );
-
-            alert(
-              "課程收費更新失敗：\n\n" +
-                error.message
-            );
-
-            return;
+            throw error;
           }
 
-          const updatedCharges =
+          if (!data) {
+            throw new Error(
+              "收費項目沒有真正更新，請檢查 Supabase UPDATE 權限。"
+            );
+          }
+
+          const updatedCharge =
+            mapChargeFromDatabase(
+              data as DatabaseRow
+            );
+
+          const nextCharges =
             charges.map(
               (charge) =>
                 charge.id ===
                 editingChargeId
-                  ? {
-                      ...charge,
-                      month:
-                        chargeMonth,
-                      name:
-                        chargeName,
-                      courseId:
-                        chargeCourseId,
-                      amount:
-                        chargeAmount,
-                      note:
-                        chargeNote.trim(),
-                    }
+                  ? updatedCharge
                   : charge
             );
 
           setCharges(
-            updatedCharges
+            nextCharges
           );
 
           saveLocalFinanceBackup(
-            updatedCharges,
+            nextCharges,
             payers,
             payments
           );
 
-          setSelectedChargeId(
+          if (
+            selectedChargeId ===
             editingChargeId
-          );
+          ) {
+            setSelectedChargeId(
+              updatedCharge.id
+            );
+          }
 
           resetChargeForm();
 
           alert(
-            "收費資料更新成功！"
+            "收費項目修改成功！"
           );
 
           return;
         }
 
-        const newChargeId =
+        const newId =
           createId();
 
-        const newCharge:
-          FinanceCharge = {
-          id: newChargeId,
-          month:
-            chargeMonth,
-          name:
-            chargeName,
-          courseId:
-            chargeCourseId,
-          amount:
-            chargeAmount,
-          note:
-            chargeNote.trim(),
-          createdAt:
-            new Date().toISOString(),
-        };
-
         const {
+          data,
           error,
         } = await supabase
           .from(
             "finance_charges"
           )
           .insert({
-            id:
-              newCharge.id,
+            id: newId,
             month:
-              newCharge.month,
+              chargeMonth,
             name:
-              newCharge.name,
+              courseName,
             course_id:
-              newCharge.courseId,
+              chargeCourseId,
             amount:
-              newCharge.amount,
+              chargeAmount,
             note:
-              newCharge.note,
-            created_at:
-              newCharge.createdAt,
-          });
+              chargeNote,
+          })
+          .select("*")
+          .maybeSingle();
 
         if (error) {
-          console.error(
-            "新增收費項目失敗：",
-            error
-          );
-
-          alert(
-            "新增收費項目失敗：\n\n" +
-              error.message
-          );
-
-          return;
+          throw error;
         }
 
+        if (!data) {
+          throw new Error(
+            "新增收費項目沒有回傳資料。"
+          );
+        }
+
+        const insertedCharge =
+          mapChargeFromDatabase(
+            data as DatabaseRow
+          );
+
         const nextCharges = [
-          newCharge,
+          insertedCharge,
           ...charges,
         ];
 
@@ -1354,10 +1166,6 @@ export default function FinanceSection() {
           payments
         );
 
-        setSelectedChargeId(
-          newCharge.id
-        );
-
         resetChargeForm();
 
         alert(
@@ -1365,15 +1173,18 @@ export default function FinanceSection() {
         );
       } catch (error) {
         console.error(
-          "儲存收費項目發生錯誤：",
+          "儲存收費項目失敗：",
           error
         );
 
+        const message =
+          error instanceof Error
+            ? error.message
+            : String(error);
+
         alert(
           "儲存收費項目失敗：\n\n" +
-            (error instanceof Error
-              ? error.message
-              : String(error))
+            message
         );
       } finally {
         savingChargeRef.current =
@@ -1381,452 +1192,323 @@ export default function FinanceSection() {
       }
     };
 
-  const handleEditCharge = (
-    charge: FinanceCharge
-  ) => {
-    setEditingChargeId(
-      charge.id
-    );
-
-    setChargeMonth(
-      charge.month
-    );
-
-    setChargeCourseId(
-      charge.courseId ||
-        ""
-    );
-
-    setChargeAmount(
-      normalizeNumber(
-        charge.amount
-      )
-    );
-
-    setChargeNote(
-      charge.note || ""
-    );
-
-    window.scrollTo({
-      top: 0,
-      behavior: "smooth",
-    });
-  };
-
-   const handleDeleteCharge =
-  async (
-    chargeId: string
-  ) => {
-    if (
-      deletingChargeRef.current ===
-      chargeId
-    ) {
-      return;
-    }
-
-    const confirmed =
-      window.confirm(
-        "確定要刪除這筆收費項目嗎？\n\n刪除後，這筆收費的繳費名單與繳款紀錄也會一起刪除。"
-      );
-
-    if (!confirmed) {
-      return;
-    }
-
-    deletingChargeRef.current =
-      chargeId;
-
-    try {
-      /*
-       * ========================================
-       * ① 刪除繳款紀錄
-       * ========================================
-       */
-      const {
-        error: paymentDeleteError,
-      } = await supabase
-        .from("finance_payments")
-        .delete()
-        .eq(
-          "charge_id",
-          chargeId
-        );
-
-      if (paymentDeleteError) {
-        throw paymentDeleteError;
-      }
-
-      /*
-       * ========================================
-       * ② 刪除繳費名單
-       * ========================================
-       */
-      const {
-        error: payerDeleteError,
-      } = await supabase
-        .from("finance_payers")
-        .delete()
-        .eq(
-          "charge_id",
-          chargeId
-        );
-
-      if (payerDeleteError) {
-        throw payerDeleteError;
-      }
-
-      /*
-       * ========================================
-       * ③ 真正刪除收費項目
-       *
-       * 用 select 確認 Database 實際刪掉資料
-       * ========================================
-       */
-      const {
-        data: deletedCharge,
-        error: chargeDeleteError,
-      } = await supabase
-        .from("finance_charges")
-        .delete()
-        .eq(
-          "id",
-          chargeId
-        )
-        .select("id")
-        .maybeSingle();
-
-      console.log(
-        "🗑️ 收費項目 DELETE 回應：",
-        {
-          chargeId,
-          deletedCharge,
-          chargeDeleteError,
-        }
-      );
-
-      if (chargeDeleteError) {
-        throw chargeDeleteError;
-      }
-
-      /*
-       * 沒有回傳刪除資料
-       * 通常代表 RLS / DELETE 權限沒有允許
-       */
-      if (!deletedCharge) {
-        throw new Error(
-          "Database 沒有刪除這筆收費項目。\n\n請檢查 Supabase finance_charges 的 DELETE 權限（RLS Policy）。"
-        );
-      }
-
-      /*
-       * ========================================
-       * ④ 再查一次確認 Database 真的不存在
-       * ========================================
-       */
-      const {
-        data: verifyCharge,
-        error: verifyError,
-      } = await supabase
-        .from("finance_charges")
-        .select("id")
-        .eq(
-          "id",
-          chargeId
-        )
-        .maybeSingle();
-
-      if (verifyError) {
-        throw verifyError;
-      }
-
-      if (verifyCharge) {
-        throw new Error(
-          "Database 仍然存在這筆收費項目，刪除沒有真正完成。"
-        );
-      }
-
-      /*
-       * ========================================
-       * ⑤ 更新畫面
-       * ========================================
-       */
-      const nextCharges =
-        charges.filter(
-          (charge) =>
-            charge.id !==
-            chargeId
-        );
-
-      const nextPayers =
-        payers.filter(
-          (payer) =>
-            payer.chargeId !==
-            chargeId
-        );
-
-      const nextPayments =
-        payments.filter(
-          (payment) =>
-            payment.chargeId !==
-            chargeId
-        );
-
-      setCharges(
-        nextCharges
-      );
-
-      setPayers(
-        nextPayers
-      );
-
-      setPayments(
-        nextPayments
-      );
-
-      /*
-       * 更新本機備份
-       */
-      saveLocalFinanceBackup(
-        nextCharges,
-        nextPayers,
-        nextPayments
-      );
-
-      /*
-       * 關閉目前選取的收費項目
-       */
+    const handleDeleteCharge =
+    async (
+      chargeId: string
+    ) => {
       if (
-        selectedChargeId ===
+        deletingChargeRef.current ===
         chargeId
       ) {
-        setSelectedChargeId(
-          null
-        );
-
-        setShowPaymentForm(
-          false
-        );
-
-        setShowManualPayerForm(
-          false
-        );
+        return;
       }
 
-      /*
-       * 如果正在編輯這筆，也一起關閉
-       */
-      if (
-        editingChargeId ===
-        chargeId
-      ) {
-        resetChargeForm();
+      const confirmed =
+        window.confirm(
+          "確定要刪除這筆收費項目嗎？\n\n刪除後，這筆收費的繳費名單與繳款紀錄也會一起刪除。"
+        );
+
+      if (!confirmed) {
+        return;
       }
 
-      alert(
-        "收費項目已成功刪除！"
-      );
-
-      /*
-       * 最後重新從 Supabase 載入
-       * 確保 F5 後不會又回來
-       */
-      await loadFinanceData();
-    } catch (error) {
-      console.error(
-        "🔴 刪除收費項目失敗：",
-        error
-      );
-
-      alert(
-        "刪除收費項目失敗：\n\n" +
-          (error instanceof Error
-            ? error.message
-            : String(error))
-      );
-    } finally {
       deletingChargeRef.current =
-        null;
-    }
-  };
+        chargeId;
+
+      try {
+        const {
+          error: paymentDeleteError,
+        } = await supabase
+          .from(
+            "finance_payments"
+          )
+          .delete()
+          .eq(
+            "charge_id",
+            chargeId
+          );
+
+        if (paymentDeleteError) {
+          throw paymentDeleteError;
+        }
+
+        const {
+          error: payerDeleteError,
+        } = await supabase
+          .from(
+            "finance_payers"
+          )
+          .delete()
+          .eq(
+            "charge_id",
+            chargeId
+          );
+
+        if (payerDeleteError) {
+          throw payerDeleteError;
+        }
+
+        const {
+          error: chargeDeleteError,
+        } = await supabase
+          .from(
+            "finance_charges"
+          )
+          .delete()
+          .eq(
+            "id",
+            chargeId
+          );
+
+        if (chargeDeleteError) {
+          throw chargeDeleteError;
+        }
+
+        const {
+          data: remainingCharge,
+          error: verifyError,
+        } = await supabase
+          .from(
+            "finance_charges"
+          )
+          .select(
+            "id"
+          )
+          .eq(
+            "id",
+            chargeId
+          )
+          .maybeSingle();
+
+        if (verifyError) {
+          throw verifyError;
+        }
+
+        if (remainingCharge) {
+          throw new Error(
+            "Database 沒有真正刪除這筆收費項目，請檢查 Supabase DELETE 權限。"
+          );
+        }
+
+        const nextCharges =
+          charges.filter(
+            (charge) =>
+              charge.id !==
+              chargeId
+          );
+
+        const nextPayers =
+          payers.filter(
+            (payer) =>
+              payer.chargeId !==
+              chargeId
+          );
+
+        const nextPayments =
+          payments.filter(
+            (payment) =>
+              payment.chargeId !==
+              chargeId
+          );
+
+        setCharges(
+          nextCharges
+        );
+
+        setPayers(
+          nextPayers
+        );
+
+        setPayments(
+          nextPayments
+        );
+
+        saveLocalFinanceBackup(
+          nextCharges,
+          nextPayers,
+          nextPayments
+        );
+
+        if (
+          selectedChargeId ===
+          chargeId
+        ) {
+          setSelectedChargeId(
+            null
+          );
+
+          setShowPaymentForm(
+            false
+          );
+
+          setShowManualPayerForm(
+            false
+          );
+        }
+
+        if (
+          editingChargeId ===
+          chargeId
+        ) {
+          resetChargeForm();
+        }
+
+        alert(
+          "收費項目已刪除。"
+        );
+      } catch (error) {
+        console.error(
+          "刪除收費項目失敗：",
+          error
+        );
+
+        alert(
+          "刪除收費項目失敗：\n\n" +
+            (error instanceof Error
+              ? error.message
+              : String(error))
+        );
+      } finally {
+        deletingChargeRef.current =
+          null;
+      }
+    };
 
   const handleGeneratePayerList =
     async (
       charge: FinanceCharge
     ) => {
-      const courseRegistrations =
-        registrations.filter(
-          (registration) =>
-            normalizeString(
-              registration.courseId
-            ) ===
-            normalizeString(
-              charge.courseId
-            )
-        );
-
-      if (
-        courseRegistrations.length ===
-        0
-      ) {
-        alert(
-          "目前沒有找到這門課程的報名資料。"
-        );
-
-        return;
-      }
-
-      const existingPayers =
-        payers.filter(
-          (payer) =>
-            payer.chargeId ===
-            charge.id
-        );
-
-      const newPayers:
-        FinancePayer[] = [];
-
-      courseRegistrations.forEach(
-        (registration) => {
-          const elderId =
-            normalizeString(
-              registration.elderId
-            );
-
-          const name =
-            normalizeString(
-              registration.name
-            ) ||
-            normalizeString(
-              registration.elderName
-            );
-
-          const phone =
-            normalizeString(
-              registration.phone
-            ) ||
-            normalizeString(
-              registration.elderPhone
-            );
-
-          if (!name) {
-            return;
-          }
-
-          const duplicate =
-            existingPayers.some(
-              (payer) => {
-                if (
-                  elderId &&
-                  payer.elderId
-                ) {
-                  return (
-                    payer.elderId ===
-                    elderId
-                  );
-                }
-
-                return (
-                  payer.name ===
-                    name &&
-                  payer.phone ===
-                    phone
-                );
-              }
-            ) ||
-            newPayers.some(
-              (payer) => {
-                if (
-                  elderId &&
-                  payer.elderId
-                ) {
-                  return (
-                    payer.elderId ===
-                    elderId
-                  );
-                }
-
-                return (
-                  payer.name ===
-                    name &&
-                  payer.phone ===
-                    phone
-                );
-              }
-            );
-
-          if (duplicate) {
-            return;
-          }
-
-          newPayers.push({
-            id: createId(),
-            chargeId:
-              charge.id,
-            elderId:
-              elderId ||
-              undefined,
-            name,
-            phone,
-            source:
-              "registration",
-            createdAt:
-              new Date().toISOString(),
-          });
-        }
-      );
-
-      if (
-        newPayers.length ===
-        0
-      ) {
-        setSelectedChargeId(
-          charge.id
-        );
-
-        alert(
-          "這門課程的報名者都已經在繳費名單中。"
-        );
-
-        return;
-      }
-
       try {
+        const existingPayerKeys =
+          new Set(
+            payers
+              .filter(
+                (payer) =>
+                  payer.chargeId ===
+                  charge.id
+              )
+              .map(
+                (payer) =>
+                  payer.elderId
+                    ? `elder:${payer.elderId}`
+                    : `manual:${payer.name}:${payer.phone}`
+              )
+          );
+
+        const courseRegistrations =
+          registrations.filter(
+            (registration) =>
+              String(
+                registration.courseId
+              ) ===
+              String(
+                charge.courseId
+              )
+          );
+
+        const newPayers =
+          courseRegistrations
+            .map(
+              (
+                registration
+              ) => {
+                const elderId =
+                  registration.elderId !==
+                    undefined &&
+                  registration.elderId !==
+                    null
+                    ? String(
+                        registration.elderId
+                      )
+                    : "";
+
+                const name =
+                  registration.elderName ||
+                  registration.name ||
+                  "";
+
+                const phone =
+                  registration.elderPhone ||
+                  registration.phone ||
+                  "";
+
+                const key =
+                  elderId
+                    ? `elder:${elderId}`
+                    : `manual:${name}:${phone}`;
+
+                return {
+                  registration,
+                  elderId,
+                  name,
+                  phone,
+                  key,
+                };
+              }
+            )
+            .filter(
+              (item) =>
+                item.name &&
+                !existingPayerKeys.has(
+                  item.key
+                )
+            );
+
+        if (
+          newPayers.length ===
+          0
+        ) {
+          alert(
+            "這門課程的報名者都已經在繳費名單中。"
+          );
+          return;
+        }
+
         const rows =
           newPayers.map(
-            (payer) => ({
-              id:
-                payer.id,
+            (item) => ({
+              id: createId(),
               charge_id:
-                payer.chargeId,
+                charge.id,
               elder_id:
-                payer.elderId ||
+                item.elderId ||
                 null,
               name:
-                payer.name,
+                item.name,
               phone:
-                payer.phone,
+                item.phone,
               source:
-                payer.source,
+                "registration",
               created_at:
-                payer.createdAt,
+                new Date().toISOString(),
             })
           );
 
         const {
+          data,
           error,
         } = await supabase
           .from(
             "finance_payers"
           )
-          .insert(rows);
+          .insert(rows)
+          .select("*");
 
         if (error) {
           throw error;
         }
 
+        const insertedPayers =
+          (data || []).map(
+            (row) =>
+              mapPayerFromDatabase(
+                row as DatabaseRow
+              )
+          );
+
         const nextPayers = [
           ...payers,
-          ...newPayers,
+          ...insertedPayers,
         ];
 
         setPayers(
@@ -1839,12 +1521,8 @@ export default function FinanceSection() {
           payments
         );
 
-        setSelectedChargeId(
-          charge.id
-        );
-
         alert(
-          `已加入 ${newPayers.length} 位繳費者。`
+          `已新增 ${insertedPayers.length} 位繳費者。`
         );
       } catch (error) {
         console.error(
@@ -1867,7 +1545,6 @@ export default function FinanceSection() {
         alert(
           "請先選擇收費項目。"
         );
-
         return;
       }
 
@@ -1875,107 +1552,69 @@ export default function FinanceSection() {
         alert(
           "請輸入繳費者姓名。"
         );
-
         return;
       }
-
-      const selectedElder =
-        elders.find(
-          (elder) =>
-            normalizeString(
-              elder.id
-            ) ===
-            manualElderId
-        );
-
-      const payerName =
-        selectedElder?.name ||
-        manualName.trim();
-
-      const payerPhone =
-        selectedElder?.phone ||
-        manualPhone.trim();
-
-      const duplicate =
-        payers.some(
-          (payer) => {
-            if (
-              manualElderId &&
-              payer.elderId
-            ) {
-              return (
-                payer.chargeId ===
-                  selectedCharge.id &&
-                payer.elderId ===
-                  manualElderId
-              );
-            }
-
-            return (
-              payer.chargeId ===
-                selectedCharge.id &&
-              payer.name ===
-                payerName &&
-              payer.phone ===
-                payerPhone
-            );
-          }
-        );
-
-      if (duplicate) {
-        alert(
-          "這位繳費者已經在名單中。"
-        );
-
-        return;
-      }
-
-      const newPayer:
-        FinancePayer = {
-        id: createId(),
-        chargeId:
-          selectedCharge.id,
-        elderId:
-          manualElderId ||
-          undefined,
-        name:
-          payerName,
-        phone:
-          payerPhone,
-        source:
-          "manual",
-        createdAt:
-          new Date().toISOString(),
-      };
 
       try {
+        const duplicate =
+          payers.find(
+            (payer) =>
+              payer.chargeId ===
+                selectedCharge.id &&
+              payer.name.trim() ===
+                manualName.trim() &&
+              payer.phone.trim() ===
+                manualPhone.trim()
+          );
+
+        if (duplicate) {
+          alert(
+            "這位繳費者已經存在於繳費名單中。"
+          );
+          return;
+        }
+
+        const newPayerId =
+          createId();
+
         const {
+          data,
           error,
         } = await supabase
           .from(
             "finance_payers"
           )
           .insert({
-            id:
-              newPayer.id,
+            id: newPayerId,
             charge_id:
-              newPayer.chargeId,
+              selectedCharge.id,
             elder_id:
-              newPayer.elderId ||
+              manualElderId ||
               null,
             name:
-              newPayer.name,
+              manualName.trim(),
             phone:
-              newPayer.phone,
+              manualPhone.trim(),
             source:
-              newPayer.source,
-            created_at:
-              newPayer.createdAt,
-          });
+              "manual",
+          })
+          .select("*")
+          .maybeSingle();
 
         if (error) {
           throw error;
         }
+
+        if (!data) {
+          throw new Error(
+            "新增繳費者沒有回傳資料。"
+          );
+        }
+
+        const newPayer =
+          mapPayerFromDatabase(
+            data as DatabaseRow
+          );
 
         const nextPayers = [
           ...payers,
@@ -1992,10 +1631,17 @@ export default function FinanceSection() {
           payments
         );
 
-        resetManualPayerForm();
+        setManualName("");
+        setManualPhone("");
+        setManualElderId("");
+        setManualNote("");
 
         setShowManualPayerForm(
           false
+        );
+
+        alert(
+          "已加入繳費名單。"
         );
       } catch (error) {
         console.error(
@@ -2012,13 +1658,104 @@ export default function FinanceSection() {
       }
     };
 
-  const handleAddPayment =
+  const handleDeletePayer =
+    async (
+      payerId: string
+    ) => {
+      const confirmed =
+        window.confirm(
+          "確定要刪除這位繳費者嗎？\n\n相關繳款紀錄也會一起刪除。"
+        );
+
+      if (!confirmed) {
+        return;
+      }
+
+      try {
+        const {
+          error: paymentError,
+        } = await supabase
+          .from(
+            "finance_payments"
+          )
+          .delete()
+          .eq(
+            "payer_id",
+            payerId
+          );
+
+        if (paymentError) {
+          throw paymentError;
+        }
+
+        const {
+          error: payerError,
+        } = await supabase
+          .from(
+            "finance_payers"
+          )
+          .delete()
+          .eq(
+            "id",
+            payerId
+          );
+
+        if (payerError) {
+          throw payerError;
+        }
+
+        const nextPayers =
+          payers.filter(
+            (payer) =>
+              payer.id !==
+              payerId
+          );
+
+        const nextPayments =
+          payments.filter(
+            (payment) =>
+              payment.payerId !==
+              payerId
+          );
+
+        setPayers(
+          nextPayers
+        );
+
+        setPayments(
+          nextPayments
+        );
+
+        saveLocalFinanceBackup(
+          charges,
+          nextPayers,
+          nextPayments
+        );
+
+        alert(
+          "繳費者已刪除。"
+        );
+      } catch (error) {
+        console.error(
+          "刪除繳費者失敗：",
+          error
+        );
+
+        alert(
+          "刪除繳費者失敗：\n\n" +
+            (error instanceof Error
+              ? error.message
+              : String(error))
+        );
+      }
+    };
+
+  const handleSavePayment =
     async () => {
       if (!selectedCharge) {
         alert(
           "請先選擇收費項目。"
         );
-
         return;
       }
 
@@ -2026,97 +1763,59 @@ export default function FinanceSection() {
         alert(
           "請選擇繳費者。"
         );
-
-        return;
-      }
-
-      if (paymentAmount <= 0) {
-        alert(
-          "繳款金額必須大於 0。"
-        );
-
-        return;
-      }
-
-      if (!paymentDate) {
-        alert(
-          "請選擇繳款日期。"
-        );
-
-        return;
-      }
-
-      const outstanding =
-        getPayerOutstandingAmount(
-          paymentPayerId,
-          selectedCharge.id
-        );
-
-      if (outstanding <= 0) {
-        alert(
-          "這位繳費者已經繳清。"
-        );
-
         return;
       }
 
       if (
-        paymentAmount >
-        outstanding
+        !Number.isFinite(
+          paymentAmount
+        ) ||
+        paymentAmount <= 0
       ) {
         alert(
-          `本次最多可繳 ${formatCurrency(
-            outstanding
-          )}。`
+          "請輸入正確的繳款金額。"
         );
-
         return;
       }
 
-      const newPayment:
-        FinancePayment = {
-        id: createId(),
-        chargeId:
-          selectedCharge.id,
-        payerId:
-          paymentPayerId,
-        amount:
-          paymentAmount,
-        paidAt:
-          paymentDate,
-        note:
-          paymentNote.trim(),
-        createdAt:
-          new Date().toISOString(),
-      };
-
       try {
         const {
+          data,
           error,
         } = await supabase
           .from(
             "finance_payments"
           )
           .insert({
-            id:
-              newPayment.id,
+            id: createId(),
             charge_id:
-              newPayment.chargeId,
+              selectedCharge.id,
             payer_id:
-              newPayment.payerId,
+              paymentPayerId,
             amount:
-              newPayment.amount,
+              paymentAmount,
             paid_at:
-              newPayment.paidAt,
+              paymentDate,
             note:
-              newPayment.note,
-            created_at:
-              newPayment.createdAt,
-          });
+              paymentNote,
+          })
+          .select("*")
+          .maybeSingle();
 
         if (error) {
           throw error;
         }
+
+        if (!data) {
+          throw new Error(
+            "新增繳款紀錄沒有回傳資料。"
+          );
+        }
+
+        const newPayment =
+          mapPaymentFromDatabase(
+            data as DatabaseRow
+          );
 
         const nextPayments = [
           newPayment,
@@ -2133,19 +1832,28 @@ export default function FinanceSection() {
           nextPayments
         );
 
-        resetPaymentForm();
+        setPaymentPayerId("");
+        setPaymentAmount(0);
+        setPaymentDate(
+          createEmptyPaymentForm().paidAt
+        );
+        setPaymentNote("");
 
         setShowPaymentForm(
           false
         );
+
+        alert(
+          "繳款紀錄已新增。"
+        );
       } catch (error) {
         console.error(
-          "新增繳款失敗：",
+          "新增繳款紀錄失敗：",
           error
         );
 
         alert(
-          "新增繳款失敗：\n\n" +
+          "新增繳款紀錄失敗：\n\n" +
             (error instanceof Error
               ? error.message
               : String(error))
@@ -2219,8 +1927,10 @@ export default function FinanceSection() {
       <div
         style={{
           padding: 30,
-          textAlign: "center",
-          color: "#6B7280",
+          textAlign:
+            "center",
+          color:
+            "#6B7280",
         }}
       >
         財務資料載入中...
@@ -2230,17 +1940,24 @@ export default function FinanceSection() {
 
   return (
     <div
+      className="finance-section-root"
       style={{
         display: "flex",
-        flexDirection: "column",
+        flexDirection:
+          "column",
         gap: 24,
       }}
     >
+      <style jsx>
+        {responsiveFinanceStyles}
+      </style>
+
       <div>
         <h2
           style={{
             margin: 0,
-            color: colors.primary,
+            color:
+              colors.primary,
             fontSize: 28,
           }}
         >
@@ -2251,7 +1968,8 @@ export default function FinanceSection() {
           style={{
             marginTop: 8,
             marginBottom: 0,
-            color: "#6B7280",
+            color:
+              "#6B7280",
           }}
         >
           管理課程收費、繳費名單、繳款紀錄與欠款追蹤。
@@ -2259,6 +1977,7 @@ export default function FinanceSection() {
       </div>
 
       <div
+        className="finance-summary-grid"
         style={{
           display: "grid",
           gridTemplateColumns:
@@ -2267,16 +1986,22 @@ export default function FinanceSection() {
         }}
       >
         <div
-          style={summaryCardStyle}
+          style={
+            summaryCardStyle
+          }
         >
           <div
-            style={summaryLabelStyle}
+            style={
+              summaryLabelStyle
+            }
           >
             應收總額
           </div>
 
           <div
-            style={summaryValueStyle}
+            style={
+              summaryValueStyle
+            }
           >
             {formatCurrency(
               totalBilled
@@ -2285,16 +2010,22 @@ export default function FinanceSection() {
         </div>
 
         <div
-          style={summaryCardStyle}
+          style={
+            summaryCardStyle
+          }
         >
           <div
-            style={summaryLabelStyle}
+            style={
+              summaryLabelStyle
+            }
           >
             已收款
           </div>
 
           <div
-            style={summaryValueStyle}
+            style={
+              summaryValueStyle
+            }
           >
             {formatCurrency(
               totalPaid
@@ -2303,12 +2034,16 @@ export default function FinanceSection() {
         </div>
 
         <div
-          style={summaryCardStyle}
+          style={
+            summaryCardStyle
+          }
         >
           <div
-            style={summaryLabelStyle}
+            style={
+              summaryLabelStyle
+            }
           >
-            尚欠款
+            尚欠總額
           </div>
 
           <div
@@ -2329,40 +2064,36 @@ export default function FinanceSection() {
       </div>
 
       <div
-        style={sectionCardStyle}
+        style={
+          sectionCardStyle
+        }
       >
         <h3
           style={{
             marginTop: 0,
-            color: colors.primary,
+            color:
+              colors.primary,
           }}
         >
           {editingChargeId
-            ? "編輯課程收費"
-            : "新增課程收費"}
+            ? "編輯收費項目"
+            : "建立收費項目"}
         </h3>
 
-        <p
-          style={{
-            marginTop: -8,
-            color: "#6B7280",
-            fontSize: 14,
-          }}
-        >
-          選擇對應課程即可；其他收費說明請寫在備註。
-        </p>
-
         <div
+          className="finance-charge-form-grid"
           style={{
             display: "grid",
             gridTemplateColumns:
               "repeat(2, minmax(0, 1fr))",
-            gap: 20,
+            gap: 16,
           }}
         >
           <div>
             <label
-              style={labelStyle}
+              style={
+                labelStyle
+              }
             >
               收費月份
             </label>
@@ -2370,35 +2101,42 @@ export default function FinanceSection() {
             <input
               type="month"
               value={
-                chargeMonth || ""
+                chargeMonth
               }
               onChange={(event) =>
                 setChargeMonth(
-                  event.target.value
+                  event.target
+                    .value
                 )
               }
-              style={inputStyle}
+              style={
+                inputStyle
+              }
             />
           </div>
 
           <div>
             <label
-              style={labelStyle}
+              style={
+                labelStyle
+              }
             >
               對應課程
             </label>
 
             <select
               value={
-                chargeCourseId ||
-                ""
+                chargeCourseId
               }
               onChange={(event) =>
                 setChargeCourseId(
-                  event.target.value
+                  event.target
+                    .value
                 )
               }
-              style={inputStyle}
+              style={
+                inputStyle
+              }
             >
               <option value="">
                 請選擇課程
@@ -2419,93 +2157,15 @@ export default function FinanceSection() {
                 )
               )}
             </select>
-
-            <button
-              type="button"
-              onClick={() =>
-                setShowAddCourse(
-                  (current) =>
-                    !current
-                )
-              }
-              style={{
-                marginTop: 10,
-                border: "none",
-                background:
-                  "transparent",
-                color:
-                  colors.primary,
-                cursor:
-                  "pointer",
-                fontWeight: 700,
-                padding: 0,
-              }}
-            >
-              {showAddCourse
-                ? "取消新增課程"
-                : "＋新增課程"}
-            </button>
-
-            {showAddCourse && (
-              <div
-                style={{
-                  marginTop: 12,
-                  padding: 16,
-                  background:
-                    "#F9FAFB",
-                  borderRadius: 10,
-                  border:
-                    "1px solid #E5E7EB",
-                }}
-              >
-                <label
-                  style={
-                    labelStyle
-                  }
-                >
-                  新課程名稱
-                </label>
-
-                <input
-                  type="text"
-                  value={
-                    newCourseTitle
-                  }
-                  onChange={(
-                    event
-                  ) =>
-                    setNewCourseTitle(
-                      event.target
-                        .value
-                    )
-                  }
-                  placeholder="請輸入課程名稱"
-                  style={
-                    inputStyle
-                  }
-                />
-
-                <button
-                  type="button"
-                  onClick={
-                    handleAddCourse
-                  }
-                  style={{
-                    ...primaryButtonStyle,
-                    marginTop: 10,
-                  }}
-                >
-                  儲存新課程
-                </button>
-              </div>
-            )}
           </div>
 
           <div>
             <label
-              style={labelStyle}
+              style={
+                labelStyle
+              }
             >
-              每人收費金額
+              每人收費
             </label>
 
             <input
@@ -2516,16 +2176,15 @@ export default function FinanceSection() {
               }
               onChange={(event) =>
                 setChargeAmount(
-                  Math.max(
-                    Number(
-                      event.target
-                        .value
-                    ) || 0,
-                    0
+                  Number(
+                    event.target
+                      .value
                   )
                 )
               }
-              style={inputStyle}
+              style={
+                inputStyle
+              }
             />
           </div>
 
@@ -2536,14 +2195,16 @@ export default function FinanceSection() {
             }}
           >
             <label
-              style={labelStyle}
+              style={
+                labelStyle
+              }
             >
               備註
             </label>
 
             <textarea
               value={
-                chargeNote || ""
+                chargeNote
               }
               onChange={(event) =>
                 setChargeNote(
@@ -2552,7 +2213,7 @@ export default function FinanceSection() {
                 )
               }
               rows={3}
-              placeholder="例如：材料費、餐費、交通費、部分補助等"
+              placeholder="例如：材料費、午餐費、交通費等"
               style={{
                 ...inputStyle,
                 resize:
@@ -2562,14 +2223,14 @@ export default function FinanceSection() {
           </div>
         </div>
 
-        <div
-          style={{
-            display: "flex",
-            gap: 12,
-            marginTop: 24,
-            flexWrap: "wrap",
-          }}
-        >
+       <div
+  className="finance-charge-actions"
+  style={{
+    display: "flex",
+    gap: 8,
+    flexWrap: "wrap",
+  }}
+>
           <button
             type="button"
             onClick={
@@ -2601,12 +2262,15 @@ export default function FinanceSection() {
       </div>
 
       <div
-        style={sectionCardStyle}
+        style={
+          sectionCardStyle
+        }
       >
         <h3
           style={{
             marginTop: 0,
-            color: colors.primary,
+            color:
+              colors.primary,
           }}
         >
           收費項目
@@ -2615,56 +2279,91 @@ export default function FinanceSection() {
         {charges.length ===
         0 ? (
           <div
-            style={emptyStyle}
+            style={
+              emptyStyle
+            }
           >
             目前尚無收費項目
           </div>
         ) : (
           <div
-  className="finance-charge-table-wrap"
-  style={{
-    overflowX: "auto",
-    width: "100%",
-  }}
->
-           <table
-  className="finance-charge-table"
-  style={{
-    width: "100%",
-    borderCollapse: "collapse",
-  }}
->
+            className="finance-charge-table-wrap"
+            style={{
+              overflowX:
+                "auto",
+            }}
+          >
+            <table
+              className="finance-charge-table"
+              style={{
+                width: "100%",
+                borderCollapse:
+                  "collapse",
+              }}
+            >
               <thead>
                 <tr>
-                  <th style={thStyle}>
+                  <th
+                    style={
+                      thStyle
+                    }
+                  >
                     月份
                   </th>
 
-                  <th style={thStyle}>
+                  <th
+                    style={
+                      thStyle
+                    }
+                  >
                     對應課程
                   </th>
 
-                  <th style={thStyle}>
+                  <th
+                    style={
+                      thStyle
+                    }
+                  >
                     每人收費
                   </th>
 
-                  <th style={thStyle}>
+                  <th
+                    style={
+                      thStyle
+                    }
+                  >
                     繳費人數
                   </th>
 
-                  <th style={thStyle}>
+                  <th
+                    style={
+                      thStyle
+                    }
+                  >
                     應收
                   </th>
 
-                  <th style={thStyle}>
+                  <th
+                    style={
+                      thStyle
+                    }
+                  >
                     已繳
                   </th>
 
-                  <th style={thStyle}>
+                  <th
+                    style={
+                      thStyle
+                    }
+                  >
                     尚欠
                   </th>
 
-                  <th style={thStyle}>
+                  <th
+                    style={
+                      thStyle
+                    }
+                  >
                     操作
                   </th>
                 </tr>
@@ -2782,6 +2481,7 @@ export default function FinanceSection() {
                           }
                         >
                           <div
+                            className="finance-charge-actions"
                             style={{
                               display:
                                 "flex",
@@ -2790,163 +2490,184 @@ export default function FinanceSection() {
                                 "wrap",
                             }}
                           >
-                           <button
-  type="button"
-  title="繳費名單"
-  aria-label="繳費名單"
-  onClick={() => {
-    setSelectedChargeId(charge.id);
-    setShowPaymentForm(false);
-    setShowManualPayerForm(false);
-  }}
-  style={{
-    width: 38,
-    height: 38,
-    display: "inline-flex",
-    alignItems: "center",
-    justifyContent: "center",
-    padding: 0,
-    border: "1px solid #D1D5DB",
-    borderRadius: "8px",
-    background: "#fff",
-    color: colors.primary,
-    cursor: "pointer",
-  }}
->
-  <svg
-    width="18"
-    height="18"
-    viewBox="0 0 24 24"
-    fill="none"
-    stroke="currentColor"
-    strokeWidth="2"
-    strokeLinecap="round"
-    strokeLinejoin="round"
-    aria-hidden="true"
-  >
-    <circle cx="9" cy="8" r="3" />
-    <path d="M3 20c0-3 2.7-5 6-5s6 2 6 5" />
-    <path d="M16 11c2.8 0 5 1.8 5 4.5" />
-    <path d="M16 5.5a3 3 0 0 1 0 5" />
-  </svg>
-</button>
+                            <button
+                              type="button"
+                              title="繳費名單"
+                              aria-label="繳費名單"
+                              onClick={() => {
+                                setSelectedChargeId(
+                                  charge.id
+                                );
 
-                         
-                           <button
-  type="button"
-  title="產生名單"
-  aria-label="產生名單"
-  onClick={() =>
-    handleGeneratePayerList(charge)
-  }
-  style={{
-    width: 38,
-    height: 38,
-    display: "inline-flex",
-    alignItems: "center",
-    justifyContent: "center",
-    padding: 0,
-    border: "1px solid #D1D5DB",
-    borderRadius: "8px",
-    background: "#fff",
-    color: colors.primary,
-    cursor: "pointer",
-  }}
->
-  <svg
-    width="18"
-    height="18"
-    viewBox="0 0 24 24"
-    fill="none"
-    stroke="currentColor"
-    strokeWidth="2"
-    strokeLinecap="round"
-    strokeLinejoin="round"
-    aria-hidden="true"
-  >
-    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8Z" />
-    <path d="M14 2v6h6" />
-    <path d="M8 13h8" />
-    <path d="M8 17h6" />
-  </svg>
-</button>
+                                setShowPaymentForm(
+                                  false
+                                );
 
-<button
-  type="button"
-  title="編輯"
-  aria-label="編輯"
-  onClick={() =>
-    handleEditCharge(charge)
-  }
-  style={{
-    width: 38,
-    height: 38,
-    display: "inline-flex",
-    alignItems: "center",
-    justifyContent: "center",
-    padding: 0,
-    border: "1px solid #D1D5DB",
-    borderRadius: "8px",
-    background: "#fff",
-    color: "#374151",
-    cursor: "pointer",
-  }}
->
-  <svg
-    width="18"
-    height="18"
-    viewBox="0 0 24 24"
-    fill="none"
-    stroke="currentColor"
-    strokeWidth="2"
-    strokeLinecap="round"
-    strokeLinejoin="round"
-    aria-hidden="true"
-  >
-    <path d="M12 20h9" />
-    <path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z" />
-  </svg>
-</button>
+                                setShowManualPayerForm(
+                                  false
+                                );
+                              }}
+                              style={{
+                                ...(isSelected
+                                  ? selectedButtonStyle
+                                  : smallButtonStyle),
+                                width: 40,
+                                height: 40,
+                                padding: 0,
+                                display:
+                                  "inline-flex",
+                                alignItems:
+                                  "center",
+                                justifyContent:
+                                  "center",
+                              }}
+                            >
+                              <svg
+                                width="19"
+                                height="19"
+                                viewBox="0 0 24 24"
+                                fill="none"
+                                stroke="currentColor"
+                                strokeWidth="2"
+                                strokeLinecap="round"
+                                strokeLinejoin="round"
+                                aria-hidden="true"
+                              >
+                                <circle
+                                  cx="9"
+                                  cy="8"
+                                  r="3"
+                                />
+                                <path d="M3 20c0-3 2.7-5 6-5s6 2 6 5" />
+                                <path d="M16 11c2.8 0 5 1.8 5 4.5" />
+                                <path d="M16 5.5a3 3 0 0 1 0 5" />
+                              </svg>
+                            </button>
 
-<button
-  type="button"
-  title="刪除"
-  aria-label="刪除"
-  onClick={() =>
-    void handleDeleteCharge(charge.id)
-  }
-  style={{
-    width: 38,
-    height: 38,
-    display: "inline-flex",
-    alignItems: "center",
-    justifyContent: "center",
-    padding: 0,
-    border: "none",
-    borderRadius: "8px",
-    background: "#DC2626",
-    color: "#fff",
-    cursor: "pointer",
-  }}
->
-  <svg
-    width="18"
-    height="18"
-    viewBox="0 0 24 24"
-    fill="none"
-    stroke="currentColor"
-    strokeWidth="2"
-    strokeLinecap="round"
-    strokeLinejoin="round"
-    aria-hidden="true"
-  >
-    <path d="M3 6h18" />
-    <path d="M8 6V4h8v2" />
-    <path d="M19 6l-1 14H6L5 6" />
-    <path d="M10 11v6" />
-    <path d="M14 11v6" />
-  </svg>
-</button>
+                            <button
+                              type="button"
+                              title="產生名單"
+                              aria-label="產生名單"
+                              onClick={() =>
+                                void handleGeneratePayerList(
+                                  charge
+                                )
+                              }
+                              style={{
+                                ...smallButtonStyle,
+                                width: 40,
+                                height: 40,
+                                padding: 0,
+                                display:
+                                  "inline-flex",
+                                alignItems:
+                                  "center",
+                                justifyContent:
+                                  "center",
+                              }}
+                            >
+                              <svg
+                                width="19"
+                                height="19"
+                                viewBox="0 0 24 24"
+                                fill="none"
+                                stroke="currentColor"
+                                strokeWidth="2"
+                                strokeLinecap="round"
+                                strokeLinejoin="round"
+                                aria-hidden="true"
+                              >
+                                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8Z" />
+                                <path d="M14 2v6h6" />
+                                <path d="M8 13h8" />
+                                <path d="M8 17h6" />
+                              </svg>
+                            </button>
+
+                            <button
+                              type="button"
+                              title="編輯"
+                              aria-label="編輯"
+                              onClick={() =>
+                                handleEditCharge(
+                                  charge
+                                )
+                              }
+                              style={{
+                                ...smallButtonStyle,
+                                width: 40,
+                                height: 40,
+                                padding: 0,
+                                display:
+                                  "inline-flex",
+                                alignItems:
+                                  "center",
+                                justifyContent:
+                                  "center",
+                              }}
+                            >
+                              <svg
+                                width="19"
+                                height="19"
+                                viewBox="0 0 24 24"
+                                fill="none"
+                                stroke="currentColor"
+                                strokeWidth="2"
+                                strokeLinecap="round"
+                                strokeLinejoin="round"
+                                aria-hidden="true"
+                              >
+                                <path d="M12 20h9" />
+                                <path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z" />
+                              </svg>
+                            </button>
+
+                            <button
+                              type="button"
+                              title="刪除"
+                              aria-label="刪除"
+                              onClick={() =>
+                                void handleDeleteCharge(
+                                  charge.id
+                                )
+                              }
+                              style={{
+                                ...smallButtonStyle,
+                                width: 40,
+                                height: 40,
+                                padding: 0,
+                                display:
+                                  "inline-flex",
+                                alignItems:
+                                  "center",
+                                justifyContent:
+                                  "center",
+                                border:
+                                  "none",
+                                background:
+                                  "#DC2626",
+                                color:
+                                  "#fff",
+                              }}
+                            >
+                              <svg
+                                width="19"
+                                height="19"
+                                viewBox="0 0 24 24"
+                                fill="none"
+                                stroke="currentColor"
+                                strokeWidth="2"
+                                strokeLinecap="round"
+                                strokeLinejoin="round"
+                                aria-hidden="true"
+                              >
+                                <path d="M3 6h18" />
+                                <path d="M8 6V4h8v2" />
+                                <path d="M19 6l-1 14H6L5 6" />
+                                <path d="M10 11v6" />
+                                <path d="M14 11v6" />
+                              </svg>
+                            </button>
                           </div>
                         </td>
                       </tr>
@@ -2961,7 +2682,9 @@ export default function FinanceSection() {
 
       {selectedCharge && (
         <div
-          style={sectionCardStyle}
+          style={
+            sectionCardStyle
+          }
         >
           <div
             style={{
@@ -3082,24 +2805,14 @@ export default function FinanceSection() {
                 新增繳費者
               </h4>
 
-              <p
-                style={{
-                  marginTop: 0,
-                  color:
-                    "#6B7280",
-                  fontSize: 13,
-                }}
-              >
-                可選擇既有長者；如果不是長者管理中的人，也可以直接輸入資料。
-              </p>
-
               <div
+                className="finance-form-grid"
                 style={{
                   display:
                     "grid",
                   gridTemplateColumns:
                     "repeat(2, minmax(0, 1fr))",
-                  gap: 16,
+                  gap: 14,
                 }}
               >
                 <div>
@@ -3108,23 +2821,22 @@ export default function FinanceSection() {
                       labelStyle
                     }
                   >
-                    從長者管理選擇
+                    選擇長者
                   </label>
 
                   <select
                     value={
-                      manualElderId ||
-                      ""
+                      manualElderId
                     }
                     onChange={(
                       event
                     ) => {
-                      const id =
+                      const value =
                         event.target
                           .value;
 
                       setManualElderId(
-                        id
+                        value
                       );
 
                       const elder =
@@ -3132,16 +2844,15 @@ export default function FinanceSection() {
                           (
                             item
                           ) =>
-                            normalizeString(
+                            String(
                               item.id
                             ) ===
-                            id
+                            value
                         );
 
                       if (elder) {
                         setManualName(
-                          elder.name ||
-                            ""
+                          elder.name
                         );
 
                         setManualPhone(
@@ -3155,13 +2866,11 @@ export default function FinanceSection() {
                     }
                   >
                     <option value="">
-                      非既有長者／自行輸入
+                      不指定長者
                     </option>
 
                     {elders.map(
-                      (
-                        elder
-                      ) => (
+                      (elder) => (
                         <option
                           key={String(
                             elder.id
@@ -3170,9 +2879,10 @@ export default function FinanceSection() {
                             elder.id
                           )}
                         >
-                          {
-                            elder.name
-                          }
+                          {elder.name}
+                          {elder.phone
+                            ? `｜${elder.phone}`
+                            : ""}
                         </option>
                       )
                     )}
@@ -3185,14 +2895,12 @@ export default function FinanceSection() {
                       labelStyle
                     }
                   >
-                    繳費者姓名
+                    姓名
                   </label>
 
                   <input
-                    type="text"
                     value={
-                      manualName ||
-                      ""
+                      manualName
                     }
                     onChange={(
                       event
@@ -3202,7 +2910,6 @@ export default function FinanceSection() {
                           .value
                       )
                     }
-                    placeholder="請輸入姓名"
                     style={
                       inputStyle
                     }
@@ -3219,10 +2926,8 @@ export default function FinanceSection() {
                   </label>
 
                   <input
-                    type="text"
                     value={
-                      manualPhone ||
-                      ""
+                      manualPhone
                     }
                     onChange={(
                       event
@@ -3232,7 +2937,6 @@ export default function FinanceSection() {
                           .value
                       )
                     }
-                    placeholder="請輸入電話"
                     style={
                       inputStyle
                     }
@@ -3249,10 +2953,8 @@ export default function FinanceSection() {
                   </label>
 
                   <input
-                    type="text"
                     value={
-                      manualNote ||
-                      ""
+                      manualNote
                     }
                     onChange={(
                       event
@@ -3262,7 +2964,6 @@ export default function FinanceSection() {
                           .value
                       )
                     }
-                    placeholder="例如：非系統長者"
                     style={
                       inputStyle
                     }
@@ -3272,9 +2973,6 @@ export default function FinanceSection() {
 
               <div
                 style={{
-                  display:
-                    "flex",
-                  gap: 10,
                   marginTop: 16,
                 }}
               >
@@ -3289,27 +2987,11 @@ export default function FinanceSection() {
                 >
                   加入繳費名單
                 </button>
-
-                <button
-                  type="button"
-                  onClick={() => {
-                    resetManualPayerForm();
-
-                    setShowManualPayerForm(
-                      false
-                    );
-                  }}
-                  style={
-                    secondaryButtonStyle
-                  }
-                >
-                  取消
-                </button>
               </div>
             </div>
           )}
 
-          {showPaymentForm && (
+                    {showPaymentForm && (
             <div
               style={{
                 marginTop: 20,
@@ -3328,274 +3010,180 @@ export default function FinanceSection() {
                     colors.primary,
                 }}
               >
-                💳 登記繳款
+                登記繳款
               </h4>
 
-              {selectedChargePayers.length ===
-              0 ? (
-                <div
-                  style={{
-                    padding: 16,
-                    background:
-                      "#FEF3C7",
-                    borderRadius: 8,
-                    color:
-                      "#92400E",
-                    fontSize: 14,
-                  }}
-                >
-                  目前還沒有繳費名單。
-                  請先按「產生名單」，或手動新增繳費者。
+              <div
+                className="finance-form-grid"
+                style={{
+                  display:
+                    "grid",
+                  gridTemplateColumns:
+                    "repeat(2, minmax(0, 1fr))",
+                  gap: 14,
+                }}
+              >
+                <div>
+                  <label
+                    style={
+                      labelStyle
+                    }
+                  >
+                    繳費者
+                  </label>
+
+                  <select
+                    value={
+                      paymentPayerId
+                    }
+                    onChange={(
+                      event
+                    ) =>
+                      setPaymentPayerId(
+                        event.target
+                          .value
+                      )
+                    }
+                    style={
+                      inputStyle
+                    }
+                  >
+                    <option value="">
+                      請選擇繳費者
+                    </option>
+
+                    {payers
+                      .filter(
+                        (payer) =>
+                          payer.chargeId ===
+                          selectedCharge.id
+                      )
+                      .map(
+                        (payer) => (
+                          <option
+                            key={
+                              payer.id
+                            }
+                            value={
+                              payer.id
+                            }
+                          >
+                            {
+                              payer.name
+                            }
+                            {payer.phone
+                              ? `｜${payer.phone}`
+                              : ""}
+                          </option>
+                        )
+                      )}
+                  </select>
                 </div>
-              ) : (
-                <>
-                  <div
-                    style={{
-                      display:
-                        "grid",
-                      gridTemplateColumns:
-                        "repeat(2, minmax(0, 1fr))",
-                      gap: 16,
-                    }}
+
+                <div>
+                  <label
+                    style={
+                      labelStyle
+                    }
                   >
-                    <div>
-                      <label
-                        style={
-                          labelStyle
-                        }
-                      >
-                        繳費者
-                      </label>
+                    繳款金額
+                  </label>
 
-                      <select
-                        value={
-                          paymentPayerId ||
-                          ""
-                        }
-                        onChange={(
-                          event
-                        ) => {
-                          const payerId =
-                            event
-                              .target
-                              .value;
+                  <input
+                    type="number"
+                    min="0"
+                    value={
+                      paymentAmount
+                    }
+                    onChange={(
+                      event
+                    ) =>
+                      setPaymentAmount(
+                        Number(
+                          event.target
+                            .value
+                        )
+                      )
+                    }
+                    style={
+                      inputStyle
+                    }
+                  />
+                </div>
 
-                          setPaymentPayerId(
-                            payerId
-                          );
-
-                          const outstanding =
-                            getPayerOutstandingAmount(
-                              payerId,
-                              selectedCharge.id
-                            );
-
-                          setPaymentAmount(
-                            outstanding
-                          );
-                        }}
-                        style={
-                          inputStyle
-                        }
-                      >
-                        <option value="">
-                          請選擇繳費者
-                        </option>
-
-                        {selectedChargePayers.map(
-                          (
-                            payer
-                          ) => {
-                            const outstanding =
-                              getPayerOutstandingAmount(
-                                payer.id,
-                                selectedCharge.id
-                              );
-
-                            return (
-                              <option
-                                key={
-                                  payer.id
-                                }
-                                value={
-                                  payer.id
-                                }
-                              >
-                                {
-                                  payer.name
-                                }{" "}
-                                — 尚欠{" "}
-                                {formatCurrency(
-                                  outstanding
-                                )}
-                              </option>
-                            );
-                          }
-                        )}
-                      </select>
-                    </div>
-
-                    <div>
-                      <label
-                        style={
-                          labelStyle
-                        }
-                      >
-                        本次繳款金額
-                      </label>
-
-                      <input
-                        type="number"
-                        min="0"
-                        value={
-                          paymentAmount
-                        }
-                        onChange={(
-                          event
-                        ) =>
-                          setPaymentAmount(
-                            Math.max(
-                              Number(
-                                event
-                                  .target
-                                  .value
-                              ) || 0,
-                              0
-                            )
-                          )
-                        }
-                        style={
-                          inputStyle
-                        }
-                      />
-                    </div>
-
-                    <div>
-                      <label
-                        style={
-                          labelStyle
-                        }
-                      >
-                        繳款日期
-                      </label>
-
-                      <input
-                        type="date"
-                        value={
-                          paymentDate ||
-                          ""
-                        }
-                        onChange={(
-                          event
-                        ) =>
-                          setPaymentDate(
-                            event
-                              .target
-                              .value
-                          )
-                        }
-                        style={
-                          inputStyle
-                        }
-                      />
-                    </div>
-
-                    <div>
-                      <label
-                        style={
-                          labelStyle
-                        }
-                      >
-                        備註
-                      </label>
-
-                      <input
-                        type="text"
-                        value={
-                          paymentNote ||
-                          ""
-                        }
-                        onChange={(
-                          event
-                        ) =>
-                          setPaymentNote(
-                            event
-                              .target
-                              .value
-                          )
-                        }
-                        placeholder="例如：現金、轉帳、部分繳款"
-                        style={
-                          inputStyle
-                        }
-                      />
-                    </div>
-                  </div>
-
-                  {paymentPayerId && (
-                    <div
-                      style={{
-                        marginTop: 16,
-                        padding: 14,
-                        background:
-                          "#EFF6FF",
-                        borderRadius: 8,
-                        color:
-                          "#1E40AF",
-                        fontSize: 14,
-                      }}
-                    >
-                      本人本次最多可繳：
-                      <strong>
-                        {" "}
-                        {formatCurrency(
-                          getPayerOutstandingAmount(
-                            paymentPayerId,
-                            selectedCharge.id
-                          )
-                        )}
-                      </strong>
-                    </div>
-                  )}
-
-                  <div
-                    style={{
-                      display:
-                        "flex",
-                      gap: 10,
-                      marginTop: 16,
-                    }}
+                <div>
+                  <label
+                    style={
+                      labelStyle
+                    }
                   >
-                    <button
-                      type="button"
-                      onClick={() =>
-                        void handleAddPayment()
-                      }
-                      style={
-                        primaryButtonStyle
-                      }
-                    >
-                      儲存繳款
-                    </button>
+                    繳款日期
+                  </label>
 
-                    <button
-                      type="button"
-                      onClick={() => {
-                        resetPaymentForm();
+                  <input
+                    type="date"
+                    value={
+                      paymentDate
+                    }
+                    onChange={(
+                      event
+                    ) =>
+                      setPaymentDate(
+                        event.target
+                          .value
+                      )
+                    }
+                    style={
+                      inputStyle
+                    }
+                  />
+                </div>
 
-                        setShowPaymentForm(
-                          false
-                        );
-                      }}
-                      style={
-                        secondaryButtonStyle
-                      }
-                    >
-                      取消
-                    </button>
-                  </div>
-                </>
-              )}
+                <div>
+                  <label
+                    style={
+                      labelStyle
+                    }
+                  >
+                    備註
+                  </label>
+
+                  <input
+                    value={
+                      paymentNote
+                    }
+                    onChange={(
+                      event
+                    ) =>
+                      setPaymentNote(
+                        event.target
+                          .value
+                      )
+                    }
+                    style={
+                      inputStyle
+                    }
+                  />
+                </div>
+              </div>
+
+              <div
+                style={{
+                  marginTop: 16,
+                }}
+              >
+                <button
+                  type="button"
+                  onClick={
+                    handleSavePayment
+                  }
+                  style={
+                    primaryButtonStyle
+                  }
+                >
+                  儲存繳款
+                </button>
+              </div>
             </div>
           )}
 
@@ -3604,16 +3192,286 @@ export default function FinanceSection() {
               marginTop: 24,
             }}
           >
-            {selectedChargePayers.length ===
+            <div
+              style={{
+                overflowX:
+                  "auto",
+              }}
+            >
+              {payers.filter(
+                (payer) =>
+                  payer.chargeId ===
+                  selectedCharge.id
+              ).length ===
+              0 ? (
+                <div
+                  style={{
+                    padding: 30,
+                    textAlign:
+                      "center",
+                    color:
+                      "#6B7280",
+                    background:
+                      "#F9FAFB",
+                    borderRadius:
+                      12,
+                  }}
+                >
+                  目前還沒有繳費名單。請先按「產生名單」，或手動新增繳費者。
+                </div>
+              ) : (
+                <table
+                  className="finance-payer-table"
+                  style={{
+                    width:
+                      "100%",
+                    borderCollapse:
+                      "collapse",
+                  }}
+                >
+                  <thead>
+                    <tr>
+                      <th
+                        style={
+                          thStyle
+                        }
+                      >
+                        長者／繳費者
+                      </th>
+
+                      <th
+                        style={
+                          thStyle
+                        }
+                      >
+                        電話
+                      </th>
+
+                      <th
+                        style={
+                          thStyle
+                        }
+                      >
+                        應收
+                      </th>
+
+                      <th
+                        style={
+                          thStyle
+                        }
+                      >
+                        已繳
+                      </th>
+
+                      <th
+                        style={
+                          thStyle
+                        }
+                      >
+                        尚欠
+                      </th>
+
+                      <th
+                        style={
+                          thStyle
+                        }
+                      >
+                        操作
+                      </th>
+                    </tr>
+                  </thead>
+
+                  <tbody>
+                    {payers
+                      .filter(
+                        (payer) =>
+                          payer.chargeId ===
+                          selectedCharge.id
+                      )
+                      .map(
+                        (payer) => {
+                          const paid =
+                            getPayerPaidAmount(
+                              payer.id,
+                              selectedCharge.id
+                            );
+
+                          const outstanding =
+                            getPayerOutstandingAmount(
+                              payer.id,
+                              selectedCharge.id
+                            );
+
+                          return (
+                            <tr
+                              key={
+                                payer.id
+                              }
+                            >
+                              <td
+                                style={{
+                                  ...tdStyle,
+                                  fontWeight:
+                                    700,
+                                }}
+                              >
+                                {
+                                  payer.name
+                                }
+                              </td>
+
+                              <td
+                                style={
+                                  tdStyle
+                                }
+                              >
+                                {
+                                  payer.phone
+                                }
+                              </td>
+
+                              <td
+                                style={
+                                  tdStyle
+                                }
+                              >
+                                {formatCurrency(
+                                  selectedCharge.amount
+                                )}
+                              </td>
+
+                              <td
+                                style={
+                                  tdStyle
+                                }
+                              >
+                                {formatCurrency(
+                                  paid
+                                )}
+                              </td>
+
+                              <td
+                                style={{
+                                  ...tdStyle,
+                                  fontWeight:
+                                    700,
+                                  color:
+                                    outstanding >
+                                    0
+                                      ? "#B45309"
+                                      : colors.primary,
+                                }}
+                              >
+                                {formatCurrency(
+                                  outstanding
+                                )}
+                              </td>
+
+                              <td
+                                style={
+                                  tdStyle
+                                }
+                              >
+                                <div
+                                  style={{
+                                    display:
+                                      "flex",
+                                    gap: 8,
+                                    flexWrap:
+                                      "wrap",
+                                  }}
+                                >
+                                  {outstanding >
+                                    0 && (
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        setPaymentPayerId(
+                                          payer.id
+                                        );
+
+                                        setPaymentAmount(
+                                          outstanding
+                                        );
+
+                                        setShowPaymentForm(
+                                          true
+                                        );
+
+                                        setShowManualPayerForm(
+                                          false
+                                        );
+                                      }}
+                                      style={
+                                        smallButtonStyle
+                                      }
+                                    >
+                                      追蹤繳款
+                                    </button>
+                                  )}
+
+                                  <button
+                                    type="button"
+                                    onClick={() =>
+                                      void handleDeletePayer(
+                                        payer.id
+                                      )
+                                    }
+                                    style={{
+                                      ...smallButtonStyle,
+                                      color:
+                                        "#B91C1C",
+                                    }}
+                                  >
+                                    刪除
+                                  </button>
+                                </div>
+                              </td>
+                            </tr>
+                          );
+                        }
+                      )}
+                  </tbody>
+                </table>
+              )}
+            </div>
+          </div>
+
+          <div
+            style={{
+              marginTop: 24,
+            }}
+          >
+            <h4
+              style={{
+                marginTop: 0,
+                color:
+                  colors.primary,
+              }}
+            >
+              繳款紀錄
+            </h4>
+
+            {payments.filter(
+              (payment) =>
+                payment.chargeId ===
+                selectedCharge.id
+            ).length ===
             0 ? (
               <div
-                style={
-                  emptyStyle
-                }
+                style={{
+                  padding: 24,
+                  textAlign:
+                    "center",
+                  color:
+                    "#6B7280",
+                  background:
+                    "#F9FAFB",
+                  borderRadius:
+                    12,
+                }}
               >
-                尚無繳費者。
-                <br />
-                請先按「產生名單」，系統會從該課程的報名資料加入長者。
+                目前尚無繳款紀錄。
               </div>
             ) : (
               <div
@@ -3623,6 +3481,7 @@ export default function FinanceSection() {
                 }}
               >
                 <table
+                  className="finance-payment-table"
                   style={{
                     width:
                       "100%",
@@ -3632,427 +3491,156 @@ export default function FinanceSection() {
                 >
                   <thead>
                     <tr>
-                      <th style={thStyle}>
+                      <th
+                        style={
+                          thStyle
+                        }
+                      >
                         繳費者
                       </th>
 
-                      <th style={thStyle}>
-                        電話
+                      <th
+                        style={
+                          thStyle
+                        }
+                      >
+                        金額
                       </th>
 
-                      <th style={thStyle}>
-                        來源
+                      <th
+                        style={
+                          thStyle
+                        }
+                      >
+                        日期
                       </th>
 
-                      <th style={thStyle}>
-                        應收
+                      <th
+                        style={
+                          thStyle
+                        }
+                      >
+                        備註
                       </th>
 
-                      <th style={thStyle}>
-                        已繳
-                      </th>
-
-                      <th style={thStyle}>
-                        尚欠
-                      </th>
-
-                      <th style={thStyle}>
-                        狀態
-                      </th>
-
-                      <th style={thStyle}>
+                      <th
+                        style={
+                          thStyle
+                        }
+                      >
                         操作
                       </th>
                     </tr>
                   </thead>
 
                   <tbody>
-                    {selectedChargePayers.map(
-                      (
-                        payer
-                      ) => {
-                        const paid =
-                          getPayerPaidAmount(
-                            payer.id,
-                            selectedCharge.id
-                          );
+                    {payments
+                      .filter(
+                        (payment) =>
+                          payment.chargeId ===
+                          selectedCharge.id
+                      )
+                      .map(
+                        (payment) => {
+                          const payer =
+                            payers.find(
+                              (
+                                item
+                              ) =>
+                                item.id ===
+                                payment.payerId
+                            );
 
-                        const outstanding =
-                          getPayerOutstandingAmount(
-                            payer.id,
-                            selectedCharge.id
-                          );
-
-                        const payerPayments =
-                          selectedChargePayments.filter(
-                            (
-                              payment
-                            ) =>
-                              payment.payerId ===
-                              payer.id
-                          );
-
-                        const fullyPaid =
-                          outstanding ===
-                          0;
-
-                        return (
-                          <tr
-                            key={
-                              payer.id
-                            }
-                          >
-                            <td
-                              style={{
-                                ...tdStyle,
-                                fontWeight: 700,
-                              }}
-                            >
-                              {
-                                payer.name
-                              }
-                            </td>
-
-                            <td
-                              style={
-                                tdStyle
+                          return (
+                            <tr
+                              key={
+                                payment.id
                               }
                             >
-                              {payer.phone ||
-                                "-"}
-                            </td>
-
-                            <td
-                              style={
-                                tdStyle
-                              }
-                            >
-                              <span
-                                style={{
-                                  display:
-                                    "inline-block",
-                                  padding:
-                                    "4px 8px",
-                                  borderRadius:
-                                    999,
-                                  background:
-                                    payer.source ===
-                                    "registration"
-                                      ? "#DBEAFE"
-                                      : "#F3F4F6",
-                                  color:
-                                    payer.source ===
-                                    "registration"
-                                      ? "#1D4ED8"
-                                      : "#4B5563",
-                                  fontSize: 12,
-                                  fontWeight: 700,
-                                }}
+                              <td
+                                style={
+                                  tdStyle
+                                }
                               >
-                                {payer.source ===
-                                "registration"
-                                  ? "課程報名"
-                                  : "手動新增"}
-                              </span>
-                            </td>
+                                {
+                                  payer?.name
+                                }
+                              </td>
 
-                            <td
-                              style={
-                                tdStyle
-                              }
-                            >
-                              {formatCurrency(
-                                selectedCharge.amount
-                              )}
-                            </td>
-
-                            <td
-                              style={
-                                tdStyle
-                              }
-                            >
-                              {formatCurrency(
-                                paid
-                              )}
-                            </td>
-
-                            <td
-                              style={{
-                                ...tdStyle,
-                                fontWeight: 700,
-                                color:
-                                  outstanding >
-                                  0
-                                    ? "#B45309"
-                                    : colors.primary,
-                              }}
-                            >
-                              {formatCurrency(
-                                outstanding
-                              )}
-                            </td>
-
-                            <td
-                              style={
-                                tdStyle
-                              }
-                            >
-                              <span
-                                style={{
-                                  display:
-                                    "inline-block",
-                                  padding:
-                                    "5px 10px",
-                                  borderRadius:
-                                    999,
-                                  background:
-                                    fullyPaid
-                                      ? "#DCFCE7"
-                                      : "#FEF3C7",
-                                  color:
-                                    fullyPaid
-                                      ? "#166534"
-                                      : "#92400E",
-                                  fontSize: 13,
-                                  fontWeight: 700,
-                                }}
+                              <td
+                                style={
+                                  tdStyle
+                                }
                               >
-                                {fullyPaid
-                                  ? "已繳清"
-                                  : "部分／待繳"}
-                              </span>
-                            </td>
-
-                            <td
-                              style={
-                                tdStyle
-                              }
-                            >
-                              <div
-                                style={{
-                                  display:
-                                    "flex",
-                                  gap: 8,
-                                  flexWrap:
-                                    "wrap",
-                                }}
-                              >
-                                {!fullyPaid && (
-                                  <button
-                                    type="button"
-                                    onClick={() => {
-                                      setPaymentPayerId(
-                                        payer.id
-                                      );
-
-                                      setPaymentAmount(
-                                        outstanding
-                                      );
-
-                                      setShowPaymentForm(
-                                        true
-                                      );
-
-                                      setShowManualPayerForm(
-                                        false
-                                      );
-                                    }}
-                                    style={
-                                      smallButtonStyle
-                                    }
-                                  >
-                                    繳款
-                                  </button>
+                                {formatCurrency(
+                                  payment.amount
                                 )}
+                              </td>
 
-                                {payerPayments.length >
-                                  0 && (
-                                  <button
-                                    type="button"
-                                    onClick={() =>
-                                      alert(
-                                        payerPayments
-                                          .map(
-                                            (
-                                              payment
-                                            ) =>
-                                              `${payment.paidAt}｜${formatCurrency(
-                                                payment.amount
-                                              )}${
-                                                payment.note
-                                                  ? `｜${payment.note}`
-                                                  : ""
-                                              }`
-                                          )
-                                          .join(
-                                            "\n"
-                                          )
-                                      )
-                                    }
-                                    style={
-                                      smallButtonStyle
-                                    }
-                                  >
-                                    繳款紀錄
-                                  </button>
-                                )}
-                              </div>
-                            </td>
-                          </tr>
-                        );
-                      }
-                    )}
+                              <td
+                                style={
+                                  tdStyle
+                                }
+                              >
+                                {
+                                  payment.paidAt
+                                }
+                              </td>
+
+                              <td
+                                style={
+                                  tdStyle
+                                }
+                              >
+                                {
+                                  payment.note ||
+                                  "-"
+                                }
+                              </td>
+
+                              <td
+                                style={
+                                  tdStyle
+                                }
+                              >
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    void handleDeletePayment(
+                                      payment.id
+                                    )
+                                  }
+                                  style={{
+                                    ...smallButtonStyle,
+                                    color:
+                                      "#B91C1C",
+                                  }}
+                                >
+                                  刪除
+                                </button>
+                              </td>
+                            </tr>
+                          );
+                        }
+                      )}
                   </tbody>
                 </table>
               </div>
             )}
           </div>
-
-          {selectedChargePayments.length >
-            0 && (
-            <div
-              style={{
-                marginTop: 24,
-              }}
-            >
-              <h4
-                style={{
-                  color:
-                    colors.primary,
-                  marginBottom: 12,
-                }}
-              >
-                💳 最近繳款紀錄
-              </h4>
-
-              <div
-                style={{
-                  overflowX:
-                    "auto",
-                }}
-              >
-                <table
-                  style={{
-                    width:
-                      "100%",
-                    borderCollapse:
-                      "collapse",
-                  }}
-                >
-                  <thead>
-                    <tr>
-                      <th style={thStyle}>
-                        繳款日期
-                      </th>
-
-                      <th style={thStyle}>
-                        繳費者
-                      </th>
-
-                      <th style={thStyle}>
-                        本次繳款
-                      </th>
-
-                      <th style={thStyle}>
-                        備註
-                      </th>
-
-                      <th style={thStyle}>
-                        操作
-                      </th>
-                    </tr>
-                  </thead>
-
-                  <tbody>
-                    {selectedChargePayments.map(
-                      (
-                        payment
-                      ) => (
-                        <tr
-                          key={
-                            payment.id
-                          }
-                        >
-                          <td
-                            style={
-                              tdStyle
-                            }
-                          >
-                            {
-                              payment.paidAt
-                            }
-                          </td>
-
-                          <td
-                            style={{
-                              ...tdStyle,
-                              fontWeight: 600,
-                            }}
-                          >
-                            {getPayerName(
-                              payment.payerId
-                            )}
-                          </td>
-
-                          <td
-                            style={{
-                              ...tdStyle,
-                              fontWeight: 700,
-                            }}
-                          >
-                            {formatCurrency(
-                              payment.amount
-                            )}
-                          </td>
-
-                          <td
-                            style={
-                              tdStyle
-                            }
-                          >
-                            {payment.note ||
-                              "-"}
-                          </td>
-
-                          <td
-                            style={
-                              tdStyle
-                            }
-                          >
-                            <button
-                              type="button"
-                              onClick={() =>
-                                void handleDeletePayment(
-                                  payment.id
-                                )
-                              }
-                              style={{
-                                ...smallButtonStyle,
-                                color:
-                                  "#B91C1C",
-                              }}
-                            >
-                              刪除
-                            </button>
-                          </td>
-                        </tr>
-                      )
-                    )}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          )}
         </div>
       )}
 
       <div
-        style={sectionCardStyle}
+        style={
+          sectionCardStyle
+        }
       >
         <h3
           style={{
             marginTop: 0,
-            color: colors.primary,
+            color:
+              colors.primary,
           }}
         >
           欠款長者追蹤
@@ -4061,7 +3649,8 @@ export default function FinanceSection() {
         <p
           style={{
             marginTop: -8,
-            color: "#6B7280",
+            color:
+              "#6B7280",
             fontSize: 14,
           }}
         >
@@ -4091,36 +3680,60 @@ export default function FinanceSection() {
                 "auto",
             }}
           >
-            <table
-              style={{
-                width: "100%",
-                borderCollapse:
-                  "collapse",
-              }}
-            >
+           <table
+  className="finance-charge-table"
+  style={{
+    width: "100%",
+    borderCollapse: "collapse",
+  }}
+>
               <thead>
                 <tr>
-                  <th style={thStyle}>
+                  <th
+                    style={
+                      thStyle
+                    }
+                  >
                     長者／繳費者
                   </th>
 
-                  <th style={thStyle}>
+                  <th
+                    style={
+                      thStyle
+                    }
+                  >
                     對應課程
                   </th>
 
-                  <th style={thStyle}>
+                  <th
+                    style={
+                      thStyle
+                    }
+                  >
                     應收
                   </th>
 
-                  <th style={thStyle}>
+                  <th
+                    style={
+                      thStyle
+                    }
+                  >
                     已繳
                   </th>
 
-                  <th style={thStyle}>
+                  <th
+                    style={
+                      thStyle
+                    }
+                  >
                     尚欠
                   </th>
 
-                  <th style={thStyle}>
+                  <th
+                    style={
+                      thStyle
+                    }
+                  >
                     操作
                   </th>
                 </tr>
@@ -4163,7 +3776,8 @@ export default function FinanceSection() {
                         <td
                           style={{
                             ...tdStyle,
-                            fontWeight: 700,
+                            fontWeight:
+                              700,
                           }}
                         >
                           {
@@ -4204,7 +3818,8 @@ export default function FinanceSection() {
                         <td
                           style={{
                             ...tdStyle,
-                            fontWeight: 700,
+                            fontWeight:
+                              700,
                             color:
                               "#B45309",
                           }}
@@ -4219,43 +3834,43 @@ export default function FinanceSection() {
                             tdStyle
                           }
                         >
-                         <button
-  type="button"
-  title="查看名單"
-  aria-label="查看名單"
-  onClick={() => {
-    setSelectedChargeId(charge.id);
-    setShowPaymentForm(false);
-  }}
-  style={{
-    width: 38,
-    height: 38,
-    display: "inline-flex",
-    alignItems: "center",
-    justifyContent: "center",
-    padding: 0,
-    border: "1px solid #D1D5DB",
-    borderRadius: "8px",
-    background: "#fff",
-    color: colors.primary,
-    cursor: "pointer",
-  }}
->
-  <svg
-    width="18"
-    height="18"
-    viewBox="0 0 24 24"
-    fill="none"
-    stroke="currentColor"
-    strokeWidth="2"
-    strokeLinecap="round"
-    strokeLinejoin="round"
-    aria-hidden="true"
-  >
-    <path d="M2 12s3.5-6 10-6 10 6 10 6-3.5 6-10 6S2 12 2 12Z" />
-    <circle cx="12" cy="12" r="2.5" />
-  </svg>
-</button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setSelectedChargeId(
+                                charge.id
+                              );
+
+                              setPaymentPayerId(
+                                payer.id
+                              );
+
+                              setPaymentAmount(
+                                outstanding
+                              );
+
+                              setShowPaymentForm(
+                                true
+                              );
+
+                              setShowManualPayerForm(
+                                false
+                              );
+
+                              window.scrollTo(
+                                {
+                                  top: 0,
+                                  behavior:
+                                    "smooth",
+                                }
+                              );
+                            }}
+                            style={
+                              smallButtonStyle
+                            }
+                          >
+                            追蹤繳款
+                          </button>
                         </td>
                       </tr>
                     );
@@ -4269,6 +3884,276 @@ export default function FinanceSection() {
     </div>
   );
 }
+
+const responsiveFinanceStyles = `
+  @media (max-width: 700px) {
+    .finance-section-root {
+      gap: 16px !important;
+      width: 100%;
+      box-sizing: border-box;
+    }
+
+    .finance-section-root > div:first-child h2 {
+      font-size: 24px !important;
+    }
+
+    .finance-section-root > div:first-child p {
+      font-size: 14px;
+      line-height: 1.6;
+    }
+
+    .finance-summary-grid {
+      grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+      gap: 10px !important;
+    }
+
+    .finance-summary-grid > div {
+      padding: 14px !important;
+      min-width: 0;
+    }
+
+    .finance-summary-grid > div:last-child {
+      grid-column: 1 / -1;
+    }
+
+    .finance-summary-grid > div > div:last-child {
+      font-size: 18px !important;
+      white-space: nowrap;
+    }
+
+    .finance-section-root > div {
+      box-sizing: border-box;
+      max-width: 100%;
+    }
+
+    .finance-section-root > div[style*="padding: 24px"] {
+      padding: 16px !important;
+    }
+
+    .finance-charge-form-grid,
+    .finance-form-grid {
+      grid-template-columns: 1fr !important;
+      gap: 14px !important;
+    }
+
+    .finance-charge-form-grid > div[style*="gridColumn"] {
+      grid-column: auto !important;
+    }
+
+    /*
+     * ========================================
+     * 手機版收費項目
+     * ========================================
+     */
+
+    .finance-charge-table-wrap {
+      width: 100% !important;
+      overflow: visible !important;
+    }
+
+    .finance-charge-table {
+      display: block !important;
+      width: 100% !important;
+      min-width: 0 !important;
+      border-collapse: separate !important;
+    }
+
+    .finance-charge-table thead {
+      display: none !important;
+    }
+
+    .finance-charge-table tbody {
+      display: flex !important;
+      flex-direction: column !important;
+      gap: 12px !important;
+      width: 100% !important;
+    }
+
+    .finance-charge-table tbody tr {
+      display: flex !important;
+      flex-direction: column !important;
+      width: 100% !important;
+      box-sizing: border-box !important;
+      padding: 16px !important;
+      margin: 0 !important;
+      border: 1px solid #E5E7EB !important;
+      border-radius: 14px !important;
+      background: #fff !important;
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04) !important;
+    }
+
+    .finance-charge-table tbody td {
+      display: flex !important;
+      align-items: center !important;
+      justify-content: space-between !important;
+      width: 100% !important;
+      min-width: 0 !important;
+      box-sizing: border-box !important;
+      padding: 10px 0 !important;
+      border-bottom: 1px solid #F3F4F6 !important;
+      font-size: 14px !important;
+      line-height: 1.4 !important;
+    }
+
+    .finance-charge-table tbody td:nth-child(1)::before {
+      content: "月份";
+    }
+
+    .finance-charge-table tbody td:nth-child(2)::before {
+      content: "對應課程";
+    }
+
+    .finance-charge-table tbody td:nth-child(3)::before {
+      content: "每人收費";
+    }
+
+    .finance-charge-table tbody td:nth-child(4)::before {
+      content: "繳費人數";
+    }
+
+    .finance-charge-table tbody td:nth-child(5)::before {
+      content: "應收";
+    }
+
+    .finance-charge-table tbody td:nth-child(6)::before {
+      content: "已繳";
+    }
+
+    .finance-charge-table tbody td:nth-child(7)::before {
+      content: "尚欠";
+    }
+
+    .finance-charge-table tbody td:nth-child(-n+7)::before {
+      flex: 0 0 auto !important;
+      margin-right: 12px !important;
+      color: #6B7280 !important;
+      font-size: 12px !important;
+      font-weight: 600 !important;
+    }
+
+    .finance-charge-table tbody td:nth-child(1),
+    .finance-charge-table tbody td:nth-child(2),
+    .finance-charge-table tbody td:nth-child(3),
+    .finance-charge-table tbody td:nth-child(4),
+    .finance-charge-table tbody td:nth-child(5),
+    .finance-charge-table tbody td:nth-child(6) {
+      border-bottom: 1px solid #F3F4F6 !important;
+    }
+
+    .finance-charge-table tbody td:nth-child(2) {
+      font-weight: 700 !important;
+      color: #1F2937 !important;
+    }
+
+    .finance-charge-table tbody td:nth-child(7) {
+      font-weight: 700 !important;
+      border-bottom: none !important;
+    }
+
+    /*
+     * ========================================
+     * 手機版四個操作 Icon
+     * ========================================
+     */
+
+    .finance-charge-table tbody td:nth-child(8) {
+      display: block !important;
+      width: 100% !important;
+      padding: 14px 0 0 !important;
+      margin-top: 4px !important;
+      border-bottom: none !important;
+    }
+
+    .finance-charge-actions {
+      display: grid !important;
+      grid-template-columns: repeat(4, minmax(0, 1fr)) !important;
+      width: 100% !important;
+      gap: 8px !important;
+    }
+
+    .finance-charge-actions button {
+      width: 100% !important;
+      min-width: 0 !important;
+      height: 42px !important;
+      padding: 0 !important;
+      display: inline-flex !important;
+      align-items: center !important;
+      justify-content: center !important;
+      border-radius: 9px !important;
+      box-sizing: border-box !important;
+      touch-action: manipulation !important;
+    }
+
+    .finance-section-root button {
+      touch-action: manipulation;
+    }
+
+    /*
+     * ========================================
+     * 其他財務表格
+     * ========================================
+     */
+
+    .finance-payer-table,
+    .finance-payment-table,
+    .finance-outstanding-table {
+      font-size: 13px !important;
+    }
+
+    .finance-payer-table th,
+    .finance-payer-table td,
+    .finance-payment-table th,
+    .finance-payment-table td,
+    .finance-outstanding-table th,
+    .finance-outstanding-table td {
+      padding: 9px 7px !important;
+    }
+
+    .finance-section-root textarea,
+    .finance-section-root input,
+    .finance-section-root select {
+      max-width: 100%;
+      box-sizing: border-box;
+    }
+  }
+
+  @media (max-width: 420px) {
+    .finance-summary-grid {
+      grid-template-columns: 1fr 1fr !important;
+      gap: 8px !important;
+    }
+
+    .finance-summary-grid > div {
+      padding: 12px !important;
+    }
+
+    .finance-summary-grid > div > div:last-child {
+      font-size: 16px !important;
+    }
+
+    .finance-charge-table tbody tr {
+      padding: 14px !important;
+      border-radius: 12px !important;
+    }
+
+    .finance-charge-table tbody td {
+      font-size: 13px !important;
+      padding: 9px 0 !important;
+    }
+
+    .finance-charge-table tbody td:nth-child(-n+7)::before {
+      font-size: 11px !important;
+    }
+
+    .finance-charge-actions {
+      gap: 6px !important;
+    }
+
+    .finance-charge-actions button {
+      height: 40px !important;
+    }
+  }
+`;
 
 const sectionCardStyle:
   React.CSSProperties = {
@@ -4298,7 +4183,7 @@ const summaryValueStyle:
   React.CSSProperties = {
   marginTop: 8,
   fontSize: 24,
-  fontWeight: 700,
+  fontWeight: 800,
   color: colors.primary,
 };
 
@@ -4307,7 +4192,7 @@ const labelStyle:
   display: "block",
   marginBottom: 6,
   fontSize: 14,
-  fontWeight: 600,
+  fontWeight: 700,
   color: "#374151",
 };
 
@@ -4315,10 +4200,10 @@ const inputStyle:
   React.CSSProperties = {
   width: "100%",
   boxSizing: "border-box",
-  padding: "10px 12px",
   border:
     "1px solid #D1D5DB",
   borderRadius: 8,
+  padding: "10px 12px",
   fontSize: 15,
   background: "#fff",
 };
@@ -4364,7 +4249,8 @@ const selectedButtonStyle:
     `1px solid ${colors.primary}`,
   borderRadius: 6,
   padding: "6px 10px",
-  background: colors.primary,
+  background:
+    colors.primary,
   color: "#fff",
   cursor: "pointer",
   fontWeight: 700,
