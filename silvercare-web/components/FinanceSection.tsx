@@ -2231,19 +2231,22 @@ export default function FinanceSection() {
     flexWrap: "wrap",
   }}
 >
-          <button
-            type="button"
-            onClick={
-              handleSaveCharge
-            }
-            style={
-              primaryButtonStyle
-            }
-          >
-            {editingChargeId
-              ? "儲存修改"
-              : "新增收費項目"}
-          </button>
+         <button
+  type="button"
+  onClick={
+    handleSaveCharge
+  }
+style={{
+  ...primaryButtonStyle,
+  whiteSpace: "nowrap",
+  fontSize: 16,
+  padding: "10px 14px",
+}}
+>
+  {editingChargeId
+    ? "儲存修改"
+    : "新增收費項目"}
+</button>
 
           {editingChargeId && (
             <button
@@ -4064,12 +4067,22 @@ const responsiveFinanceStyles = `
       border-bottom: none !important;
     }
 
-    .finance-charge-actions {
-      display: grid !important;
-      grid-template-columns: repeat(4, minmax(0, 1fr)) !important;
-      width: 100% !important;
-      gap: 8px !important;
-    }
+   .finance-charge-actions {
+  width: 100% !important;
+  display: flex !important;
+  flex-direction: column !important;
+  gap: 10px !important;
+  box-sizing: border-box !important;
+}
+
+.finance-charge-actions > button {
+  width: 100% !important;
+  max-width: 100% !important;
+  min-width: 0 !important;
+  box-sizing: border-box !important;
+  white-space: nowrap !important;
+  font-size: 16px !important;
+}
 
     .finance-charge-actions button {
       width: 100% !important;
