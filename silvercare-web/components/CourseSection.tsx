@@ -19,6 +19,9 @@ import { colors } from "../styles/theme";
 import { radius } from "../styles/radius";
 import { shadow } from "../styles/shadow";
 
+const COURSE_STORAGE_KEY =
+  "silvercare-courses";
+
 export default function CourseSection() {
   const [courses, setCourses] =
     useState<Course[]>([]);
@@ -42,10 +45,18 @@ export default function CourseSection() {
   /*
    * ========================================
    * 從 Supabase 讀取課程
+   *
+   * 如果舊手機還有 LocalStorage 課程，
+   * 會先把 Supabase 沒有的舊課程補上雲端。
    * ========================================
    */
   async function loadCourses(): Promise<boolean> {
     try {
+      /*
+       * ------------------------------------
+       * ① 先讀取 Supabase
+       * ------------------------------------
+       */
       const {
         data,
         error,
@@ -73,12 +84,187 @@ export default function CourseSection() {
         return false;
       }
 
+      /*
+       * ------------------------------------
+       * ② 讀取舊 LocalStorage 課程
+       *
+       * 用來把之前手機建立、但尚未進
+       * Supabase 的課程補進雲端。
+       * ------------------------------------
+       */
+      let legacyCourses: Course[] = [];
+
+      try {
+        const savedCourses =
+          localStorage.getItem(
+            COURSE_STORAGE_KEY
+          );
+
+        if (savedCourses) {
+          const parsed =
+            JSON.parse(
+              savedCourses
+            );
+
+          if (
+            Array.isArray(parsed)
+          ) {
+            legacyCourses =
+              parsed.filter(
+                (course) =>
+                  course &&
+                  course.id !==
+                    undefined &&
+                  course.id !==
+                    null
+              );
+          }
+        }
+      } catch (localError) {
+        console.error(
+          "讀取舊課程 LocalStorage 失敗：",
+          localError
+        );
+      }
+
+      /*
+       * ------------------------------------
+       * ③ 找出 Supabase 已存在的 ID
+       * ------------------------------------
+       */
+      const existingIds =
+        new Set(
+          (data ?? []).map(
+            (course) =>
+              String(course.id)
+          )
+        );
+
+      /*
+       * ------------------------------------
+       * ④ 找出只存在手機 LocalStorage、
+       *    但 Supabase 還沒有的課程
+       * ------------------------------------
+       */
+      const coursesToMigrate =
+        legacyCourses.filter(
+          (course) =>
+            !existingIds.has(
+              String(course.id)
+            )
+        );
+
+      /*
+       * ------------------------------------
+       * ⑤ 將舊課程補進 Supabase
+       * ------------------------------------
+       */
+      if (
+        coursesToMigrate.length >
+        0
+      ) {
+        console.log(
+          "🟡 發現尚未同步的舊課程：",
+          coursesToMigrate
+        );
+
+        const rows =
+          coursesToMigrate.map(
+            (course) => ({
+              id: course.id,
+              date:
+                course.date ?? "",
+              title:
+                course.title ?? "",
+              teacher:
+                course.teacher ?? "",
+              start_time:
+                course.startTime ?? "",
+              end_time:
+                course.endTime ?? "",
+              capacity:
+                Number(
+                  course.capacity ?? 0
+                ),
+              classroom:
+                course.classroom ?? "",
+              note:
+                course.note ?? "",
+            })
+          );
+
+        const {
+          error: migrateError,
+        } = await supabase
+          .from("courses")
+          .insert(rows);
+
+        if (migrateError) {
+          console.error(
+            "🔴 舊課程同步到 Supabase 失敗：",
+            migrateError
+          );
+        } else {
+          console.log(
+            "🟢 舊課程已同步到 Supabase：",
+            rows
+          );
+        }
+      }
+
+      /*
+       * ------------------------------------
+       * ⑥ 如果有遷移資料，重新從 Supabase
+       *    讀一次，確保畫面使用雲端資料
+       * ------------------------------------
+       */
+      let finalData =
+        data ?? [];
+
+      if (
+        coursesToMigrate.length >
+        0
+      ) {
+        const {
+          data: refreshedData,
+          error:
+            refreshedError,
+        } = await supabase
+          .from("courses")
+          .select("*")
+          .order("date", {
+            ascending: true,
+          })
+          .order("start_time", {
+            ascending: true,
+          });
+
+        if (
+          refreshedError
+        ) {
+          console.error(
+            "重新讀取課程失敗：",
+            refreshedError
+          );
+        } else {
+          finalData =
+            refreshedData ?? [];
+        }
+      }
+
+      /*
+       * ------------------------------------
+       * ⑦ 統一轉成前端 Course 格式
+       * ------------------------------------
+       */
       const formattedCourses: Course[] =
-        (data ?? []).map(
+        finalData.map(
           (item) => ({
             id: item.id,
-            date: item.date ?? "",
-            title: item.title ?? "",
+            date:
+              item.date ?? "",
+            title:
+              item.title ?? "",
             teacher:
               item.teacher ?? "",
             startTime:
@@ -91,18 +277,40 @@ export default function CourseSection() {
               ),
             classroom:
               item.classroom ?? "",
-            note: item.note ?? "",
+            note:
+              item.note ?? "",
           })
         );
 
       console.log(
-        "🟢 Supabase 課程資料：",
+        "🟢 Supabase 最終課程資料：",
         formattedCourses
       );
 
       setCourses(
         formattedCourses
       );
+
+      /*
+       * ------------------------------------
+       * ⑧ 同步更新本機 LocalStorage
+       *
+       * 之後手機／電腦都以雲端資料為準。
+       * ------------------------------------
+       */
+      try {
+        localStorage.setItem(
+          COURSE_STORAGE_KEY,
+          JSON.stringify(
+            formattedCourses
+          )
+        );
+      } catch (localError) {
+        console.error(
+          "更新課程 LocalStorage 失敗：",
+          localError
+        );
+      }
 
       return true;
     } catch (error) {
@@ -129,11 +337,6 @@ export default function CourseSection() {
   /*
    * ========================================
    * 新增 / 編輯課程
-   *
-   * 注意：
-   * 這裡一定是 Promise<void>
-   * 因為 AddCourseModal 的 onSave
-   * 定義就是 Promise<void>
    * ========================================
    */
   async function handleSave(
@@ -171,9 +374,7 @@ export default function CourseSection() {
         );
 
         /*
-         * --------------------------------
-         * ① 先確認這個 ID 存在
-         * --------------------------------
+         * 先確認這個 ID 存在
          */
         const {
           data: existingCourse,
@@ -228,24 +429,8 @@ export default function CourseSection() {
           return;
         }
 
-        console.log(
-          "🟢 找到原始課程：",
-          existingCourse
-        );
-
         /*
-         * --------------------------------
-         * ② 真正 UPDATE
-         *
-         * 最重要的修改：
-         *
-         * .update(...)
-         * .eq(...)
-         * .select(...)
-         *
-         * 直接要求 Supabase 把「真正更新
-         * 成功的資料列」回傳。
-         * --------------------------------
+         * 真正 UPDATE
          */
         const {
           data: updatedCourse,
@@ -253,8 +438,10 @@ export default function CourseSection() {
         } = await supabase
           .from("courses")
           .update({
-            date: course.date,
-            title: course.title,
+            date:
+              course.date,
+            title:
+              course.title,
             teacher:
               course.teacher,
             start_time:
@@ -265,7 +452,8 @@ export default function CourseSection() {
               course.capacity,
             classroom:
               course.classroom,
-            note: course.note,
+            note:
+              course.note,
           })
           .eq(
             "id",
@@ -277,10 +465,6 @@ export default function CourseSection() {
           .maybeSingle();
 
         console.log(
-          "================================"
-        );
-
-        console.log(
           "🔵 UPDATE 回應：",
           {
             updatedCourse,
@@ -288,11 +472,6 @@ export default function CourseSection() {
           }
         );
 
-        /*
-         * --------------------------------
-         * ③ Supabase 回傳錯誤
-         * --------------------------------
-         */
         if (updateError) {
           console.error(
             "🔴 UPDATE 失敗：",
@@ -307,13 +486,6 @@ export default function CourseSection() {
           return;
         }
 
-        /*
-         * --------------------------------
-         * ④ 沒有任何資料列被 UPDATE
-         *
-         * 這是這次要抓的重點。
-         * --------------------------------
-         */
         if (
           !updatedCourse
         ) {
@@ -321,57 +493,20 @@ export default function CourseSection() {
             "🔴 UPDATE 沒有真正更新任何資料列"
           );
 
-          console.error(
-            "🔴 使用的 Course ID：",
-            courseId
-          );
-
-          console.error(
-            "🔴 原本資料：",
-            existingCourse
-          );
-
-          console.error(
-            "🔴 送出資料：",
-            course
-          );
-
           alert(
             "課程更新沒有真正寫入 Database。\n\n" +
               "Course ID：" +
-              courseId +
-              "\n\n" +
-              "請確認 Supabase courses 的 UPDATE 權限。"
+              courseId
           );
 
           return;
         }
 
-        /*
-         * --------------------------------
-         * ⑤ Database 實際回傳的資料
-         * --------------------------------
-         */
         console.log(
           "🟢 Database 實際更新後資料：",
           updatedCourse
         );
 
-        console.log(
-          "🟢 送出名稱：",
-          course.title
-        );
-
-        console.log(
-          "🟢 Database 名稱：",
-          updatedCourse.title
-        );
-
-        /*
-         * --------------------------------
-         * ⑥ 最後確認 title
-         * --------------------------------
-         */
         if (
           updatedCourse.title !==
           course.title
@@ -393,23 +528,13 @@ export default function CourseSection() {
         }
 
         /*
-         * --------------------------------
-         * ⑦ 更新成功
-         * --------------------------------
-         */
-        console.log(
-          "🟢🟢🟢 課程 UPDATE 完全成功",
-          updatedCourse
-        );
-
-        /*
          * 重新讀取整份課程列表
          */
         await loadCourses();
 
         /*
          * 如果目前報名管理的是同一門課，
-         * 同步更新它
+         * 同步更新
          */
         if (
           registrationCourse?.id ===
@@ -423,9 +548,6 @@ export default function CourseSection() {
           );
         }
 
-        /*
-         * 關閉編輯視窗
-         */
         setOpenModal(false);
 
         setEditingCourse(null);
@@ -466,11 +588,6 @@ export default function CourseSection() {
         course.title
       );
 
-      /*
-       * --------------------------------
-       * INSERT
-       * --------------------------------
-       */
       const {
         data: insertedCourse,
         error: insertError,
@@ -478,8 +595,10 @@ export default function CourseSection() {
         .from("courses")
         .insert({
           id: newId,
-          date: course.date,
-          title: course.title,
+          date:
+            course.date,
+          title:
+            course.title,
           teacher:
             course.teacher,
           start_time:
@@ -490,7 +609,8 @@ export default function CourseSection() {
             course.capacity,
           classroom:
             course.classroom,
-          note: course.note,
+          note:
+            course.note,
         })
         .select(
           "id,title,date,start_time,end_time,teacher,capacity,classroom,note"
@@ -519,11 +639,6 @@ export default function CourseSection() {
         return;
       }
 
-      /*
-       * --------------------------------
-       * 確認 INSERT 真的產生資料
-       * --------------------------------
-       */
       if (
         !insertedCourse
       ) {
@@ -544,15 +659,10 @@ export default function CourseSection() {
       );
 
       /*
-       * --------------------------------
        * 重新讀取
-       * --------------------------------
        */
       await loadCourses();
 
-      /*
-       * 關閉 Modal
-       */
       setOpenModal(false);
 
       setEditingCourse(null);
@@ -642,9 +752,6 @@ export default function CourseSection() {
         return;
       }
 
-      /*
-       * 更新畫面
-       */
       setCourses(
         (prev) =>
           prev.filter(
@@ -653,10 +760,42 @@ export default function CourseSection() {
           )
       );
 
-      /*
-       * 如果正在看這門課的報名管理，
-       * 一併關閉
-       */
+      try {
+        const savedCourses =
+          localStorage.getItem(
+            COURSE_STORAGE_KEY
+          );
+
+        if (savedCourses) {
+          const parsed =
+            JSON.parse(
+              savedCourses
+            );
+
+          if (
+            Array.isArray(parsed)
+          ) {
+            const updated =
+              parsed.filter(
+                (course) =>
+                  course.id !== id
+              );
+
+            localStorage.setItem(
+              COURSE_STORAGE_KEY,
+              JSON.stringify(
+                updated
+              )
+            );
+          }
+        }
+      } catch (localError) {
+        console.error(
+          "刪除後更新 LocalStorage 失敗：",
+          localError
+        );
+      }
+
       if (
         registrationCourse?.id ===
         id
@@ -916,3 +1055,4 @@ export default function CourseSection() {
     </div>
   );
 }
+
