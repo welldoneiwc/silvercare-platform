@@ -1643,19 +1643,36 @@ export default function FinanceSection() {
         alert(
           "已加入繳費名單。"
         );
-      } catch (error) {
-        console.error(
-          "新增繳費者失敗：",
-          error
-        );
+     } catch (error) {
+  console.error(
+    "新增繳費者失敗：",
+    error
+  );
 
-        alert(
-          "新增繳費者失敗：\n\n" +
-            (error instanceof Error
-              ? error.message
-              : String(error))
-        );
-      }
+  const supabaseError =
+    error as {
+      message?: string;
+      details?: string;
+      hint?: string;
+      code?: string;
+    };
+
+  alert(
+    "新增繳費者失敗：\n\n" +
+      `錯誤代碼：${
+        supabaseError.code || "無"
+      }\n` +
+      `訊息：${
+        supabaseError.message || "未知錯誤"
+      }\n` +
+      `詳細：${
+        supabaseError.details || "無"
+      }\n` +
+      `提示：${
+        supabaseError.hint || "無"
+      }`
+  );
+}
     };
 
   const handleDeletePayer =
@@ -4067,35 +4084,70 @@ const responsiveFinanceStyles = `
       border-bottom: none !important;
     }
 
-   .finance-charge-actions {
-  width: 100% !important;
-  display: flex !important;
-  flex-direction: column !important;
-  gap: 10px !important;
-  box-sizing: border-box !important;
-}
+  /* ========================================
+ * 手機版收費操作按鈕
+ * ======================================== */
 
-.finance-charge-actions > button {
+/* 建立／編輯收費項目的按鈕列 */
+.finance-section-root > div > .finance-charge-actions {
+  display: flex !important;
   width: 100% !important;
   max-width: 100% !important;
+  box-sizing: border-box !important;
+  gap: 8px !important;
+  flex-wrap: wrap !important;
+}
+
+/* 新增收費項目／儲存修改 */
+.finance-section-root
+  > div
+  > .finance-charge-actions
+  > button {
+  width: auto !important;
+  max-width: 100% !important;
   min-width: 0 !important;
+  height: 42px !important;
+  padding: 0 16px !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  border-radius: 9px !important;
   box-sizing: border-box !important;
   white-space: nowrap !important;
   font-size: 16px !important;
+  flex: 0 0 auto !important;
 }
 
-    .finance-charge-actions button {
-      width: 100% !important;
-      min-width: 0 !important;
-      height: 42px !important;
-      padding: 0 !important;
-      display: inline-flex !important;
-      align-items: center !important;
-      justify-content: center !important;
-      border-radius: 9px !important;
-      box-sizing: border-box !important;
-      touch-action: manipulation !important;
-    }
+/* 收費列表裡的四個 Icon 按鈕維持 40×40 */
+.finance-charge-table
+  .finance-charge-actions {
+  display: flex !important;
+  width: 100% !important;
+  gap: 8px !important;
+  flex-wrap: wrap !important;
+}
+
+.finance-charge-table
+  .finance-charge-actions
+  > button {
+  width: 40px !important;
+  min-width: 40px !important;
+  max-width: 40px !important;
+  height: 42px !important;
+  padding: 0 !important;
+  flex: 0 0 40px !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  box-sizing: border-box !important;
+  border-radius: 9px !important;
+  touch-action: manipulation !important;
+}
+
+.finance-section-root button {
+  touch-action: manipulation;
+  white-space: nowrap;
+}
 
    .finance-section-root button {
   touch-action: manipulation;
