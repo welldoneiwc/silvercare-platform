@@ -269,6 +269,7 @@ export default function CourseRegistration({
               ascending: true,
             }
           );
+          
 
         if (error) {
           console.error(
@@ -746,7 +747,10 @@ export default function CourseRegistration({
               };
             }
           );
-
+console.log(
+  "🟣 報名 mapped：",
+  mapped
+);
         setRegistrations(
           mapped
         );

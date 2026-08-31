@@ -198,13 +198,16 @@ export default function CourseSection() {
         } = await supabase
           .from("courses")
           .insert(rows);
-
-        if (migrateError) {
-          console.error(
-            "🔴 舊課程同步到 Supabase 失敗：",
-            migrateError
-          );
-        } else {
+if (migrateError) {
+  console.error(
+    "🔴 舊課程同步到 Supabase 失敗：",
+    JSON.stringify(
+      migrateError,
+      null,
+      2
+    )
+  );
+}else {
           console.log(
             "🟢 舊課程已同步到 Supabase：",
             rows
