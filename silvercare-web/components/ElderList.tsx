@@ -289,6 +289,16 @@ export default function ElderList({
   ) => {
     try {
       const {
+  data: { user },
+  error: userError,
+} = await supabase.auth.getUser();
+
+console.log("目前登入使用者：", {
+  id: user?.id,
+  email: user?.email,
+  userError,
+});
+      const {
         data,
         error,
       } = await supabase
