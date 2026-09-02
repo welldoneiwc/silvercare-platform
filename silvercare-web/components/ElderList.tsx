@@ -222,10 +222,14 @@ export default function ElderList({
           });
 
         if (error) {
-         console.error(
-  "讀取長者資料失敗：",
-  JSON.stringify(error, null, 2)
-);
+          console.error(
+            "讀取長者資料失敗：",
+            JSON.stringify(
+              error,
+              null,
+              2
+            )
+          );
 
           setElders([]);
           setLoaded(true);
@@ -283,44 +287,155 @@ export default function ElderList({
 
   /**
    * 新增長者到 Supabase
+   *
+   * Site 使用者：
+   * 自動從 user_roles 取得自己的 location_id，
+   * 並將長者綁定到該據點。
    */
   const handleAddElder = async (
     elder: Omit<Elder, "id">
   ) => {
     try {
       const {
-  data: { user },
-  error: userError,
-} = await supabase.auth.getUser();
+        data: { user },
+        error: userError,
+      } =
+        await supabase.auth.getUser();
 
-console.log("目前登入使用者：", {
-  id: user?.id,
-  email: user?.email,
-  userError,
-});
+      console.log(
+        "目前登入使用者：",
+        {
+          id: user?.id,
+          email: user?.email,
+          userError,
+        }
+      );
+
+      if (userError || !user) {
+        console.error(
+          "取得目前登入使用者失敗：",
+          userError
+        );
+
+        window.alert(
+          "無法確認目前登入帳號，請重新登入後再試。"
+        );
+
+        return;
+      }
+
+      /**
+       * 取得目前登入使用者的據點角色
+       */
+      const {
+        data: roleData,
+        error: roleError,
+      } = await supabase
+        .from("user_roles")
+        .select(
+          `
+            role,
+            location_id
+          `
+        )
+        .eq(
+          "user_id",
+          user.id
+        )
+        .maybeSingle();
+
+      if (roleError) {
+        console.error(
+          "取得據點權限失敗：",
+          roleError
+        );
+
+        window.alert(
+          `取得據點權限失敗：${roleError.message}`
+        );
+
+        return;
+      }
+
+      const userRole =
+        roleData?.role ?? "";
+
+      const locationId =
+        roleData?.location_id;
+
+      console.log(
+        "目前使用者據點資訊：",
+        {
+          role: userRole,
+          location_id:
+            locationId,
+        }
+      );
+
+      /**
+       * Site 使用者必須有 location_id
+       */
+      if (
+        userRole === "site" &&
+        !locationId
+      ) {
+        console.error(
+          "Site 使用者沒有 location_id：",
+          roleData
+        );
+
+        window.alert(
+          "目前帳號尚未綁定據點，無法新增長者。"
+        );
+
+        return;
+      }
+
+      /**
+       * 建立新增資料
+       *
+       * Site：
+       * 自動加入自己的 location_id
+       *
+       * Supervisor：
+       * 保留原本行為，不指定 location_id
+       */
+      const insertData: Record<
+        string,
+        unknown
+      > = {
+        name: elder.name,
+        gender: elder.gender,
+        birthday: elder.birthday,
+        phone: elder.phone,
+        elder_type:
+          elder.elder_type,
+        living_status:
+          elder.living_status,
+        contact_method:
+          elder.contact_method,
+        emergency_contact_name:
+          elder.emergency_contact_name,
+        emergency_contact_relation:
+          elder.emergency_contact_relation,
+        emergency_contact_phone:
+          elder.emergency_contact_phone,
+      };
+
+      if (
+        userRole === "site" &&
+        locationId
+      ) {
+        insertData.location_id =
+          Number(locationId);
+      }
+
       const {
         data,
         error,
       } = await supabase
         .from("elders")
-        .insert({
-          name: elder.name,
-          gender: elder.gender,
-          birthday: elder.birthday,
-          phone: elder.phone,
-          elder_type:
-            elder.elder_type,
-          living_status:
-            elder.living_status,
-          contact_method:
-            elder.contact_method,
-          emergency_contact_name:
-            elder.emergency_contact_name,
-          emergency_contact_relation:
-            elder.emergency_contact_relation,
-          emergency_contact_phone:
-            elder.emergency_contact_phone,
-        })
+        .insert(insertData)
         .select(
           `
             id,
