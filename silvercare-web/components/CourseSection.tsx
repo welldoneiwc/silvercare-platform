@@ -63,12 +63,12 @@ export default function CourseSection() {
       } = await supabase
         .from("courses")
         .select("*")
-        .order("date", {
-          ascending: true,
-        })
-        .order("start_time", {
-          ascending: true,
-        });
+       .order("date", {
+  ascending: false,
+})
+.order("start_time", {
+  ascending: true,
+});
 
       if (error) {
         console.error(
@@ -235,12 +235,12 @@ if (migrateError) {
         } = await supabase
           .from("courses")
           .select("*")
-          .order("date", {
-            ascending: true,
-          })
-          .order("start_time", {
-            ascending: true,
-          });
+        .order("date", {
+  ascending: false,
+})
+.order("start_time", {
+  ascending: true,
+});
 
         if (
           refreshedError

@@ -712,6 +712,10 @@ export default function ElderList({
 
   const filteredElders =
     useMemo(() => {
+      console.log("Elder Debug:", {
+  elders: elders.length,
+  keyword,
+});
       return elders.filter(
         (elder) => {
           return (
