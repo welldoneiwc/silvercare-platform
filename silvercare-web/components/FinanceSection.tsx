@@ -1706,6 +1706,7 @@ export default function FinanceSection() {
         }
 
         const {
+          data: deletedPayers,
           error: payerError,
         } = await supabase
           .from(
@@ -1715,10 +1716,17 @@ export default function FinanceSection() {
           .eq(
             "id",
             payerId
-          );
+          )
+          .select("id");
 
         if (payerError) {
           throw payerError;
+        }
+
+        if (!deletedPayers || deletedPayers.length === 0) {
+          throw new Error(
+            "找不到這位繳費者，可能已被刪除，或目前帳號沒有刪除權限。"
+          );
         }
 
         const nextPayers =
@@ -1796,15 +1804,31 @@ export default function FinanceSection() {
       }
 
       try {
+        const payerOutstanding =
+          getPayerOutstandingAmount(
+            paymentPayerId,
+            selectedCharge.id
+          );
+
+        if (paymentAmount > payerOutstanding) {
+          alert(
+            `本次繳款不能超過尚欠金額 ${formatCurrency(
+              payerOutstanding
+            )}。`
+          );
+          return;
+        }
+
+        const paymentId = createId();
+
         const {
-          data,
           error,
         } = await supabase
           .from(
             "finance_payments"
           )
           .insert({
-            id: createId(),
+            id: paymentId,
             charge_id:
               selectedCharge.id,
             payer_id:
@@ -1815,33 +1839,60 @@ export default function FinanceSection() {
               paymentDate,
             note:
               paymentNote,
-          })
-          .select("*")
-          .maybeSingle();
+          });
 
         if (error) {
           throw error;
         }
 
-        if (!data) {
-          throw new Error(
-            "新增繳款紀錄沒有回傳資料。"
+        // INSERT 成功後重新讀取付款資料，避免因 SELECT 回傳延遲
+        // 或舊 state 導致「已繳」仍顯示為 0。
+        const {
+          data: refreshedPayments,
+          error: refreshError,
+        } = await supabase
+          .from(
+            "finance_payments"
+          )
+          .select("*")
+          .order(
+            "created_at",
+            {
+              ascending: false,
+            }
           );
+
+        if (refreshError) {
+          throw refreshError;
         }
 
-        const newPayment =
-          mapPaymentFromDatabase(
-            data as DatabaseRow
+        const nextPayments =
+          (refreshedPayments || []).map(
+            (row) =>
+              mapPaymentFromDatabase(
+                row as DatabaseRow
+              )
           );
 
-        const nextPayments = [
-          newPayment,
-          ...payments,
-        ];
+        // 防止極少數情況下資料庫剛寫入但查詢尚未看到新資料。
+        if (
+          !nextPayments.some(
+            (payment) =>
+              payment.id === paymentId
+          )
+        ) {
+          nextPayments.unshift({
+            id: paymentId,
+            chargeId: selectedCharge.id,
+            payerId: paymentPayerId,
+            amount: paymentAmount,
+            paidAt: paymentDate,
+            note: paymentNote,
+            createdAt: new Date().toISOString(),
+          });
+        }
 
-        setPayments(
-          nextPayments
-        );
+        setPayments(nextPayments);
 
         saveLocalFinanceBackup(
           charges,
@@ -1893,6 +1944,7 @@ export default function FinanceSection() {
 
       try {
         const {
+          data: deletedPayments,
           error,
         } = await supabase
           .from(
@@ -1902,10 +1954,17 @@ export default function FinanceSection() {
           .eq(
             "id",
             paymentId
-          );
+          )
+          .select("id");
 
         if (error) {
           throw error;
+        }
+
+        if (!deletedPayments || deletedPayments.length === 0) {
+          throw new Error(
+            "找不到這筆繳款紀錄，可能已被刪除，或目前帳號沒有刪除權限。"
+          );
         }
 
         const nextPayments =
@@ -3109,9 +3168,20 @@ style={{
                     繳款金額
                   </label>
 
+                  <div
+                    style={{
+                      fontSize: 12,
+                      color: "#6B7280",
+                      marginBottom: 6,
+                    }}
+                  >
+                    可繳全額，也可以只輸入部分金額，例如 100 元。
+                  </div>
+
                   <input
                     type="number"
                     min="0"
+                    step="1"
                     value={
                       paymentAmount
                     }

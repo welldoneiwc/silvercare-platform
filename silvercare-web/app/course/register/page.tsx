@@ -896,19 +896,7 @@ export default function CourseRegisterPage() {
       return;
     }
 
-    if (!trimmedPhone) {
-      alert("請輸入電話。");
-      return;
-    }
 
-    if (
-      normalizedPhone.length < 8
-    ) {
-      alert(
-        "請輸入正確的電話號碼。"
-      );
-      return;
-    }
 
     if (
       isActivity &&
@@ -1860,7 +1848,7 @@ function RegistrationForm({
               e.target.value
             );
           }}
-          placeholder="請輸入您的電話"
+         placeholder="請輸入您的電話（選填）"
           style={inputStyle}
         />
       </div>
