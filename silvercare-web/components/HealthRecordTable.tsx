@@ -11,6 +11,9 @@ type Props = {
   onDelete?: (id: number) => void;
 };
 
+/**
+ * 計算 BMI
+ */
 function calculateBMI(record: HealthRecord) {
   const hasHeight =
     record.height !== null && record.height > 0;
@@ -28,6 +31,31 @@ function calculateBMI(record: HealthRecord) {
   ).toFixed(1);
 }
 
+/**
+ * 手機日期格式
+ *
+ * 2026-09-08
+ * ↓
+ * 09.08.26
+ */
+function formatMobileDate(date: string) {
+  if (!date) {
+    return "-";
+  }
+
+  const parts = date.split("-");
+
+  if (parts.length === 3) {
+    const year = parts[0].slice(-2);
+    const month = parts[1];
+    const day = parts[2];
+
+    return `${month}.${day}.${year}`;
+  }
+
+  return date;
+}
+
 export default function HealthRecordTable({
   records,
   onEdit,
@@ -43,9 +71,12 @@ export default function HealthRecordTable({
         borderRadius: radius.lg,
         width: "100%",
         minWidth: 0,
+        boxSizing: "border-box",
       }}
     >
-      {/* 標題 */}
+      {/* =========================
+          標題
+         ========================= */}
       <div
         style={{
           paddingBottom: 12,
@@ -92,9 +123,7 @@ export default function HealthRecordTable({
                 <th style={thStyle}>BMI</th>
 
                 {showActions && (
-                  <th style={thStyle}>
-                    操作
-                  </th>
+                  <th style={thStyle}>操作</th>
                 )}
               </tr>
             </thead>
@@ -166,7 +195,7 @@ export default function HealthRecordTable({
 
       {/* =========================
           手機版
-          條列式表格
+          條列式
          ========================= */}
       <div className="health-record-mobile">
         <div className="mobile-table">
@@ -301,53 +330,61 @@ export default function HealthRecordTable({
             display: block;
             width: 100%;
             min-width: 0;
+            max-width: 100%;
             overflow: hidden;
+            box-sizing: border-box;
           }
 
           .mobile-table {
             width: 100%;
+            max-width: 100%;
             min-width: 0;
+            box-sizing: border-box;
           }
 
           .mobile-table-header,
           .mobile-table-row {
             display: grid;
-            align-items: center;
             width: 100%;
+            max-width: 100%;
+            min-width: 0;
             box-sizing: border-box;
+            align-items: center;
           }
 
           /*
-            日期 / 血壓 / 脈搏 /
-            身高 / 體重 / BMI / 操作
+            重要：
+            使用 minmax(0, fr)
+            確保所有欄位加起來一定不超過手機寬度。
           */
+
           .mobile-table-header.with-actions,
           .mobile-table-row.with-actions {
             grid-template-columns:
-              minmax(78px, 1.35fr)
-              minmax(54px, 1fr)
-              minmax(40px, 0.72fr)
-              minmax(48px, 0.82fr)
-              minmax(48px, 0.82fr)
-              minmax(40px, 0.7fr)
-              46px;
+              minmax(0, 1.45fr)
+              minmax(0, 1fr)
+              minmax(0, 0.7fr)
+              minmax(0, 0.9fr)
+              minmax(0, 0.9fr)
+              minmax(0, 0.7fr)
+              44px;
           }
 
           .mobile-table-header.without-actions,
           .mobile-table-row.without-actions {
             grid-template-columns:
-              minmax(78px, 1.35fr)
-              minmax(54px, 1fr)
-              minmax(40px, 0.72fr)
-              minmax(48px, 0.82fr)
-              minmax(48px, 0.82fr)
-              minmax(40px, 0.7fr);
+              minmax(0, 1.45fr)
+              minmax(0, 1fr)
+              minmax(0, 0.7fr)
+              minmax(0, 0.9fr)
+              minmax(0, 0.9fr)
+              minmax(0, 0.7fr);
           }
 
           .mobile-table-header {
             background: #f7fafc;
             min-height: 48px;
-            padding: 8px 3px;
+            padding: 8px 2px;
             color: ${colors.primary};
             font-weight: 600;
             font-size: 13px;
@@ -357,7 +394,7 @@ export default function HealthRecordTable({
 
           .mobile-table-row {
             min-height: 78px;
-            padding: 8px 3px;
+            padding: 8px 2px;
             border-bottom: 1px solid #edf0f2;
             color: #334155;
           }
@@ -366,10 +403,12 @@ export default function HealthRecordTable({
             border-bottom: none;
           }
 
-          .mobile-table-row > div,
-          .mobile-table-header > div {
+          .mobile-table-header > div,
+          .mobile-table-row > div {
             min-width: 0;
+            max-width: 100%;
             text-align: center;
+            box-sizing: border-box;
           }
 
           .date-cell {
@@ -398,80 +437,86 @@ export default function HealthRecordTable({
             font-weight: 400;
           }
 
-          /*
-            手機操作區
-            寬度固定，避免被右側切掉
-          */
+          /* =========================
+             操作欄
+             ========================= */
+
           .mobile-actions {
-            width: 46px;
-            min-width: 46px;
+            width: 44px;
+            min-width: 44px;
+            max-width: 44px;
             display: flex;
-            justify-content: center;
             align-items: center;
+            justify-content: center;
+            box-sizing: border-box;
           }
 
           /*
-            重要：
-            ActionButtons 本身原本是 flex row，
-            手機版強制改成上下排列
+            手機操作按鈕上下排列
           */
           .mobile-actions :global(.action-buttons) {
+            width: 44px !important;
+            min-width: 44px !important;
+            max-width: 44px !important;
             flex-direction: column !important;
+            align-items: center !important;
+            justify-content: center !important;
             gap: 3px !important;
-            width: 100%;
-            align-items: center;
-            justify-content: center;
+            box-sizing: border-box;
           }
 
           .mobile-actions :global(.icon-button) {
-            width: 28px !important;
-            height: 28px !important;
-            min-width: 28px !important;
-            flex-shrink: 0;
+            width: 30px !important;
+            height: 30px !important;
+            min-width: 30px !important;
+            max-width: 30px !important;
+            flex-shrink: 0 !important;
+            padding: 0 !important;
+            box-sizing: border-box;
           }
 
           .mobile-actions :global(.icon-button svg) {
-            width: 14px;
-            height: 14px;
+            width: 15px;
+            height: 15px;
           }
         }
 
         /* =========================
-           更小手機
+           小手機
            ========================= */
         @media (max-width: 420px) {
           .mobile-table-header {
             font-size: 12px;
-            padding-left: 2px;
-            padding-right: 2px;
+            padding-left: 1px;
+            padding-right: 1px;
           }
 
           .mobile-table-row {
-            padding-left: 2px;
-            padding-right: 2px;
+            padding-left: 1px;
+            padding-right: 1px;
           }
 
           .mobile-table-header.with-actions,
           .mobile-table-row.with-actions {
             grid-template-columns:
-              minmax(72px, 1.3fr)
-              minmax(50px, 1fr)
-              minmax(36px, 0.7fr)
-              minmax(45px, 0.8fr)
-              minmax(45px, 0.8fr)
-              minmax(36px, 0.65fr)
-              44px;
+              minmax(0, 1.45fr)
+              minmax(0, 1fr)
+              minmax(0, 0.7fr)
+              minmax(0, 0.9fr)
+              minmax(0, 0.9fr)
+              minmax(0, 0.7fr)
+              42px;
           }
 
           .mobile-table-header.without-actions,
           .mobile-table-row.without-actions {
             grid-template-columns:
-              minmax(72px, 1.3fr)
-              minmax(50px, 1fr)
-              minmax(36px, 0.7fr)
-              minmax(45px, 0.8fr)
-              minmax(45px, 0.8fr)
-              minmax(36px, 0.65fr);
+              minmax(0, 1.45fr)
+              minmax(0, 1fr)
+              minmax(0, 0.7fr)
+              minmax(0, 0.9fr)
+              minmax(0, 0.9fr)
+              minmax(0, 0.7fr);
           }
 
           .date-cell {
@@ -487,23 +532,28 @@ export default function HealthRecordTable({
           }
 
           .mobile-actions {
-            width: 44px;
-            min-width: 44px;
+            width: 42px;
+            min-width: 42px;
+            max-width: 42px;
           }
 
           .mobile-actions :global(.action-buttons) {
+            width: 42px !important;
+            min-width: 42px !important;
+            max-width: 42px !important;
             gap: 2px !important;
           }
 
           .mobile-actions :global(.icon-button) {
-            width: 26px !important;
-            height: 26px !important;
-            min-width: 26px !important;
+            width: 28px !important;
+            height: 28px !important;
+            min-width: 28px !important;
+            max-width: 28px !important;
           }
 
           .mobile-actions :global(.icon-button svg) {
-            width: 13px;
-            height: 13px;
+            width: 14px;
+            height: 14px;
           }
         }
       `}</style>
@@ -536,13 +586,14 @@ function ActionButtons({
         whiteSpace: "nowrap",
       }}
     >
+      {/* 編輯 */}
       {onEdit && (
         <button
           type="button"
           aria-label="編輯健康紀錄"
           title="編輯"
           onClick={() => onEdit(record)}
-          className="icon-button edit-button"
+          className="icon-button"
           style={{
             width: 36,
             height: 36,
@@ -562,6 +613,7 @@ function ActionButtons({
         </button>
       )}
 
+      {/* 刪除 */}
       {onDelete && (
         <button
           type="button"
@@ -576,7 +628,7 @@ function ActionButtons({
               onDelete(record.id);
             }
           }}
-          className="icon-button delete-button"
+          className="icon-button"
           style={{
             width: 36,
             height: 36,
@@ -600,30 +652,6 @@ function ActionButtons({
 }
 
 /* =========================
-   手機日期格式
-   2026-09-08
-   ↓
-   09.08.26
-   ========================= */
-function formatMobileDate(date: string) {
-  if (!date) {
-    return "-";
-  }
-
-  const parts = date.split("-");
-
-  if (parts.length === 3) {
-    const year = parts[0].slice(-2);
-    const month = parts[1];
-    const day = parts[2];
-
-    return `${month}.${day}.${year}`;
-  }
-
-  return date;
-}
-
-/* =========================
    編輯 Icon
    ========================= */
 function EditIcon() {
@@ -636,6 +664,8 @@ function EditIcon() {
       strokeLinecap="round"
       strokeLinejoin="round"
       aria-hidden="true"
+      width="17"
+      height="17"
     >
       <path d="M12 20h9" />
       <path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4Z" />
@@ -656,6 +686,8 @@ function DeleteIcon() {
       strokeLinecap="round"
       strokeLinejoin="round"
       aria-hidden="true"
+      width="17"
+      height="17"
     >
       <path d="M3 6h18" />
       <path d="M8 6V4h8v2" />
