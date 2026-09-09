@@ -9,6 +9,7 @@ import {
 import { colors } from "../styles/theme";
 import { radius } from "../styles/radius";
 import { shadow } from "../styles/shadow";
+
 import { supabase } from "../utils/supabase";
 
 type Course = {
@@ -23,18 +24,6 @@ type Course = {
   note: string;
 };
 
-type Activity = {
-  id: number;
-  date: string;
-  title: string;
-  type: string;
-  startTime: string;
-  endTime: string;
-  location: string;
-  capacity: number;
-  note: string;
-};
-
 type Elder = {
   id: number;
   name: string;
@@ -43,56 +32,47 @@ type Elder = {
   phone: string;
 };
 
-type StoredRegistration = {
+export type CourseRegistration = {
   id: number;
-  courseId?: number;
-  activityId?: number;
+  courseId: number;
+
   elderId?: number;
-  name?: string;
-  phone?: string;
+
+  name: string;
+  phone: string;
+
   registeredAt: string;
-};
 
-type SupabaseCourse = {
-  id: number;
-  date: string;
-  title: string;
-  teacher: string;
-  start_time: string;
-  end_time: string;
-  capacity: number;
-  classroom: string | null;
-  note: string | null;
-};
-
-type CourseAvailability = {
-  confirmed_count: number;
-  capacity: number;
-  remaining_seats: number;
-};
-
-type RegistrationResult = {
-  success: boolean;
-  registration_status:
+  status:
     | "confirmed"
-    | "waitlist"
-    | null;
-  waitlist_position:
-    | number
-    | null;
-  confirmed_count: number;
-  remaining_seats: number;
-  message: string;
+    | "waitlist";
+
+  waitlistPosition?: number | null;
 };
 
-const ACTIVITY_STORAGE_KEY =
-  "silvercare-activities";
+type Props = {
+  course: Course | null;
+};
+
+const COURSE_STORAGE_KEY =
+  "silvercare-courses";
 
 const ELDER_STORAGE_KEY =
   "silvercare-elders";
 
-const REGISTRATION_STORAGE_KEY =
-  "silvercare-course-registrations";
+type SupabaseRegistration = {
+  id: number;
+  course_id: number;
+  name: string;
+  phone: string;
+  registered_at: string;
+  status:
+    | "confirmed"
+    | "waitlist";
+  waitlist_position:
+    | number
+    | null;
+};
 
 function formatDate(date: string) {
   if (!date) {
@@ -116,84 +96,11 @@ function normalizePhone(
     .replace(/-/g, "");
 }
 
-function getStoredElderName(
-  registration: StoredRegistration,
-  elders: Elder[]
-) {
-  if (registration.name) {
-    return registration.name;
-  }
-
-  if (
-    registration.elderId !==
-    undefined
-  ) {
-    const elder = elders.find(
-      (item) =>
-        item.id ===
-        registration.elderId
-    );
-
-    if (elder) {
-      return elder.name;
-    }
-  }
-
-  return "未知長者";
-}
-
-function getStoredElderPhone(
-  registration: StoredRegistration,
-  elders: Elder[]
-) {
-  if (registration.phone) {
-    return registration.phone;
-  }
-
-  if (
-    registration.elderId !==
-    undefined
-  ) {
-    const elder = elders.find(
-      (item) =>
-        item.id ===
-        registration.elderId
-    );
-
-    if (elder) {
-      return elder.phone;
-    }
-  }
-
-  return "";
-}
-
-function mapSupabaseCourse(
-  course: SupabaseCourse
-): Course {
-  return {
-    id: course.id,
-    date: course.date ?? "",
-    title: course.title ?? "",
-    teacher: course.teacher ?? "",
-    startTime:
-      course.start_time ?? "",
-    endTime:
-      course.end_time ?? "",
-    capacity:
-      course.capacity ?? 0,
-    classroom:
-      course.classroom ?? "",
-    note: course.note ?? "",
-  };
-}
-
-export default function CourseRegisterPage() {
+export default function CourseRegistration({
+  course,
+}: Props) {
   const [courses, setCourses] =
     useState<Course[]>([]);
-
-  const [activities, setActivities] =
-    useState<Activity[]>([]);
 
   const [elders, setElders] =
     useState<Elder[]>([]);
@@ -202,307 +109,68 @@ export default function CourseRegisterPage() {
     registrations,
     setRegistrations,
   ] = useState<
-    StoredRegistration[]
+    CourseRegistration[]
   >([]);
 
-  const [courseId, setCourseId] =
-    useState<number | null>(null);
-
   const [
-    activityId,
-    setActivityId,
+    selectedElderId,
+    setSelectedElderId,
   ] = useState<number | null>(
     null
   );
 
-  const [name, setName] =
+  const [manualName, setManualName] =
     useState("");
 
-  const [phone, setPhone] =
+  const [manualPhone, setManualPhone] =
     useState("");
 
-  const [loaded, setLoaded] =
+  const [
+    registrationMode,
+    setRegistrationMode,
+  ] = useState<
+    "system" | "manual"
+  >("system");
+
+  const [loading, setLoading] =
+    useState(false);
+
+  const [saving, setSaving] =
     useState(false);
 
   const [
-    courseLoading,
-    setCourseLoading,
-  ] = useState(false);
-
-  const [
-    availabilityLoading,
-    setAvailabilityLoading,
-  ] = useState(false);
-
-  const [
-    courseAvailability,
-    setCourseAvailability,
-  ] = useState<
-    CourseAvailability | null
-  >(null);
-
-  const [
-    submitted,
-    setSubmitted,
-  ] = useState(false);
-
-  const [
-    submitting,
-    setSubmitting,
-  ] = useState(false);
-
-  const [
-    registrationStatus,
-    setRegistrationStatus,
-  ] = useState<
-    "confirmed" | "waitlist" | null
-  >(null);
-
-  const [
-    waitlistPosition,
-    setWaitlistPosition,
+    cancellingId,
+    setCancellingId,
   ] = useState<number | null>(
     null
   );
 
-  /*
-   * 讀取網址上的
-   * courseId / activityId
-   */
-  useEffect(() => {
-    const params =
-      new URLSearchParams(
-        window.location.search
-      );
-
-    const courseValue =
-      params.get("courseId");
-
-    const activityValue =
-      params.get("activityId");
-
-    if (courseValue) {
-      const parsed =
-        Number(courseValue);
-
-      if (
-        Number.isFinite(parsed)
-      ) {
-        setCourseId(parsed);
-      }
-    }
-
-    if (activityValue) {
-      const parsed =
-        Number(activityValue);
-
-      if (
-        Number.isFinite(parsed)
-      ) {
-        setActivityId(parsed);
-      }
-    }
-  }, []);
-
-  /*
-   * 從 Supabase 讀取目前課程
-   */
-  useEffect(() => {
-    if (courseId === null) {
-      return;
-    }
-
-    let cancelled = false;
-
-    async function loadCourse() {
-      setCourseLoading(true);
-
-      try {
-        const {
-          data,
-          error,
-        } = await supabase
-          .from("courses")
-          .select(
-            "id, date, title, teacher, start_time, end_time, capacity, classroom, note"
-          )
-          .eq("id", courseId)
-          .maybeSingle();
-
-        if (error) {
-          console.error(
-            "讀取公開課程失敗：",
-            error
-          );
-
-          if (!cancelled) {
-            setCourses([]);
-          }
-
-          return;
-        }
-
-        if (!cancelled) {
-          if (data) {
-            setCourses([
-              mapSupabaseCourse(
-                data as SupabaseCourse
-              ),
-            ]);
-          } else {
-            setCourses([]);
-          }
-        }
-      } catch (error) {
-        console.error(
-          "讀取公開課程失敗：",
-          error
-        );
-
-        if (!cancelled) {
-          setCourses([]);
-        }
-      } finally {
-        if (!cancelled) {
-          setCourseLoading(false);
-        }
-      }
-    }
-
-    loadCourse();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [courseId]);
-
-  /*
-   * 從 Supabase 讀取課程目前名額
+  /**
+   * 讀取課程與長者資料
    *
-   * 只取得：
-   * - 已正取人數
-   * - 課程容量
-   * - 剩餘名額
-   *
-   * 不會取得其他報名者姓名與電話。
-   */
-  useEffect(() => {
-    if (courseId === null) {
-      return;
-    }
-
-    let cancelled = false;
-
-    async function loadAvailability() {
-      setAvailabilityLoading(true);
-
-      try {
-        const {
-          data,
-          error,
-        } = await supabase.rpc(
-          "get_course_availability",
-          {
-            p_course_id: courseId,
-          }
-        );
-
-        if (error) {
-          console.error(
-            "讀取課程名額失敗：",
-            error
-          );
-
-          if (!cancelled) {
-            setCourseAvailability(
-              null
-            );
-          }
-
-          return;
-        }
-
-        const result =
-          Array.isArray(data)
-            ? data[0]
-            : data;
-
-        if (!cancelled) {
-          if (result) {
-            setCourseAvailability({
-              confirmed_count:
-                Number(
-                  result.confirmed_count ??
-                    0
-                ),
-              capacity:
-                Number(
-                  result.capacity ??
-                    0
-                ),
-              remaining_seats:
-                Number(
-                  result.remaining_seats ??
-                    0
-                ),
-            });
-          } else {
-            setCourseAvailability(
-              null
-            );
-          }
-        }
-      } catch (error) {
-        console.error(
-          "讀取課程名額失敗：",
-          error
-        );
-
-        if (!cancelled) {
-          setCourseAvailability(
-            null
-          );
-        }
-      } finally {
-        if (!cancelled) {
-          setAvailabilityLoading(
-            false
-          );
-        }
-      }
-    }
-
-    loadAvailability();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [courseId]);
-
-  /*
-   * 活動、長者與活動報名資料
-   * 暫時仍維持 LocalStorage。
+   * 課程與長者目前仍沿用既有
+   * LocalStorage 架構。
    */
   useEffect(() => {
     try {
-      const savedActivities =
+      const savedCourses =
         localStorage.getItem(
-          ACTIVITY_STORAGE_KEY
+          COURSE_STORAGE_KEY
         );
 
-      if (savedActivities) {
-        const parsedActivities =
+      if (savedCourses) {
+        const parsedCourses =
           JSON.parse(
-            savedActivities
+            savedCourses
           );
 
         if (
           Array.isArray(
-            parsedActivities
+            parsedCourses
           )
         ) {
-          setActivities(
-            parsedActivities
+          setCourses(
+            parsedCourses
           );
         }
       }
@@ -528,630 +196,719 @@ export default function CourseRegisterPage() {
           );
         }
       }
-
-      const savedRegistrations =
-        localStorage.getItem(
-          REGISTRATION_STORAGE_KEY
-        );
-
-      if (
-        savedRegistrations
-      ) {
-        const parsedRegistrations =
-          JSON.parse(
-            savedRegistrations
-          );
-
-        if (
-          Array.isArray(
-            parsedRegistrations
-          )
-        ) {
-          setRegistrations(
-            parsedRegistrations
-          );
-        }
-      }
     } catch (error) {
       console.error(
-        "讀取活動報名資料失敗：",
+        "讀取課程管理資料失敗：",
         error
       );
     }
-
-    setLoaded(true);
   }, []);
 
-  /*
-   * 活動報名資料仍寫回 LocalStorage
-   *
-   * 課程報名已改由 Supabase 處理，
-   * 因此這裡只有活動資料會使用這份 state。
-   */
-  useEffect(() => {
-    if (!loaded) {
-      return;
-    }
-
-    localStorage.setItem(
-      REGISTRATION_STORAGE_KEY,
-      JSON.stringify(
-        registrations
-      )
-    );
-  }, [
-    registrations,
-    loaded,
-  ]);
-
-  /*
-   * 找到目前課程
+  /**
+   * 目前指定課程
    */
   const selectedCourse =
     useMemo(() => {
-      if (courseId === null) {
+      if (!course?.id) {
         return null;
       }
 
       return (
         courses.find(
-          (course) =>
-            course.id ===
-            courseId
-        ) || null
+          (item) =>
+            item.id === course.id
+        ) || course
       );
-    }, [
-      courses,
-      courseId,
-    ]);
+    }, [course, courses]);
 
-  /*
-   * 找到目前活動
+  /**
+   * 從 Supabase 讀取目前課程的報名資料
    */
-  const selectedActivity =
-    useMemo(() => {
-      if (activityId === null) {
-        return null;
+  useEffect(() => {
+    if (!selectedCourse?.id) {
+      setRegistrations([]);
+      return;
+    }
+
+    let cancelled = false;
+
+    async function loadRegistrations() {
+      setLoading(true);
+
+      try {
+        const {
+          data,
+          error,
+        } = await supabase
+          .from(
+            "course_registrations"
+          )
+          .select(
+            "id, course_id, name, phone, registered_at, status, waitlist_position"
+          )
+          .eq(
+            "course_id",
+            selectedCourse?.id
+          )
+          .order(
+            "status",
+            {
+              ascending: true,
+            }
+          )
+          .order(
+            "waitlist_position",
+            {
+              ascending: true,
+              nullsFirst: true,
+            }
+          )
+          .order(
+            "registered_at",
+            {
+              ascending: true,
+            }
+          );
+          
+
+        if (error) {
+          console.error(
+            "讀取課程報名資料失敗：",
+            error
+          );
+
+          if (!cancelled) {
+            setRegistrations([]);
+          }
+
+          return;
+        }
+
+        const mapped =
+          (
+            data as SupabaseRegistration[]
+          ).map(
+            (
+              item
+            ): CourseRegistration => {
+              const matchedElder =
+                elders.find(
+                  (elder) =>
+                    normalizePhone(
+                      elder.phone
+                    ) ===
+                    normalizePhone(
+                      item.phone
+                    )
+                );
+
+              return {
+                id: item.id,
+
+                courseId:
+                  item.course_id,
+
+                elderId:
+                  matchedElder?.id,
+
+                name:
+                  item.name,
+
+                phone:
+                  item.phone,
+
+                registeredAt:
+                  item.registered_at,
+
+                status:
+                  item.status,
+
+                waitlistPosition:
+                  item.waitlist_position,
+              };
+            }
+          );
+
+        if (!cancelled) {
+          setRegistrations(
+            mapped
+          );
+        }
+      } catch (error) {
+        console.error(
+          "讀取課程報名資料發生錯誤：",
+          error
+        );
+
+        if (!cancelled) {
+          setRegistrations([]);
+        }
+      } finally {
+        if (!cancelled) {
+          setLoading(false);
+        }
       }
+    }
 
-      return (
-        activities.find(
-          (activity) =>
-            activity.id ===
-            activityId
-        ) || null
-      );
-    }, [
-      activities,
-      activityId,
-    ]);
+    loadRegistrations();
 
-  /*
-   * 目前是否為活動報名
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    selectedCourse?.id,
+    elders,
+  ]);
+
+  /**
+   * 目前課程的報名資料
    */
-  const isActivity =
-    activityId !== null;
-
-  /*
-   * 目前是否為課程報名
-   */
-  const isCourse =
-    courseId !== null &&
-    activityId === null;
-
-  /*
-   * 目前顯示的名稱
-   */
-  const selectedTitle =
-    selectedActivity?.title ??
-    selectedCourse?.title ??
-    "";
-
-  /*
-   * 目前日期
-   */
-  const selectedDate =
-    selectedActivity?.date ??
-    selectedCourse?.date ??
-    "";
-
-  /*
-   * 目前開始時間
-   */
-  const selectedStartTime =
-    selectedActivity?.startTime ??
-    selectedCourse?.startTime ??
-    "";
-
-  /*
-   * 目前結束時間
-   */
-  const selectedEndTime =
-    selectedActivity?.endTime ??
-    selectedCourse?.endTime ??
-    "";
-
-  /*
-   * 活動地點 / 課程教室
-   */
-  const selectedLocation =
-    selectedActivity?.location ??
-    selectedCourse?.classroom ??
-    "";
-
-  /*
-   * 課程老師
-   */
-  const selectedTeacher =
-    selectedCourse?.teacher ??
-    "";
-
-  /*
-   * 課程容量
-   *
-   * 優先使用 Supabase availability。
-   */
-  const selectedCapacity =
-    isCourse &&
-    courseAvailability
-      ? courseAvailability.capacity
-      : selectedActivity?.capacity ??
-        selectedCourse?.capacity ??
-        0;
-
-  /*
-   * 活動目前報名資料
-   *
-   * 課程不再從 LocalStorage 計算。
-   */
-  const currentActivityRegistrations =
+  const courseRegistrations =
     useMemo(() => {
-      if (!isActivity) {
-        return [];
-      }
-
-      if (activityId === null) {
+      if (
+        !selectedCourse?.id
+      ) {
         return [];
       }
 
       return registrations.filter(
         (registration) =>
-          registration.activityId ===
-          activityId
+          registration.courseId ===
+          selectedCourse.id
       );
     }, [
       registrations,
-      activityId,
-      isActivity,
+      selectedCourse,
     ]);
 
-  /*
-   * 目前已正取人數
+  /**
+   * 正取名單
+   */
+  const confirmedRegistrations =
+    useMemo(() => {
+      return courseRegistrations.filter(
+        (registration) =>
+          registration.status ===
+          "confirmed"
+      );
+    }, [courseRegistrations]);
+
+  /**
+   * 候補名單
+   */
+  const waitlistRegistrations =
+    useMemo(() => {
+      return courseRegistrations
+        .filter(
+          (registration) =>
+            registration.status ===
+            "waitlist"
+        )
+        .sort(
+          (a, b) =>
+            (a.waitlistPosition ??
+              999999) -
+            (b.waitlistPosition ??
+              999999)
+        );
+    }, [courseRegistrations]);
+
+  /**
+   * 已經報名的系統長者 ID
+   */
+  const registeredElderIds =
+    useMemo(() => {
+      return new Set(
+        courseRegistrations
+          .filter(
+            (registration) =>
+              registration.elderId !==
+              undefined
+          )
+          .map(
+            (registration) =>
+              registration.elderId
+          )
+      );
+    }, [courseRegistrations]);
+
+  /**
+   * 還沒有報名這門課的系統長者
+   */
+  const availableElders =
+    useMemo(() => {
+      return elders.filter(
+        (elder) =>
+          !registeredElderIds.has(
+            elder.id
+          )
+      );
+    }, [
+      elders,
+      registeredElderIds,
+    ]);
+
+  /**
+   * 正取人數
    */
   const confirmedCount =
-    isCourse
-      ? courseAvailability
-        ? courseAvailability.confirmed_count
-        : 0
-      : currentActivityRegistrations.length;
+    confirmedRegistrations.length;
 
-  /*
-   * 剩餘名額
+  /**
+   * 剩餘正取名額
    */
   const remainingSeats =
-    isCourse
-      ? courseAvailability
-        ? courseAvailability.remaining_seats
-        : 0
-      : Math.max(
-          selectedCapacity -
-            currentActivityRegistrations.length,
+    selectedCourse
+      ? Math.max(
+          selectedCourse.capacity -
+            confirmedCount,
           0
+        )
+      : 0;
+
+  /**
+   * 切換報名方式
+   */
+  const handleModeChange = (
+    mode:
+      | "system"
+      | "manual"
+  ) => {
+    setRegistrationMode(
+      mode
+    );
+
+    setSelectedElderId(
+      null
+    );
+
+    setManualName("");
+
+    setManualPhone("");
+  };
+
+  /**
+   * 新增報名
+   *
+   * 使用 Supabase RPC：
+   * - 有名額 → 正取
+   * - 額滿 → 候補
+   */
+  const handleRegister =
+    async () => {
+      if (!selectedCourse) {
+        alert(
+          "找不到目前課程"
         );
-
-  /*
-   * 尋找既有長者
-   *
-   * 活動仍可沿用目前瀏覽器的長者資料。
-   * 公開課程的新流程不依賴這個結果。
-   */
-  const matchedElder =
-    useMemo(() => {
-      const trimmedName =
-        name.trim();
-
-      const trimmedPhone =
-        normalizePhone(phone);
+        return;
+      }
 
       if (
-        !trimmedName ||
-        !trimmedPhone
+        !selectedCourse.id
       ) {
-        return null;
+        alert(
+          "此課程缺少 ID，無法報名"
+        );
+        return;
       }
 
-      return (
-        elders.find(
-          (elder) =>
-            elder.name.trim() ===
-              trimmedName &&
-            normalizePhone(
-              elder.phone
-            ) ===
-              trimmedPhone
-        ) || null
-      );
-    }, [
-      elders,
-      name,
-      phone,
-    ]);
-
-  /*
-   * 活動使用原本的前端重複報名判斷。
-   *
-   * 課程改由 Supabase RPC 在資料庫內
-   * 做真正的重複判斷。
-   */
-  const alreadyRegistered =
-    useMemo(() => {
-      if (isCourse) {
-        return false;
-      }
-
-      const trimmedName =
-        name.trim();
-
-      const trimmedPhone =
-        normalizePhone(phone);
+      let name = "";
+      let phone = "";
 
       if (
-        !trimmedName ||
-        !trimmedPhone
+        registrationMode ===
+        "system"
       ) {
-        return false;
-      }
-
-      return currentActivityRegistrations.some(
-        (registration) => {
-          if (
-            matchedElder &&
-            registration.elderId ===
-              matchedElder.id
-          ) {
-            return true;
-          }
-
-          const registrationName =
-            getStoredElderName(
-              registration,
-              elders
-            ).trim();
-
-          const registrationPhone =
-            normalizePhone(
-              getStoredElderPhone(
-                registration,
-                elders
-              )
-            );
-
-          return (
-            registrationName ===
-              trimmedName &&
-            registrationPhone ===
-              trimmedPhone
+        if (
+          selectedElderId ===
+          null
+        ) {
+          alert(
+            "請先選擇長者"
           );
+          return;
         }
-      );
-    }, [
-      currentActivityRegistrations,
-      elders,
-      isCourse,
-      matchedElder,
-      name,
-      phone,
-    ]);
 
-  /*
-   * 找不到目前項目
-   */
-  const hasSelectedItem =
-    isActivity
-      ? selectedActivity !== null
-      : isCourse
-        ? selectedCourse !== null
-        : false;
+        const selectedElder =
+          elders.find(
+            (elder) =>
+              elder.id ===
+              selectedElderId
+          );
 
-  /*
-   * 課程是否仍在等待名額資料
-   */
-  const courseDataLoading =
-    isCourse &&
-    (courseLoading ||
-      availabilityLoading);
+        if (!selectedElder) {
+          alert(
+            "找不到這位長者資料"
+          );
+          return;
+        }
 
-  /*
-   * 報名
-   */
-  const handleSubmit = async () => {
-    if (!hasSelectedItem) {
-      alert(
-        "找不到這個活動或課程，請確認報名連結是否正確。"
-      );
-      return;
-    }
+        name =
+          selectedElder.name;
 
-    const trimmedName =
-      name.trim();
+        phone =
+          selectedElder.phone;
+      } else {
+        name =
+          manualName.trim();
 
-    const trimmedPhone =
-      phone.trim();
+        phone =
+          manualPhone.trim();
 
-    const normalizedPhone =
-      normalizePhone(phone);
+        if (!name) {
+          alert(
+            "請輸入姓名"
+          );
+          return;
+        }
 
-    if (!trimmedName) {
-      alert("請輸入姓名。");
-      return;
-    }
 
-    // 課程報名的電話改為選填；活動報名仍維持電話必填。
-    if (!isCourse && !trimmedPhone) {
-      alert("請輸入電話。");
-      return;
-    }
+      }
 
-    if (
-      trimmedPhone &&
-      normalizedPhone.length < 8
-    ) {
-      alert(
-        "請輸入正確的電話號碼。"
-      );
-      return;
-    }
+      setSaving(true);
 
-    if (
-      isActivity &&
-      remainingSeats <= 0
-    ) {
-      alert(
-        "此活動已額滿。"
-      );
-      return;
-    }
-
-    if (
-      isActivity &&
-      alreadyRegistered
-    ) {
-      alert(
-        "您已經報名此活動，請勿重複報名。"
-      );
-      return;
-    }
-
-    if (
-      isCourse &&
-      courseId === null
-    ) {
-      alert(
-        "找不到課程編號，請確認報名連結是否正確。"
-      );
-      return;
-    }
-
-    setSubmitting(true);
-
-    try {
-      /*
-       * =========================
-       * 課程：使用 Supabase RPC
-       * =========================
-       */
-      if (isCourse) {
+      try {
         const {
           data,
           error,
         } = await supabase.rpc(
           "register_for_course",
           {
-            p_course_id: courseId,
-            p_name: trimmedName,
-            p_phone: normalizedPhone || null,
+            p_course_id:
+              selectedCourse.id,
+            p_name: name,
+            p_phone:
+              normalizePhone(
+                phone
+              ),
           }
         );
 
         if (error) {
           console.error(
-            "課程報名失敗：",
+            "新增課程報名失敗：",
             error
           );
 
           alert(
-            "報名失敗，請稍後再試。"
+            "新增報名失敗，請稍後再試。"
           );
 
           return;
         }
 
         const result =
-          (
-            Array.isArray(data)
-              ? data[0]
-              : data
-          ) as
-            | RegistrationResult
-            | undefined;
+          Array.isArray(data)
+            ? data[0]
+            : data;
 
-        if (!result) {
+        if (
+          !result?.success
+        ) {
           alert(
-            "報名系統沒有回傳結果，請稍後再試。"
-          );
-
-          return;
-        }
-
-        if (!result.success) {
-          alert(
-            result.message ||
+            result?.message ||
               "目前無法完成報名。"
           );
 
           return;
         }
 
-        setRegistrationStatus(
-          result.registration_status
+        if (
+          result.registration_status ===
+          "waitlist"
+        ) {
+          alert(
+            `課程已額滿，已加入候補第 ${result.waitlist_position} 位。`
+          );
+        } else {
+          alert(
+            "報名成功"
+          );
+        }
+
+        if (
+          registrationMode ===
+          "system"
+        ) {
+          setSelectedElderId(
+            null
+          );
+        } else {
+          setManualName("");
+
+          setManualPhone("");
+        }
+
+        await reloadRegistrations();
+      } catch (error) {
+        console.error(
+          "新增課程報名發生錯誤：",
+          error
         );
 
-        setWaitlistPosition(
-          result.waitlist_position
+        alert(
+          "新增報名發生錯誤，請稍後再試。"
         );
+      } finally {
+        setSaving(false);
+      }
+    };
 
-        setCourseAvailability({
-          confirmed_count:
-            Number(
-              result.confirmed_count ??
-                0
-            ),
-          capacity:
-            courseAvailability?.capacity ??
-            selectedCapacity,
-          remaining_seats:
-            Number(
-              result.remaining_seats ??
-                0
-            ),
-        });
-
-        setName("");
-        setPhone("");
-        setSubmitted(true);
-
+  /**
+   * 重新讀取報名資料
+   */
+  const reloadRegistrations =
+    async () => {
+      if (
+        !selectedCourse?.id
+      ) {
         return;
       }
 
-      /*
-       * =========================
-       * 活動：維持 LocalStorage
-       * =========================
-       */
-      const newRegistration: StoredRegistration =
-        {
-          id: Date.now(),
+      setLoading(true);
 
-          ...(activityId !== null
-            ? {
-                activityId:
-                  activityId,
-              }
-            : {}),
+      try {
+        const {
+          data,
+          error,
+        } = await supabase
+          .from(
+            "course_registrations"
+          )
+          .select(
+            "id, course_id, name, phone, registered_at, status, waitlist_position"
+          )
+          .eq(
+            "course_id",
+            selectedCourse.id
+          )
+          .order(
+            "registered_at",
+            {
+              ascending: true,
+            }
+          );
 
-          elderId:
-            matchedElder?.id,
+        if (error) {
+          console.error(
+            "重新讀取課程報名資料失敗：",
+            error
+          );
 
-          name:
-            trimmedName,
+          return;
+        }
 
-          phone:
-            trimmedPhone,
+        const mapped =
+          (
+            data as SupabaseRegistration[]
+          ).map(
+            (
+              item
+            ): CourseRegistration => {
+              const matchedElder =
+                elders.find(
+                  (elder) =>
+                    normalizePhone(
+                      elder.phone
+                    ) ===
+                    normalizePhone(
+                      item.phone
+                    )
+                );
 
-          registeredAt:
-            new Date().toISOString(),
-        };
+              return {
+                id: item.id,
 
-      setRegistrations(
-        (prev) => [
-          ...prev,
-          newRegistration,
-        ]
-      );
+                courseId:
+                  item.course_id,
 
-      setRegistrationStatus(
-        "confirmed"
-      );
+                elderId:
+                  matchedElder?.id,
 
-      setWaitlistPosition(
-        null
-      );
+                name:
+                  item.name,
 
-      setName("");
-      setPhone("");
-      setSubmitted(true);
-    } catch (error) {
-      console.error(
-        "報名發生錯誤：",
-        error
-      );
+                phone:
+                  item.phone,
 
-      alert(
-        "報名發生錯誤，請稍後再試。"
-      );
-    } finally {
-      setSubmitting(false);
-    }
-  };
+                registeredAt:
+                  item.registered_at,
 
-  /*
-   * 沒有 courseId / activityId
+                status:
+                  item.status,
+
+                waitlistPosition:
+                  item.waitlist_position,
+              };
+            }
+          );
+console.log(
+  "🟣 報名 mapped：",
+  mapped
+);
+        setRegistrations(
+          mapped
+        );
+      } catch (error) {
+        console.error(
+          "重新讀取課程報名資料發生錯誤：",
+          error
+        );
+      } finally {
+        setLoading(false);
+      }
+    };
+
+  /**
+   * 取消報名
+   *
+   * 使用 Supabase RPC：
+   * - 正取取消 → 釋放名額
+   * - 若有候補 → 第一位候補自動遞補
+   * - 候補取消 → 自動重新整理候補順位
    */
-  if (
-    courseId === null &&
-    activityId === null
-  ) {
-    return (
-      <main
-        style={pageStyle}
-      >
-        <div
-          style={cardStyle}
-        >
-          <h1
-            style={titleStyle}
-          >
-            SilverCare 報名
-          </h1>
+  const handleCancelRegistration =
+    async (
+      registrationId: number
+    ) => {
+      const registration =
+        courseRegistrations.find(
+          (item) =>
+            item.id ===
+            registrationId
+        );
 
-          <div
-            style={{
-              padding: 20,
-              background:
-                "#FEF2F2",
-              borderRadius:
-                radius.md,
-              color:
-                "#B91C1C",
-              textAlign:
-                "center",
-            }}
-          >
-            找不到報名對象，
-            請確認報名連結是否正確。
-          </div>
+      if (!registration) {
+        alert(
+          "找不到這筆報名資料。"
+        );
+        return;
+      }
+
+      const confirmed =
+        window.confirm(
+          `確定要取消「${registration.name}」的報名嗎？`
+        );
+
+      if (!confirmed) {
+        return;
+      }
+
+      setCancellingId(
+        registrationId
+      );
+
+      try {
+        const {
+          data,
+          error,
+        } = await supabase.rpc(
+          "cancel_course_registration",
+          {
+            p_registration_id:
+              registrationId,
+          }
+        );
+
+        if (error) {
+          console.error(
+            "取消課程報名失敗：",
+            error
+          );
+
+          alert(
+            "取消報名失敗，請稍後再試。"
+          );
+
+          return;
+        }
+
+        const result =
+          Array.isArray(data)
+            ? data[0]
+            : data;
+
+        if (
+          !result?.success
+        ) {
+          alert(
+            result?.message ||
+              "目前無法取消報名。"
+          );
+
+          return;
+        }
+
+        if (
+          result.promoted_name
+        ) {
+          alert(
+            `已取消「${registration.name}」的報名。\n「${result.promoted_name}」已從候補遞補為正取。`
+          );
+        } else {
+          alert(
+            `已取消「${registration.name}」的報名。`
+          );
+        }
+
+        await reloadRegistrations();
+      } catch (error) {
+        console.error(
+          "取消課程報名發生錯誤：",
+          error
+        );
+
+        alert(
+          "取消報名發生錯誤，請稍後再試。"
+        );
+      } finally {
+        setCancellingId(
+          null
+        );
+      }
+    };
+
+  return (
+    <div
+      style={{
+        background:
+          colors.card,
+        borderRadius:
+          radius.lg,
+        boxShadow:
+          shadow.md,
+        padding: 24,
+      }}
+    >
+      <h2
+        style={{
+          marginTop: 0,
+          marginBottom: 24,
+          color:
+            colors.primary,
+        }}
+      >
+        課程報名管理
+      </h2>
+
+      {!selectedCourse ? (
+        <div
+          style={{
+            padding: 24,
+            textAlign: "center",
+            color:
+              "#6B7280",
+            background:
+              "#F9FAFB",
+            borderRadius:
+              radius.md,
+          }}
+        >
+          找不到目前課程資料
         </div>
-      </main>
-    );
-  }
-
-  /*
-   * 課程載入中
-   */
-  if (courseDataLoading) {
-    return (
-      <main
-        style={pageStyle}
-      >
-        <div
-          style={cardStyle}
-        >
-          <h1
-            style={titleStyle}
-          >
-            SilverCare 報名
-          </h1>
-
+      ) : (
+        <>
+          {/* 課程資訊 */}
           <div
             style={{
               padding: 20,
@@ -1159,369 +916,17 @@ export default function CourseRegisterPage() {
                 "#F7FAFC",
               borderRadius:
                 radius.md,
-              color:
-                "#6B7280",
-              textAlign:
-                "center",
-            }}
-          >
-            正在讀取課程資料...
-          </div>
-        </div>
-      </main>
-    );
-  }
-
-  /*
-   * 找不到課程或活動
-   */
-  if (!hasSelectedItem) {
-    return (
-      <main
-        style={pageStyle}
-      >
-        <div
-          style={cardStyle}
-        >
-          <h1
-            style={titleStyle}
-          >
-            SilverCare 報名
-          </h1>
-
-          <div
-            style={{
-              padding: 20,
-              background:
-                "#FEF2F2",
-              borderRadius:
-                radius.md,
-              color:
-                "#B91C1C",
-              textAlign:
-                "center",
-            }}
-          >
-            找不到這個活動或課程，
-            請確認報名連結是否正確。
-          </div>
-        </div>
-      </main>
-    );
-  }
-
-  /*
-   * 報名成功 / 候補畫面
-   */
-  if (submitted) {
-    const isWaitlist =
-      isCourse &&
-      registrationStatus ===
-        "waitlist";
-
-    return (
-      <main
-        style={pageStyle}
-      >
-        <div
-          style={cardStyle}
-        >
-          <div
-            style={{
-              textAlign:
-                "center",
-              marginBottom:
-                24,
-            }}
-          >
-            <h1
-              style={titleStyle}
-            >
-              {isWaitlist
-                ? "候補登記成功"
-                : "報名成功"}
-            </h1>
-
-            <p
-              style={{
-                margin: 0,
-                color:
-                  "#6B7280",
-                lineHeight: 1.8,
-              }}
-            >
-              {isWaitlist
-                ? "您的資料已加入候補名單："
-                : "您已成功報名："}
-            </p>
-          </div>
-
-          <div
-            style={{
-              background:
-                "#F7FAFC",
-              borderRadius:
-                radius.md,
-              padding: 20,
               marginBottom: 24,
             }}
           >
             <div
               style={{
-                fontSize: 20,
-                fontWeight: 700,
-                color:
-                  colors.primary,
+                display: "grid",
+                gridTemplateColumns:
+                  "repeat(4, 1fr)",
+                gap: 16,
               }}
             >
-              {selectedTitle}
-            </div>
-
-            <div
-              style={{
-                marginTop: 8,
-                color:
-                  "#6B7280",
-              }}
-            >
-              {formatDate(
-                selectedDate
-              )}
-              {"　"}
-              {
-                selectedStartTime
-              }
-              {" ~ "}
-              {
-                selectedEndTime
-              }
-            </div>
-
-            {selectedTeacher && (
-              <div
-                style={{
-                  marginTop: 4,
-                  color:
-                    "#6B7280",
-                }}
-              >
-                老師：
-                {
-                  selectedTeacher
-                }
-              </div>
-            )}
-
-            {selectedLocation && (
-              <div
-                style={{
-                  marginTop: 4,
-                  color:
-                    "#6B7280",
-                }}
-              >
-                地點：
-                {
-                  selectedLocation
-                }
-              </div>
-            )}
-
-            {isWaitlist &&
-              waitlistPosition !==
-                null && (
-                <div
-                  style={{
-                    marginTop: 16,
-                    padding: 14,
-                    background:
-                      "#FFF7ED",
-                    borderRadius:
-                      radius.md,
-                    color:
-                      "#C2410C",
-                    fontWeight: 700,
-                    textAlign:
-                      "center",
-                  }}
-                >
-                  您目前為候補第{" "}
-                  {
-                    waitlistPosition
-                  }{" "}
-                  位
-                </div>
-              )}
-          </div>
-
-          <p
-            style={{
-              color:
-                "#374151",
-              textAlign:
-                "center",
-              lineHeight: 1.8,
-            }}
-          >
-            {isWaitlist
-              ? "若有名額釋出，將依候補順序通知。"
-              : "請依據點通知的時間準時參加。"}
-          </p>
-
-          <div
-            style={{
-              marginTop: 28,
-              paddingTop: 20,
-              borderTop:
-                "1px solid #E5E7EB",
-              textAlign:
-                "center",
-              color:
-                "#9CA3AF",
-              fontSize: 12,
-            }}
-          >
-            SilverCare
-            智慧據點管理平台
-          </div>
-        </div>
-      </main>
-    );
-  }
-
-  return (
-    <main
-      style={pageStyle}
-    >
-      <div
-        style={cardStyle}
-      >
-        <div
-          style={{
-            textAlign:
-              "center",
-            marginBottom:
-              28,
-          }}
-        >
-          <h1
-            style={titleStyle}
-          >
-            SilverCare
-            {isActivity
-              ? " 活動報名"
-              : " 課程報名"}
-          </h1>
-
-          <p
-            style={{
-              margin: 0,
-              color:
-                "#6B7280",
-            }}
-          >
-            歡迎報名據點
-            {isActivity
-              ? "活動"
-              : "課程"}
-          </p>
-        </div>
-
-        {/* 活動 / 課程資訊 */}
-        <div
-          style={{
-            background:
-              "#F7FAFC",
-            borderRadius:
-              radius.md,
-            padding: 20,
-            marginBottom: 24,
-          }}
-        >
-          <div
-            style={{
-              color:
-                "#6B7280",
-              fontSize: 13,
-            }}
-          >
-            {isActivity
-              ? "活動名稱"
-              : "課程名稱"}
-          </div>
-
-          <div
-            style={{
-              marginTop: 6,
-              fontSize: 22,
-              fontWeight: 700,
-              color:
-                colors.primary,
-            }}
-          >
-            {selectedTitle}
-          </div>
-
-          <div
-            style={{
-              display: "grid",
-              gridTemplateColumns:
-                "1fr 1fr",
-              gap: 12,
-              marginTop: 16,
-            }}
-          >
-            <div>
-              <div
-                style={{
-                  color:
-                    "#6B7280",
-                  fontSize: 13,
-                }}
-              >
-                日期
-              </div>
-
-              <div
-                style={{
-                  marginTop: 4,
-                  fontWeight: 600,
-                }}
-              >
-                {formatDate(
-                  selectedDate
-                )}
-              </div>
-            </div>
-
-            <div>
-              <div
-                style={{
-                  color:
-                    "#6B7280",
-                  fontSize: 13,
-                }}
-              >
-                時間
-              </div>
-
-              <div
-                style={{
-                  marginTop: 4,
-                  fontWeight: 600,
-                }}
-              >
-                {
-                  selectedStartTime
-                }
-                {" ~ "}
-                {
-                  selectedEndTime
-                }
-              </div>
-            </div>
-
-            {isCourse && (
               <div>
                 <div
                   style={{
@@ -1530,7 +935,7 @@ export default function CourseRegisterPage() {
                     fontSize: 13,
                   }}
                 >
-                  老師
+                  課程
                 </div>
 
                 <div
@@ -1540,477 +945,874 @@ export default function CourseRegisterPage() {
                   }}
                 >
                   {
-                    selectedTeacher ||
-                    "-"
+                    selectedCourse.title
                   }
                 </div>
               </div>
-            )}
 
-            <div>
-              <div
-                style={{
-                  color:
-                    "#6B7280",
-                  fontSize: 13,
-                }}
-              >
-                {isActivity
-                  ? "地點"
-                  : "教室"}
+              <div>
+                <div
+                  style={{
+                    color:
+                      "#6B7280",
+                    fontSize: 13,
+                  }}
+                >
+                  日期
+                </div>
+
+                <div
+                  style={{
+                    marginTop: 4,
+                    fontWeight: 600,
+                  }}
+                >
+                  {formatDate(
+                    selectedCourse.date
+                  )}
+                </div>
               </div>
 
-              <div
-                style={{
-                  marginTop: 4,
-                  fontWeight: 600,
-                }}
-              >
-                {
-                  selectedLocation ||
-                  "-"
-                }
+              <div>
+                <div
+                  style={{
+                    color:
+                      "#6B7280",
+                    fontSize: 13,
+                  }}
+                >
+                  正取人數
+                </div>
+
+                <div
+                  style={{
+                    marginTop: 4,
+                    fontWeight: 600,
+                  }}
+                >
+                  {confirmedCount}
+                  {" / "}
+                  {
+                    selectedCourse.capacity
+                  }
+                  {" 人"}
+                </div>
+              </div>
+
+              <div>
+                <div
+                  style={{
+                    color:
+                      "#6B7280",
+                    fontSize: 13,
+                  }}
+                >
+                  剩餘名額
+                </div>
+
+                <div
+                  style={{
+                    marginTop: 4,
+                    fontWeight: 700,
+                    color:
+                      remainingSeats ===
+                      0
+                        ? "#DC2626"
+                        : "#198754",
+                  }}
+                >
+                  {remainingSeats}
+                  {" 人"}
+                </div>
               </div>
             </div>
           </div>
 
-          <div
-            style={{
-              marginTop: 16,
-              paddingTop: 16,
-              borderTop:
-                "1px solid #E5E7EB",
-              display: "flex",
-              justifyContent:
-                "space-between",
-              alignItems:
-                "center",
-            }}
-          >
-            <span
-              style={{
-                color:
-                  "#6B7280",
-              }}
-            >
-              已報名人數
-            </span>
-
-            <strong
-              style={{
-                color:
-                  colors.primary,
-                fontSize: 18,
-              }}
-            >
-              {
-                confirmedCount
-              }
-              {" / "}
-              {selectedCapacity}
-              {" 人"}
-            </strong>
-          </div>
-
-          <div
-            style={{
-              marginTop: 10,
-              display: "flex",
-              justifyContent:
-                "space-between",
-              alignItems:
-                "center",
-            }}
-          >
-            <span
-              style={{
-                color:
-                  "#6B7280",
-              }}
-            >
-              {isCourse &&
-              remainingSeats === 0
-                ? "目前狀態"
-                : "剩餘名額"}
-            </span>
-
-            <strong
-              style={{
-                color:
-                  isCourse &&
-                  remainingSeats ===
-                    0
-                    ? "#C2410C"
-                    : remainingSeats ===
-                        0
-                      ? "#DC2626"
-                      : "#198754",
-                fontSize: 18,
-              }}
-            >
-              {isCourse &&
-              remainingSeats ===
-                0
-                ? "已額滿，可候補"
-                : `${remainingSeats} 人`}
-            </strong>
-          </div>
-        </div>
-
-        {isCourse &&
-        remainingSeats === 0 ? (
-          <>
+          {loading && (
             <div
               style={{
-                padding: 16,
+                marginBottom: 20,
+                padding: 14,
                 background:
-                  "#FFF7ED",
+                  "#F7FAFC",
                 borderRadius:
                   radius.md,
                 color:
-                  "#C2410C",
+                  "#6B7280",
                 textAlign:
                   "center",
-                marginBottom: 24,
-                lineHeight: 1.7,
               }}
             >
-              此課程目前已額滿，
-              <br />
-              仍可登記候補。
+              正在同步報名資料...
+            </div>
+          )}
+
+          {/* 報名方式 */}
+          <div
+            style={{
+              marginBottom: 20,
+            }}
+          >
+            <div
+              style={{
+                marginBottom: 10,
+                fontWeight: 600,
+              }}
+            >
+              報名方式
             </div>
 
-            <h2
+            <div
               style={{
-                marginTop: 0,
-                color:
-                  colors.primary,
-                fontSize: 20,
+                display: "flex",
+                gap: 10,
               }}
             >
-              登記候補
-            </h2>
+              <button
+                type="button"
+                onClick={() =>
+                  handleModeChange(
+                    "system"
+                  )
+                }
+                style={{
+                  padding:
+                    "10px 18px",
+                  borderRadius:
+                    radius.md,
+                  border:
+                    registrationMode ===
+                    "system"
+                      ? "none"
+                      : "1px solid #D1D5DB",
+                  background:
+                    registrationMode ===
+                    "system"
+                      ? colors.primary
+                      : "#fff",
+                  color:
+                    registrationMode ===
+                    "system"
+                      ? "#fff"
+                      : "#374151",
+                  cursor:
+                    "pointer",
+                  fontWeight: 600,
+                }}
+              >
+                系統內長者
+              </button>
 
-            <p
+              <button
+                type="button"
+                onClick={() =>
+                  handleModeChange(
+                    "manual"
+                  )
+                }
+                style={{
+                  padding:
+                    "10px 18px",
+                  borderRadius:
+                    radius.md,
+                  border:
+                    registrationMode ===
+                    "manual"
+                      ? "none"
+                      : "1px solid #D1D5DB",
+                  background:
+                    registrationMode ===
+                    "manual"
+                      ? colors.primary
+                      : "#fff",
+                  color:
+                    registrationMode ===
+                    "manual"
+                      ? "#fff"
+                      : "#374151",
+                  cursor:
+                    "pointer",
+                  fontWeight: 600,
+                }}
+              >
+                非系統長者
+              </button>
+            </div>
+          </div>
+
+          {/* 系統長者 */}
+          {registrationMode ===
+            "system" && (
+            <div
               style={{
-                color:
-                  "#6B7280",
-                fontSize: 14,
-                lineHeight: 1.7,
+                marginBottom: 20,
               }}
             >
-              若有名額釋出，
-              將依候補順序通知。
-            </p>
+              <label
+                style={{
+                  display: "block",
+                  marginBottom: 8,
+                  fontWeight: 600,
+                }}
+              >
+                選擇長者
+              </label>
 
-            <RegistrationForm
-              name={name}
-              phone={phone}
-              setName={setName}
-              setPhone={setPhone}
-              matchedElder={matchedElder}
-              alreadyRegistered={
-                alreadyRegistered
-              }
-              submitting={submitting}
-              handleSubmit={
-                handleSubmit
-              }
-              buttonText={
-                "加入候補名單"
-              }
-              isCourse={isCourse}
-            />
-          </>
-        ) : (
-          <>
-            <h2
+              <select
+                value={
+                  selectedElderId ?? ""
+                }
+                onChange={(e) => {
+                  const value =
+                    e.target.value;
+
+                  setSelectedElderId(
+                    value
+                      ? Number(
+                          value
+                        )
+                      : null
+                  );
+                }}
+                disabled={
+                  saving ||
+                  availableElders.length ===
+                    0
+                }
+                style={{
+                  width: "100%",
+                  padding: 10,
+                  border:
+                    "1px solid #ddd",
+                  borderRadius:
+                    radius.md,
+                  boxSizing:
+                    "border-box",
+                  background:
+                    "#fff",
+                }}
+              >
+                <option value="">
+                  {availableElders.length ===
+                  0
+                    ? "目前沒有可報名長者"
+                    : "請選擇長者"}
+                </option>
+
+                {availableElders.map(
+                  (elder) => (
+                    <option
+                      key={
+                        elder.id
+                      }
+                      value={
+                        elder.id
+                      }
+                    >
+                      {
+                        elder.name
+                      }
+                      {"　"}
+                      {
+                        elder.phone
+                      }
+                    </option>
+                  )
+                )}
+              </select>
+            </div>
+          )}
+
+          {/* 非系統長者 */}
+          {registrationMode ===
+            "manual" && (
+            <div
               style={{
-                marginTop: 0,
-                color:
-                  colors.primary,
-                fontSize: 20,
+                display: "grid",
+                gridTemplateColumns:
+                  "1fr 1fr",
+                gap: 16,
+                marginBottom: 20,
               }}
             >
-              填寫報名資料
-            </h2>
+              <div>
+                <label
+                  style={{
+                    display:
+                      "block",
+                    marginBottom: 8,
+                    fontWeight: 600,
+                  }}
+                >
+                  姓名
+                </label>
 
-            <p
-              style={{
-                color:
-                  "#6B7280",
-                fontSize: 14,
-                lineHeight: 1.7,
-              }}
-            >
-              不需要先加入系統。
-              <br />
-              姓名為必填，電話可選填。
-            </p>
+                <input
+                  type="text"
+                  value={
+                    manualName
+                  }
+                  onChange={(e) =>
+                    setManualName(
+                      e.target.value
+                    )
+                  }
+                  placeholder="請輸入姓名"
+                  style={{
+                    width: "100%",
+                    padding: 10,
+                    border:
+                      "1px solid #ddd",
+                    borderRadius:
+                      radius.md,
+                    boxSizing:
+                      "border-box",
+                  }}
+                />
+              </div>
 
-            <RegistrationForm
-              name={name}
-              phone={phone}
-              setName={setName}
-              setPhone={setPhone}
-              matchedElder={matchedElder}
-              alreadyRegistered={
-                alreadyRegistered
-              }
-              submitting={submitting}
-              handleSubmit={
-                handleSubmit
-              }
-              buttonText={
-                isActivity
-                  ? "確認報名"
-                  : "確認報名"
-              }
-              isCourse={isCourse}
-            />
-          </>
-        )}
+              <div>
+                <label
+                  style={{
+                    display:
+                      "block",
+                    marginBottom: 8,
+                    fontWeight: 600,
+                  }}
+                >
+                  電話
+                </label>
 
-        <div
-          style={{
-            marginTop: 28,
-            paddingTop: 20,
-            borderTop:
-              "1px solid #E5E7EB",
-            textAlign:
-              "center",
-            color:
-              "#9CA3AF",
-            fontSize: 12,
-          }}
-        >
-          SilverCare
-          智慧據點管理平台
-        </div>
-      </div>
-    </main>
-  );
-}
-
-type RegistrationFormProps = {
-  name: string;
-  phone: string;
-  setName: (
-    value: string
-  ) => void;
-  setPhone: (
-    value: string
-  ) => void;
-  matchedElder: Elder | null;
-  alreadyRegistered: boolean;
-  submitting: boolean;
-  handleSubmit: () => void;
-  buttonText: string;
-  isCourse: boolean;
-};
-
-function RegistrationForm({
-  name,
-  phone,
-  setName,
-  setPhone,
-  matchedElder,
-  alreadyRegistered,
-  submitting,
-  handleSubmit,
-  buttonText,
-  isCourse,
-}: RegistrationFormProps) {
-  return (
-    <div
-      style={{
-        display: "flex",
-        flexDirection:
-          "column",
-        gap: 18,
-        marginTop: 20,
-      }}
-    >
-      <div>
-        <label
-          style={labelStyle}
-        >
-          姓名
-        </label>
-
-        <input
-          type="text"
-          value={name}
-          onChange={(e) => {
-            setName(
-              e.target.value
-            );
-          }}
-          placeholder="請輸入您的姓名"
-          style={inputStyle}
-        />
-      </div>
-
-      <div>
-        <label
-          style={labelStyle}
-        >
-          電話{isCourse ? "（選填）" : ""}
-        </label>
-
-        <input
-          type="tel"
-          value={phone}
-          onChange={(e) => {
-            setPhone(
-              e.target.value
-            );
-          }}
-          placeholder={
-            isCourse
-              ? "請輸入您的電話（選填）"
-              : "請輸入您的電話"
-          }
-          style={inputStyle}
-        />
-      </div>
-
-      {matchedElder && (
-        <div
-          style={{
-            padding: 14,
-            background:
-              "#ECFDF5",
-            borderRadius:
-              radius.md,
-            color:
-              "#047857",
-            fontSize: 14,
-          }}
-        >
-          ✓ 已找到您的長者資料，
-          報名後會自動對應到系統中的長者。
-        </div>
-      )}
-
-      {alreadyRegistered && (
-        <div
-          style={{
-            padding: 14,
-            background:
-              "#FEF2F2",
-            borderRadius:
-              radius.md,
-            color:
-              "#B91C1C",
-            fontSize: 14,
-          }}
-        >
-          您已經報名此活動，
-          無需重複報名。
-        </div>
-      )}
-
-      <button
-        type="button"
-        onClick={
-          handleSubmit
-        }
-        disabled={
-          submitting ||
-          alreadyRegistered
-        }
-        style={{
-          width: "100%",
-          marginTop: 4,
-          background:
-            colors.primary,
-          color: "#fff",
-          border: "none",
-          borderRadius:
-            radius.md,
-          padding:
-            "13px 20px",
-          cursor:
-            submitting ||
-            alreadyRegistered
-              ? "not-allowed"
-              : "pointer",
-          fontWeight: 700,
-          fontSize: 16,
-          opacity:
-            submitting ||
-            alreadyRegistered
-              ? 0.5
-              : 1,
-        }}
-      >
-        {submitting
-          ? "處理中..."
-          : alreadyRegistered
-            ? "已完成報名"
-            : buttonText}
-      </button>
-    </div>
-  );
-}
-
-const pageStyle:
-  React.CSSProperties = {
-    minHeight: "100vh",
-    background:
-      colors.background,
-    padding: 24,
-    display: "flex",
-    justifyContent:
-      "center",
-    alignItems:
-      "flex-start",
-    boxSizing:
-      "border-box",
-  };
-
-const cardStyle:
-  React.CSSProperties = {
+               <input
+  type="tel"
+  value={
+    manualPhone
+  }
+  onChange={(e) =>
+    setManualPhone(
+      e.target.value
+    )
+  }
+  placeholder="請輸入電話（選填）"
+  style={{
     width: "100%",
-    maxWidth: 620,
-    background: "#fff",
-    borderRadius:
-      radius.lg,
-    boxShadow:
-      shadow.md,
-    padding: 28,
-    boxSizing:
-      "border-box",
-  };
-
-const titleStyle:
-  React.CSSProperties = {
-    marginTop: 0,
-    marginBottom: 8,
-    color: colors.primary,
-    fontSize: 28,
-  };
-
-const labelStyle:
-  React.CSSProperties = {
-    display: "block",
-    marginBottom: 6,
-    fontWeight: 600,
-    color: "#374151",
-  };
-
-const inputStyle:
-  React.CSSProperties = {
-    width: "100%",
-    padding: "12px 14px",
+    padding: 10,
     border:
-      "1px solid #D1D5DB",
+      "1px solid #ddd",
     borderRadius:
       radius.md,
     boxSizing:
       "border-box",
-    fontSize: 16,
-    outline: "none",
-    background: "#fff",
-  };
+  }}
+
+                />
+              </div>
+            </div>
+          )}
+
+          {/* 新增報名 */}
+          <div
+            style={{
+              display: "flex",
+              justifyContent:
+                "flex-end",
+              marginTop: 8,
+            }}
+          >
+            <button
+              type="button"
+              onClick={
+                handleRegister
+              }
+              disabled={saving}
+              style={{
+                background:
+                  colors.primary,
+                color: "#fff",
+                border: "none",
+                borderRadius:
+                  radius.md,
+                padding:
+                  "10px 20px",
+                cursor:
+                  saving
+                    ? "not-allowed"
+                    : "pointer",
+                fontWeight: 600,
+                opacity:
+                  saving ? 0.5 : 1,
+              }}
+            >
+              {saving
+                ? "處理中..."
+                : "＋ 新增報名"}
+            </button>
+          </div>
+        </>
+      )}
+
+      {/* 正取名單 */}
+      <div
+        style={{
+          marginTop: 28,
+        }}
+      >
+        <h3
+          style={{
+            marginTop: 0,
+            marginBottom: 12,
+            color:
+              colors.primary,
+          }}
+        >
+          正取名單
+        </h3>
+
+        {confirmedRegistrations.length ===
+        0 ? (
+          <div
+            style={{
+              padding: 24,
+              textAlign:
+                "center",
+              color:
+                "#6B7280",
+              background:
+                "#F9FAFB",
+              borderRadius:
+                radius.md,
+            }}
+          >
+            目前尚無正取報名
+          </div>
+        ) : (
+          <table
+            style={{
+              width: "100%",
+              borderCollapse:
+                "collapse",
+            }}
+          >
+            <thead>
+              <tr
+                style={{
+                  background:
+                    "#F7FAFC",
+                }}
+              >
+                <th
+                  style={{
+                    padding: 12,
+                    textAlign:
+                      "left",
+                    borderBottom:
+                      "1px solid #E5E7EB",
+                  }}
+                >
+                  姓名
+                </th>
+
+                <th
+                  style={{
+                    padding: 12,
+                    textAlign:
+                      "left",
+                    borderBottom:
+                      "1px solid #E5E7EB",
+                  }}
+                >
+                  電話
+                </th>
+
+                <th
+                  style={{
+                    padding: 12,
+                    textAlign:
+                      "left",
+                    borderBottom:
+                      "1px solid #E5E7EB",
+                  }}
+                >
+                  報名時間
+                </th>
+
+                <th
+                  style={{
+                    padding: 12,
+                    textAlign:
+                      "center",
+                    borderBottom:
+                      "1px solid #E5E7EB",
+                  }}
+                >
+                  操作
+                </th>
+              </tr>
+            </thead>
+
+            <tbody>
+              {confirmedRegistrations.map(
+                (
+                  registration
+                ) => (
+                  <tr
+                    key={
+                      registration.id
+                    }
+                  >
+                    <td
+                      style={{
+                        padding: 12,
+                        borderBottom:
+                          "1px solid #F3F4F6",
+                      }}
+                    >
+                      {
+                        registration.name
+                      }
+                    </td>
+
+                    <td
+                      style={{
+                        padding: 12,
+                        borderBottom:
+                          "1px solid #F3F4F6",
+                      }}
+                    >
+                      {
+                        registration.phone ||
+                        "-"
+                      }
+                    </td>
+
+                    <td
+                      style={{
+                        padding: 12,
+                        borderBottom:
+                          "1px solid #F3F4F6",
+                      }}
+                    >
+                      {new Date(
+                        registration.registeredAt
+                      ).toLocaleString(
+                        "zh-TW"
+                      )}
+                    </td>
+
+                    <td
+                      style={{
+                        padding: 12,
+                        textAlign:
+                          "center",
+                        borderBottom:
+                          "1px solid #F3F4F6",
+                      }}
+                    >
+                      <button
+                        type="button"
+                        onClick={() =>
+                          handleCancelRegistration(
+                            registration.id
+                          )
+                        }
+                        disabled={
+                          cancellingId ===
+                          registration.id
+                        }
+                        style={{
+                          background:
+                            "#DC2626",
+                          color:
+                            "#fff",
+                          border:
+                            "none",
+                          borderRadius:
+                            radius.sm,
+                          padding:
+                            "6px 12px",
+                          cursor:
+                            cancellingId ===
+                            registration.id
+                              ? "not-allowed"
+                              : "pointer",
+                          opacity:
+                            cancellingId ===
+                            registration.id
+                              ? 0.5
+                              : 1,
+                        }}
+                      >
+                        {cancellingId ===
+                        registration.id
+                          ? "取消中..."
+                          : "取消報名"}
+                      </button>
+                    </td>
+                  </tr>
+                )
+              )}
+            </tbody>
+          </table>
+        )}
+      </div>
+
+      {/* 候補名單 */}
+      <div
+        style={{
+          marginTop: 28,
+        }}
+      >
+        <h3
+          style={{
+            marginTop: 0,
+            marginBottom: 12,
+            color:
+              colors.primary,
+          }}
+        >
+          候補名單
+        </h3>
+
+        {waitlistRegistrations.length ===
+        0 ? (
+          <div
+            style={{
+              padding: 24,
+              textAlign:
+                "center",
+              color:
+                "#6B7280",
+              background:
+                "#FFF7ED",
+              borderRadius:
+                radius.md,
+            }}
+          >
+            目前沒有候補名單
+          </div>
+        ) : (
+          <table
+            style={{
+              width: "100%",
+              borderCollapse:
+                "collapse",
+            }}
+          >
+            <thead>
+              <tr
+                style={{
+                  background:
+                    "#FFF7ED",
+                }}
+              >
+                <th
+                  style={{
+                    padding: 12,
+                    textAlign:
+                      "center",
+                    borderBottom:
+                      "1px solid #E5E7EB",
+                  }}
+                >
+                  候補順位
+                </th>
+
+                <th
+                  style={{
+                    padding: 12,
+                    textAlign:
+                      "left",
+                    borderBottom:
+                      "1px solid #E5E7EB",
+                  }}
+                >
+                  姓名
+                </th>
+
+                <th
+                  style={{
+                    padding: 12,
+                    textAlign:
+                      "left",
+                    borderBottom:
+                      "1px solid #E5E7EB",
+                  }}
+                >
+                  電話
+                </th>
+
+                <th
+                  style={{
+                    padding: 12,
+                    textAlign:
+                      "left",
+                    borderBottom:
+                      "1px solid #E5E7EB",
+                  }}
+                >
+                  登記時間
+                </th>
+
+                <th
+                  style={{
+                    padding: 12,
+                    textAlign:
+                      "center",
+                    borderBottom:
+                      "1px solid #E5E7EB",
+                  }}
+                >
+                  狀態
+                </th>
+
+                <th
+                  style={{
+                    padding: 12,
+                    textAlign:
+                      "center",
+                    borderBottom:
+                      "1px solid #E5E7EB",
+                  }}
+                >
+                  操作
+                </th>
+              </tr>
+            </thead>
+
+            <tbody>
+              {waitlistRegistrations.map(
+                (
+                  registration
+                ) => (
+                  <tr
+                    key={
+                      registration.id
+                    }
+                  >
+                    <td
+                      style={{
+                        padding: 12,
+                        textAlign:
+                          "center",
+                        fontWeight: 700,
+                        borderBottom:
+                          "1px solid #F3F4F6",
+                      }}
+                    >
+                      {registration.waitlistPosition ??
+                        "-"}
+                    </td>
+
+                    <td
+                      style={{
+                        padding: 12,
+                        borderBottom:
+                          "1px solid #F3F4F6",
+                      }}
+                    >
+                      {
+                        registration.name
+                      }
+                    </td>
+
+                    <td
+                      style={{
+                        padding: 12,
+                        borderBottom:
+                          "1px solid #F3F4F6",
+                      }}
+                    >
+                      {
+                        registration.phone ||
+                        "-"
+                      }
+                    </td>
+
+                    <td
+                      style={{
+                        padding: 12,
+                        borderBottom:
+                          "1px solid #F3F4F6",
+                      }}
+                    >
+                      {new Date(
+                        registration.registeredAt
+                      ).toLocaleString(
+                        "zh-TW"
+                      )}
+                    </td>
+
+                    <td
+                      style={{
+                        padding: 12,
+                        textAlign:
+                          "center",
+                        borderBottom:
+                          "1px solid #F3F4F6",
+                        fontWeight: 700,
+                        color:
+                          "#C2410C",
+                      }}
+                    >
+                      候補
+                    </td>
+
+                    <td
+                      style={{
+                        padding: 12,
+                        textAlign:
+                          "center",
+                        borderBottom:
+                          "1px solid #F3F4F6",
+                      }}
+                    >
+                      <button
+                        type="button"
+                        onClick={() =>
+                          handleCancelRegistration(
+                            registration.id
+                          )
+                        }
+                        disabled={
+                          cancellingId ===
+                          registration.id
+                        }
+                        style={{
+                          background:
+                            "#DC2626",
+                          color:
+                            "#fff",
+                          border:
+                            "none",
+                          borderRadius:
+                            radius.sm,
+                          padding:
+                            "6px 12px",
+                          cursor:
+                            cancellingId ===
+                            registration.id
+                              ? "not-allowed"
+                              : "pointer",
+                          opacity:
+                            cancellingId ===
+                            registration.id
+                              ? 0.5
+                              : 1,
+                        }}
+                      >
+                        {cancellingId ===
+                        registration.id
+                          ? "取消中..."
+                          : "取消報名"}
+                      </button>
+                    </td>
+                  </tr>
+                )
+              )}
+            </tbody>
+          </table>
+        )}
+      </div>
+    </div>
+  );
+}
