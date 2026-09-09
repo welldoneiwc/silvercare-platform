@@ -1196,21 +1196,22 @@ useEffect(() => {
   return (
     <>
       <div
-        style={{
-          flex: 1,
-          background: "#fff",
-          borderRadius:
-            radius.lg,
-          boxShadow:
-            shadow.md,
-          padding: 24,
-          display: "flex",
-          flexDirection:
-            "column",
-          gap: 24,
-          overflowY: "auto",
-        }}
-      >
+  style={{
+    flex: 1,
+    minWidth: 0,
+    width: "100%",
+    boxSizing: "border-box",
+    background: "#fff",
+    borderRadius: radius.lg,
+    boxShadow: shadow.md,
+    padding: 24,
+    display: "flex",
+    flexDirection: "column",
+    gap: 24,
+    overflowX: "auto",
+    overflowY: "auto",
+  }}
+>
         {/* ==================== */}
 {/* Elder Header */}
 {/* ==================== */}
