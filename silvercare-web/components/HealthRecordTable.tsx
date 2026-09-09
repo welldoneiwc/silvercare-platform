@@ -45,6 +45,7 @@ export default function HealthRecordTable({
         minWidth: 0,
       }}
     >
+      {/* 標題 */}
       <div
         style={{
           paddingBottom: 12,
@@ -165,7 +166,7 @@ export default function HealthRecordTable({
 
       {/* =========================
           手機版
-          原本條列式表格
+          條列式表格
          ========================= */}
       <div className="health-record-mobile">
         <div className="mobile-table">
@@ -288,6 +289,9 @@ export default function HealthRecordTable({
           display: none;
         }
 
+        /* =========================
+           手機版
+           ========================= */
         @media (max-width: 640px) {
           .health-record-desktop {
             display: none;
@@ -313,33 +317,40 @@ export default function HealthRecordTable({
             box-sizing: border-box;
           }
 
+          /*
+            日期 / 血壓 / 脈搏 /
+            身高 / 體重 / BMI / 操作
+          */
           .mobile-table-header.with-actions,
           .mobile-table-row.with-actions {
             grid-template-columns:
-              minmax(88px, 1.45fr)
-              minmax(58px, 1fr)
-              minmax(42px, 0.72fr)
-              minmax(52px, 0.82fr)
-              minmax(52px, 0.82fr)
-              minmax(42px, 0.7fr)
-              minmax(66px, 0.9fr);
+              minmax(78px, 1.35fr)
+              minmax(54px, 1fr)
+              minmax(40px, 0.72fr)
+              minmax(48px, 0.82fr)
+              minmax(48px, 0.82fr)
+              minmax(40px, 0.7fr)
+              54px;
           }
 
+          /*
+            沒有操作按鈕
+          */
           .mobile-table-header.without-actions,
           .mobile-table-row.without-actions {
             grid-template-columns:
-              minmax(88px, 1.45fr)
-              minmax(58px, 1fr)
-              minmax(42px, 0.72fr)
-              minmax(52px, 0.82fr)
-              minmax(52px, 0.82fr)
-              minmax(42px, 0.7fr);
+              minmax(78px, 1.35fr)
+              minmax(54px, 1fr)
+              minmax(40px, 0.72fr)
+              minmax(48px, 0.82fr)
+              minmax(48px, 0.82fr)
+              minmax(40px, 0.7fr);
           }
 
           .mobile-table-header {
             background: #f7fafc;
             min-height: 48px;
-            padding: 8px 6px;
+            padding: 8px 4px;
             color: ${colors.primary};
             font-weight: 600;
             font-size: 13px;
@@ -349,7 +360,7 @@ export default function HealthRecordTable({
 
           .mobile-table-row {
             min-height: 78px;
-            padding: 10px 6px;
+            padding: 8px 4px;
             border-bottom: 1px solid #edf0f2;
             color: #334155;
           }
@@ -365,14 +376,14 @@ export default function HealthRecordTable({
           }
 
           .date-cell {
-            font-size: 14px;
+            font-size: 13px;
             font-weight: 600;
             line-height: 1.35;
             word-break: keep-all;
           }
 
           .number-cell {
-            font-size: 14px;
+            font-size: 13px;
             font-weight: 500;
             line-height: 1.25;
             white-space: nowrap;
@@ -385,95 +396,103 @@ export default function HealthRecordTable({
           .number-cell small {
             display: block;
             margin-top: 2px;
-            font-size: 12px;
+            font-size: 11px;
             color: #64748b;
             font-weight: 400;
           }
 
+          /*
+            手機操作欄：
+            編輯在上
+            刪除在下
+          */
           .mobile-actions {
             display: flex;
+            flex-direction: column;
             justify-content: center;
             align-items: center;
-            gap: 6px;
+            gap: 4px;
+            width: 54px;
+            min-width: 54px;
           }
 
-          .icon-button {
-            width: 36px;
-            height: 36px;
-            min-width: 36px;
-            padding: 0;
-            border: none;
-            border-radius: 50%;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            cursor: pointer;
-            flex-shrink: 0;
+          .mobile-actions :global(.icon-button) {
+            width: 30px !important;
+            height: 30px !important;
+            min-width: 30px !important;
           }
 
-          .edit-button {
-            background: #2563eb;
-          }
-
-          .delete-button {
-            background: #ef3340;
-          }
-
-          .icon-button :global(svg) {
-            width: 18px;
-            height: 18px;
+          .mobile-actions :global(.icon-button svg) {
+            width: 15px;
+            height: 15px;
           }
         }
 
+        /* =========================
+           更小手機
+           ========================= */
         @media (max-width: 420px) {
           .mobile-table-header {
             font-size: 12px;
-            padding-left: 3px;
-            padding-right: 3px;
+            padding-left: 2px;
+            padding-right: 2px;
           }
 
           .mobile-table-row {
-            padding-left: 3px;
-            padding-right: 3px;
+            padding-left: 2px;
+            padding-right: 2px;
           }
 
           .mobile-table-header.with-actions,
           .mobile-table-row.with-actions {
             grid-template-columns:
-              minmax(76px, 1.35fr)
-              minmax(54px, 1fr)
-              minmax(38px, 0.7fr)
-              minmax(48px, 0.8fr)
-              minmax(48px, 0.8fr)
-              minmax(38px, 0.65fr)
-              minmax(62px, 0.85fr);
+              minmax(72px, 1.3fr)
+              minmax(50px, 1fr)
+              minmax(36px, 0.7fr)
+              minmax(45px, 0.8fr)
+              minmax(45px, 0.8fr)
+              minmax(36px, 0.65fr)
+              50px;
+          }
+
+          .mobile-table-header.without-actions,
+          .mobile-table-row.without-actions {
+            grid-template-columns:
+              minmax(72px, 1.3fr)
+              minmax(50px, 1fr)
+              minmax(36px, 0.7fr)
+              minmax(45px, 0.8fr)
+              minmax(45px, 0.8fr)
+              minmax(36px, 0.65fr);
           }
 
           .date-cell {
-            font-size: 13px;
+            font-size: 12px;
           }
 
           .number-cell {
-            font-size: 13px;
+            font-size: 12px;
           }
 
           .number-cell small {
-            font-size: 11px;
+            font-size: 10px;
           }
 
           .mobile-actions {
-            gap: 4px;
+            width: 50px;
+            min-width: 50px;
+            gap: 3px;
           }
 
-          .icon-button {
-            width: 32px;
-            height: 32px;
-            min-width: 32px;
+          .mobile-actions :global(.icon-button) {
+            width: 28px !important;
+            height: 28px !important;
+            min-width: 28px !important;
           }
 
-          .icon-button :global(svg) {
-            width: 16px;
-            height: 16px;
+          .mobile-actions :global(.icon-button svg) {
+            width: 14px;
+            height: 14px;
           }
         }
       `}</style>
@@ -482,7 +501,9 @@ export default function HealthRecordTable({
 }
 
 /* =========================
-   桌機／手機共用操作按鈕
+   操作按鈕
+   桌機：左右排列
+   手機：上下排列
    ========================= */
 function ActionButtons({
   record,
@@ -495,6 +516,7 @@ function ActionButtons({
 }) {
   return (
     <div
+      className="action-buttons"
       style={{
         display: "flex",
         justifyContent: "center",
@@ -567,7 +589,7 @@ function ActionButtons({
 }
 
 /* =========================
-   日期格式
+   手機日期格式
    ========================= */
 function formatMobileDate(date: string) {
   if (!date) {
