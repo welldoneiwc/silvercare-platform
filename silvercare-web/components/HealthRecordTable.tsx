@@ -330,12 +330,9 @@ export default function HealthRecordTable({
               minmax(48px, 0.82fr)
               minmax(48px, 0.82fr)
               minmax(40px, 0.7fr)
-              54px;
+              46px;
           }
 
-          /*
-            沒有操作按鈕
-          */
           .mobile-table-header.without-actions,
           .mobile-table-row.without-actions {
             grid-template-columns:
@@ -350,7 +347,7 @@ export default function HealthRecordTable({
           .mobile-table-header {
             background: #f7fafc;
             min-height: 48px;
-            padding: 8px 4px;
+            padding: 8px 3px;
             color: ${colors.primary};
             font-weight: 600;
             font-size: 13px;
@@ -360,7 +357,7 @@ export default function HealthRecordTable({
 
           .mobile-table-row {
             min-height: 78px;
-            padding: 8px 4px;
+            padding: 8px 3px;
             border-bottom: 1px solid #edf0f2;
             color: #334155;
           }
@@ -379,7 +376,7 @@ export default function HealthRecordTable({
             font-size: 13px;
             font-weight: 600;
             line-height: 1.35;
-            word-break: keep-all;
+            white-space: nowrap;
           }
 
           .number-cell {
@@ -402,29 +399,40 @@ export default function HealthRecordTable({
           }
 
           /*
-            手機操作欄：
-            編輯在上
-            刪除在下
+            手機操作區
+            寬度固定，避免被右側切掉
           */
           .mobile-actions {
+            width: 46px;
+            min-width: 46px;
             display: flex;
-            flex-direction: column;
             justify-content: center;
             align-items: center;
-            gap: 4px;
-            width: 54px;
-            min-width: 54px;
+          }
+
+          /*
+            重要：
+            ActionButtons 本身原本是 flex row，
+            手機版強制改成上下排列
+          */
+          .mobile-actions :global(.action-buttons) {
+            flex-direction: column !important;
+            gap: 3px !important;
+            width: 100%;
+            align-items: center;
+            justify-content: center;
           }
 
           .mobile-actions :global(.icon-button) {
-            width: 30px !important;
-            height: 30px !important;
-            min-width: 30px !important;
+            width: 28px !important;
+            height: 28px !important;
+            min-width: 28px !important;
+            flex-shrink: 0;
           }
 
           .mobile-actions :global(.icon-button svg) {
-            width: 15px;
-            height: 15px;
+            width: 14px;
+            height: 14px;
           }
         }
 
@@ -452,7 +460,7 @@ export default function HealthRecordTable({
               minmax(45px, 0.8fr)
               minmax(45px, 0.8fr)
               minmax(36px, 0.65fr)
-              50px;
+              44px;
           }
 
           .mobile-table-header.without-actions,
@@ -479,20 +487,23 @@ export default function HealthRecordTable({
           }
 
           .mobile-actions {
-            width: 50px;
-            min-width: 50px;
-            gap: 3px;
+            width: 44px;
+            min-width: 44px;
+          }
+
+          .mobile-actions :global(.action-buttons) {
+            gap: 2px !important;
           }
 
           .mobile-actions :global(.icon-button) {
-            width: 28px !important;
-            height: 28px !important;
-            min-width: 28px !important;
+            width: 26px !important;
+            height: 26px !important;
+            min-width: 26px !important;
           }
 
           .mobile-actions :global(.icon-button svg) {
-            width: 14px;
-            height: 14px;
+            width: 13px;
+            height: 13px;
           }
         }
       `}</style>
@@ -590,6 +601,9 @@ function ActionButtons({
 
 /* =========================
    手機日期格式
+   2026-09-08
+   ↓
+   09.08.26
    ========================= */
 function formatMobileDate(date: string) {
   if (!date) {
@@ -599,14 +613,11 @@ function formatMobileDate(date: string) {
   const parts = date.split("-");
 
   if (parts.length === 3) {
-    return (
-      <>
-        <span>{parts[0]}-</span>
-        <span>
-          {parts[1]}-{parts[2]}
-        </span>
-      </>
-    );
+    const year = parts[0].slice(-2);
+    const month = parts[1];
+    const day = parts[2];
+
+    return `${month}.${day}.${year}`;
   }
 
   return date;
