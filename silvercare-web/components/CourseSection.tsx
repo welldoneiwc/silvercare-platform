@@ -44,6 +44,66 @@ export default function CourseSection() {
 
   /*
    * ========================================
+   * 取得目前登入使用者的角色與據點
+   * ========================================
+   */
+  async function getCurrentUserRole(): Promise<{
+    role: string;
+    location_id: number | null;
+  }> {
+    const {
+      data: { user },
+      error: userError,
+    } = await supabase.auth.getUser();
+
+    if (userError) {
+      throw new Error(
+        "取得目前登入使用者失敗：\n" +
+          userError.message
+      );
+    }
+
+    if (!user) {
+      throw new Error(
+        "目前沒有登入使用者，請重新登入。"
+      );
+    }
+
+    const {
+      data: roleData,
+      error: roleError,
+    } = await supabase
+      .from("user_roles")
+      .select("role, location_id")
+      .eq("user_id", user.id)
+      .limit(1)
+      .maybeSingle();
+
+    if (roleError) {
+      throw new Error(
+        "取得使用者據點權限失敗：\n" +
+          roleError.message
+      );
+    }
+
+    if (!roleData) {
+      throw new Error(
+        "找不到目前使用者的權限資料。"
+      );
+    }
+
+    return {
+      role: roleData.role,
+      location_id:
+        roleData.location_id === null ||
+        roleData.location_id === undefined
+          ? null
+          : Number(roleData.location_id),
+    };
+  }
+
+  /*
+   * ========================================
    * 從 Supabase 讀取課程
    *
    * 如果舊手機還有 LocalStorage 課程，
@@ -52,6 +112,9 @@ export default function CourseSection() {
    */
   async function loadCourses(): Promise<boolean> {
     try {
+      const currentRole =
+        await getCurrentUserRole();
+
       /*
        * ------------------------------------
        * ① 先讀取 Supabase
@@ -63,12 +126,12 @@ export default function CourseSection() {
       } = await supabase
         .from("courses")
         .select("*")
-       .order("date", {
-  ascending: false,
-})
-.order("start_time", {
-  ascending: true,
-});
+        .order("date", {
+          ascending: false,
+        })
+        .order("start_time", {
+          ascending: true,
+        });
 
       if (error) {
         console.error(
@@ -163,6 +226,15 @@ export default function CourseSection() {
         coursesToMigrate.length >
         0
       ) {
+        if (
+          currentRole.role === "site" &&
+          currentRole.location_id === null
+        ) {
+          throw new Error(
+            "目前 Site 使用者沒有設定 location_id，無法同步舊課程。"
+          );
+        }
+
         console.log(
           "🟡 發現尚未同步的舊課程：",
           coursesToMigrate
@@ -190,6 +262,12 @@ export default function CourseSection() {
                 course.classroom ?? "",
               note:
                 course.note ?? "",
+              ...(currentRole.role === "site"
+                ? {
+                    location_id:
+                      currentRole.location_id,
+                  }
+                : {}),
             })
           );
 
@@ -198,16 +276,17 @@ export default function CourseSection() {
         } = await supabase
           .from("courses")
           .insert(rows);
-if (migrateError) {
-  console.error(
-    "🔴 舊課程同步到 Supabase 失敗：",
-    JSON.stringify(
-      migrateError,
-      null,
-      2
-    )
-  );
-}else {
+
+        if (migrateError) {
+          console.error(
+            "🔴 舊課程同步到 Supabase 失敗：",
+            JSON.stringify(
+              migrateError,
+              null,
+              2
+            )
+          );
+        } else {
           console.log(
             "🟢 舊課程已同步到 Supabase：",
             rows
@@ -235,12 +314,12 @@ if (migrateError) {
         } = await supabase
           .from("courses")
           .select("*")
-        .order("date", {
-  ascending: false,
-})
-.order("start_time", {
-  ascending: true,
-});
+          .order("date", {
+            ascending: false,
+          })
+          .order("start_time", {
+            ascending: true,
+          });
 
         if (
           refreshedError
@@ -322,6 +401,16 @@ if (migrateError) {
         error
       );
 
+      const message =
+        error instanceof Error
+          ? error.message
+          : String(error);
+
+      alert(
+        "讀取課程時發生錯誤：\n\n" +
+          message
+      );
+
       return false;
     } finally {
       setLoaded(true);
@@ -346,6 +435,9 @@ if (migrateError) {
     course: Course
   ): Promise<void> {
     try {
+      const currentRole =
+        await getCurrentUserRole();
+
       /*
        * ====================================
        * 編輯既有課程
@@ -591,30 +683,49 @@ if (migrateError) {
         course.title
       );
 
+      if (
+        currentRole.role === "site" &&
+        currentRole.location_id === null
+      ) {
+        alert(
+          "目前 Site 使用者沒有設定 location_id，無法新增課程。"
+        );
+
+        return;
+      }
+
+      const courseData = {
+        id: newId,
+        date:
+          course.date,
+        title:
+          course.title,
+        teacher:
+          course.teacher,
+        start_time:
+          course.startTime,
+        end_time:
+          course.endTime,
+        capacity:
+          course.capacity,
+        classroom:
+          course.classroom,
+        note:
+          course.note,
+        ...(currentRole.role === "site"
+          ? {
+              location_id:
+                currentRole.location_id,
+            }
+          : {}),
+      };
+
       const {
         data: insertedCourse,
         error: insertError,
       } = await supabase
         .from("courses")
-        .insert({
-          id: newId,
-          date:
-            course.date,
-          title:
-            course.title,
-          teacher:
-            course.teacher,
-          start_time:
-            course.startTime,
-          end_time:
-            course.endTime,
-          capacity:
-            course.capacity,
-          classroom:
-            course.classroom,
-          note:
-            course.note,
-        })
+        .insert(courseData)
         .select(
           "id,title,date,start_time,end_time,teacher,capacity,classroom,note"
         )
@@ -1058,4 +1169,3 @@ if (migrateError) {
     </div>
   );
 }
-
