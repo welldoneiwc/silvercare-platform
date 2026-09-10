@@ -245,17 +245,65 @@ export default function ActivitySection() {
     setSaving(true);
 
     try {
-      const activityData = {
+      const {
+        data: { user },
+        error: userError,
+      } = await supabase.auth.getUser();
+
+      if (userError) {
+        throw userError;
+      }
+
+      if (!user) {
+        throw new Error("登入狀態已失效，請重新登入後再試。");
+      }
+
+      const { data: roleData, error: roleError } =
+        await supabase
+          .from("user_roles")
+          .select("role, location_id")
+          .eq("user_id", user.id)
+          .limit(1)
+          .maybeSingle();
+
+      if (roleError) {
+        throw roleError;
+      }
+
+      if (!roleData) {
+        throw new Error("找不到目前登入者的據點權限資料。");
+      }
+
+      const activityData: {
+        date: string;
+        title: string;
+        type: string;
+        start_time: string;
+        end_time: string;
+        location: string;
+        capacity: number;
+        note: string;
+        location_id?: number;
+      } = {
         date: form.date,
         title: form.title.trim(),
         type: form.type.trim(),
         start_time: form.startTime,
         end_time: form.endTime,
-        location:
-          form.location.trim(),
+        location: form.location.trim(),
         capacity,
         note: form.note.trim(),
       };
+
+      // Site 使用者新增活動時，自動綁定自己的 location_id。
+      // Supervisor 新增時先維持原本可跨據點操作的行為，之後再加入據點選擇器。
+      if (roleData.role === "site") {
+        if (roleData.location_id == null) {
+          throw new Error("目前 Site 帳號沒有設定據點 location_id。");
+        }
+
+        activityData.location_id = Number(roleData.location_id);
+      }
 
       if (editingActivity) {
         const { data, error } =
@@ -346,11 +394,20 @@ export default function ActivitySection() {
         error
       );
 
+      const message =
+        error instanceof Error
+          ? error.message
+          : typeof error === "object" &&
+              error !== null &&
+              "message" in error
+            ? String(
+                (error as { message: unknown })
+                  .message
+              )
+            : String(error);
+
       alert(
-        "儲存活動失敗：" +
-          (error instanceof Error
-            ? error.message
-            : String(error))
+        `儲存活動失敗：\n${message}`
       );
     } finally {
       setSaving(false);
