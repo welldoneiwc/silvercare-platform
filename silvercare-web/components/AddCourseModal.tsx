@@ -2,6 +2,7 @@
 
 import {
   useEffect,
+  useRef,
   useState,
 } from "react";
 
@@ -77,10 +78,30 @@ export default function AddCourseModal({
   const [note, setNote] =
     useState("");
 
+  /*
+   * 防止儲存按鈕快速連點。
+   *
+   * useRef 是同步鎖，
+   * 比單純 useState 更能避免同一時間
+   * 連續觸發兩次 onSave。
+   */
+  const savingRef =
+    useRef(false);
+
+  const [saving, setSaving] =
+    useState(false);
+
   useEffect(() => {
     if (!open) {
       return;
     }
+
+    /*
+     * 每次重新開啟 Modal 時，
+     * 確保儲存鎖是解除的。
+     */
+    savingRef.current = false;
+    setSaving(false);
 
     if (editingCourse) {
       setDate(
@@ -151,6 +172,142 @@ export default function AddCourseModal({
     return null;
   }
 
+  async function handleSaveClick() {
+    /*
+     * 如果已經正在儲存，
+     * 直接忽略後續點擊。
+     */
+    if (savingRef.current) {
+      return;
+    }
+
+    if (!date) {
+      alert(
+        "請選擇課程日期"
+      );
+      return;
+    }
+
+    if (!title.trim()) {
+      alert(
+        "請輸入課程名稱"
+      );
+      return;
+    }
+
+    if (!teacher.trim()) {
+      alert(
+        "請輸入授課老師"
+      );
+      return;
+    }
+
+    if (
+      !startTime ||
+      !endTime
+    ) {
+      alert(
+        "請選擇課程時間"
+      );
+      return;
+    }
+
+    if (
+      startTime >=
+      endTime
+    ) {
+      alert(
+        "結束時間必須晚於開始時間"
+      );
+      return;
+    }
+
+    const numericCapacity =
+      Number(capacity);
+
+    if (
+      !Number.isFinite(
+        numericCapacity
+      ) ||
+      numericCapacity <= 0
+    ) {
+      alert(
+        "請輸入有效的人數上限"
+      );
+      return;
+    }
+
+    const course: Course =
+      {
+        ...(editingCourse?.id !==
+        undefined
+          ? {
+              id:
+                editingCourse.id,
+            }
+          : {}),
+
+        date,
+
+        title:
+          title.trim(),
+
+        teacher:
+          teacher.trim(),
+
+        startTime,
+
+        endTime,
+
+        capacity:
+          numericCapacity,
+
+        classroom:
+          classroom.trim(),
+
+        note:
+          note.trim(),
+      };
+
+    /*
+     * 立即鎖定。
+     *
+     * 注意：
+     * 這裡先設定 useRef，
+     * 再呼叫 onSave。
+     * 即使使用者非常快速連點，
+     * 第二次也會被擋掉。
+     */
+    savingRef.current = true;
+    setSaving(true);
+
+    try {
+      /*
+       * CourseSection.handleSave
+       * 成功或失敗都由它自己處理。
+       *
+       * 這裡只等待它完成。
+       */
+      await onSave(course);
+    } catch (error) {
+      console.error(
+        "課程儲存失敗：",
+        error
+      );
+
+      alert(
+        "課程儲存失敗，請查看主控台錯誤訊息。"
+      );
+    } finally {
+      /*
+       * 不論成功或失敗，
+       * 都解除儲存鎖。
+       */
+      savingRef.current = false;
+      setSaving(false);
+    }
+  }
+
   return (
     <div
       style={{
@@ -218,6 +375,7 @@ export default function AddCourseModal({
                   e.target.value
                 )
               }
+              disabled={saving}
               style={{
                 width: "100%",
                 marginTop: 6,
@@ -245,6 +403,7 @@ export default function AddCourseModal({
                   e.target.value
                 )
               }
+              disabled={saving}
               style={{
                 width: "100%",
                 marginTop: 6,
@@ -272,6 +431,7 @@ export default function AddCourseModal({
                   e.target.value
                 )
               }
+              disabled={saving}
               style={{
                 width: "100%",
                 marginTop: 6,
@@ -300,6 +460,7 @@ export default function AddCourseModal({
                   e.target.value
                 )
               }
+              disabled={saving}
               style={{
                 width: "100%",
                 marginTop: 6,
@@ -328,6 +489,7 @@ export default function AddCourseModal({
                   e.target.value
                 )
               }
+              disabled={saving}
               style={{
                 width: "100%",
                 marginTop: 6,
@@ -357,6 +519,7 @@ export default function AddCourseModal({
                   e.target.value
                 )
               }
+              disabled={saving}
               style={{
                 width: "100%",
                 marginTop: 6,
@@ -384,6 +547,7 @@ export default function AddCourseModal({
                   e.target.value
                 )
               }
+              disabled={saving}
               placeholder="例如：A教室"
               style={{
                 width: "100%",
@@ -417,6 +581,7 @@ export default function AddCourseModal({
                   e.target.value
                 )
               }
+              disabled={saving}
               rows={4}
               style={{
                 width: "100%",
@@ -449,6 +614,7 @@ export default function AddCourseModal({
           <button
             type="button"
             onClick={onClose}
+            disabled={saving}
             style={{
               padding:
                 "10px 18px",
@@ -459,7 +625,9 @@ export default function AddCourseModal({
               borderRadius:
                 radius.md,
               cursor:
-                "pointer",
+                saving
+                  ? "not-allowed"
+                  : "pointer",
             }}
           >
             取消
@@ -468,114 +636,10 @@ export default function AddCourseModal({
           {/* 儲存 */}
           <button
             type="button"
-            onClick={async () => {
-              if (!date) {
-                alert(
-                  "請選擇課程日期"
-                );
-                return;
-              }
-
-              if (!title.trim()) {
-                alert(
-                  "請輸入課程名稱"
-                );
-                return;
-              }
-
-              if (!teacher.trim()) {
-                alert(
-                  "請輸入授課老師"
-                );
-                return;
-              }
-
-              if (
-                !startTime ||
-                !endTime
-              ) {
-                alert(
-                  "請選擇課程時間"
-                );
-                return;
-              }
-
-              if (
-                startTime >=
-                endTime
-              ) {
-                alert(
-                  "結束時間必須晚於開始時間"
-                );
-                return;
-              }
-
-              const numericCapacity =
-                Number(capacity);
-
-              if (
-                !Number.isFinite(
-                  numericCapacity
-                ) ||
-                numericCapacity <= 0
-              ) {
-                alert(
-                  "請輸入有效的人數上限"
-                );
-                return;
-              }
-
-              const course: Course =
-                {
-                  ...(editingCourse?.id !==
-                  undefined
-                    ? {
-                        id:
-                          editingCourse.id,
-                      }
-                    : {}),
-
-                  date,
-
-                  title:
-                    title.trim(),
-
-                  teacher:
-                    teacher.trim(),
-
-                  startTime,
-
-                  endTime,
-
-                  capacity:
-                    numericCapacity,
-
-                  classroom:
-                    classroom.trim(),
-
-                  note:
-                    note.trim(),
-                };
-
-              try {
-                /*
-                 * CourseSection.handleSave
-                 * 成功或失敗都由它自己處理。
-                 *
-                 * 這裡只等待它完成。
-                 */
-                await onSave(course);
-              } catch (error) {
-                console.error(
-                  "課程儲存失敗：",
-                  error
-                );
-
-                alert(
-                  "課程儲存失敗，請查看主控台錯誤訊息。"
-                );
-              }
-            }}
+            onClick={
+              handleSaveClick
+            }
+            disabled={saving}
             style={{
               background:
                 colors.primary,
@@ -586,11 +650,17 @@ export default function AddCourseModal({
               padding:
                 "10px 20px",
               cursor:
-                "pointer",
+                saving
+                  ? "not-allowed"
+                  : "pointer",
               fontWeight: 600,
+              opacity:
+                saving ? 0.7 : 1,
             }}
           >
-            {editingCourse
+            {saving
+              ? "儲存中..."
+              : editingCourse
               ? "儲存修改"
               : "新增課程"}
           </button>
@@ -599,4 +669,3 @@ export default function AddCourseModal({
     </div>
   );
 }
-

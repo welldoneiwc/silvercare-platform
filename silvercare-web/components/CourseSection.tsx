@@ -2,6 +2,7 @@
 
 import {
   useEffect,
+  useRef,
   useState,
 } from "react";
 
@@ -28,6 +29,9 @@ export default function CourseSection() {
 
   const [loaded, setLoaded] =
     useState(false);
+
+  // 防止同一次新增流程被重複執行
+  const savingRef = useRef(false);
 
   const [openModal, setOpenModal] =
     useState(false);
@@ -106,20 +110,13 @@ export default function CourseSection() {
    * ========================================
    * 從 Supabase 讀取課程
    *
-   * 如果舊手機還有 LocalStorage 課程，
-   * 會先把 Supabase 沒有的舊課程補上雲端。
+   * Supabase 是課程資料的唯一正式來源。
+   * 不再把 LocalStorage 舊資料自動 INSERT 回 Supabase，
+   * 避免載入流程與新增流程同時寫入造成重複課程。
    * ========================================
    */
   async function loadCourses(): Promise<boolean> {
     try {
-      const currentRole =
-        await getCurrentUserRole();
-
-      /*
-       * ------------------------------------
-       * ① 先讀取 Supabase
-       * ------------------------------------
-       */
       const {
         data,
         error,
@@ -147,200 +144,8 @@ export default function CourseSection() {
         return false;
       }
 
-      /*
-       * ------------------------------------
-       * ② 讀取舊 LocalStorage 課程
-       *
-       * 用來把之前手機建立、但尚未進
-       * Supabase 的課程補進雲端。
-       * ------------------------------------
-       */
-      let legacyCourses: Course[] = [];
-
-      try {
-        const savedCourses =
-          localStorage.getItem(
-            COURSE_STORAGE_KEY
-          );
-
-        if (savedCourses) {
-          const parsed =
-            JSON.parse(
-              savedCourses
-            );
-
-          if (
-            Array.isArray(parsed)
-          ) {
-            legacyCourses =
-              parsed.filter(
-                (course) =>
-                  course &&
-                  course.id !==
-                    undefined &&
-                  course.id !==
-                    null
-              );
-          }
-        }
-      } catch (localError) {
-        console.error(
-          "讀取舊課程 LocalStorage 失敗：",
-          localError
-        );
-      }
-
-      /*
-       * ------------------------------------
-       * ③ 找出 Supabase 已存在的 ID
-       * ------------------------------------
-       */
-      const existingIds =
-        new Set(
-          (data ?? []).map(
-            (course) =>
-              String(course.id)
-          )
-        );
-
-      /*
-       * ------------------------------------
-       * ④ 找出只存在手機 LocalStorage、
-       *    但 Supabase 還沒有的課程
-       * ------------------------------------
-       */
-      const coursesToMigrate =
-        legacyCourses.filter(
-          (course) =>
-            !existingIds.has(
-              String(course.id)
-            )
-        );
-
-      /*
-       * ------------------------------------
-       * ⑤ 將舊課程補進 Supabase
-       * ------------------------------------
-       */
-      if (
-        coursesToMigrate.length >
-        0
-      ) {
-        if (
-          currentRole.role === "site" &&
-          currentRole.location_id === null
-        ) {
-          throw new Error(
-            "目前 Site 使用者沒有設定 location_id，無法同步舊課程。"
-          );
-        }
-
-        console.log(
-          "🟡 發現尚未同步的舊課程：",
-          coursesToMigrate
-        );
-
-        const rows =
-          coursesToMigrate.map(
-            (course) => ({
-              id: course.id,
-              date:
-                course.date ?? "",
-              title:
-                course.title ?? "",
-              teacher:
-                course.teacher ?? "",
-              start_time:
-                course.startTime ?? "",
-              end_time:
-                course.endTime ?? "",
-              capacity:
-                Number(
-                  course.capacity ?? 0
-                ),
-              classroom:
-                course.classroom ?? "",
-              note:
-                course.note ?? "",
-              ...(currentRole.role === "site"
-                ? {
-                    location_id:
-                      currentRole.location_id,
-                  }
-                : {}),
-            })
-          );
-
-        const {
-          error: migrateError,
-        } = await supabase
-          .from("courses")
-          .insert(rows);
-
-        if (migrateError) {
-          console.error(
-            "🔴 舊課程同步到 Supabase 失敗：",
-            JSON.stringify(
-              migrateError,
-              null,
-              2
-            )
-          );
-        } else {
-          console.log(
-            "🟢 舊課程已同步到 Supabase：",
-            rows
-          );
-        }
-      }
-
-      /*
-       * ------------------------------------
-       * ⑥ 如果有遷移資料，重新從 Supabase
-       *    讀一次，確保畫面使用雲端資料
-       * ------------------------------------
-       */
-      let finalData =
-        data ?? [];
-
-      if (
-        coursesToMigrate.length >
-        0
-      ) {
-        const {
-          data: refreshedData,
-          error:
-            refreshedError,
-        } = await supabase
-          .from("courses")
-          .select("*")
-          .order("date", {
-            ascending: false,
-          })
-          .order("start_time", {
-            ascending: true,
-          });
-
-        if (
-          refreshedError
-        ) {
-          console.error(
-            "重新讀取課程失敗：",
-            refreshedError
-          );
-        } else {
-          finalData =
-            refreshedData ?? [];
-        }
-      }
-
-      /*
-       * ------------------------------------
-       * ⑦ 統一轉成前端 Course 格式
-       * ------------------------------------
-       */
       const formattedCourses: Course[] =
-        finalData.map(
+        (data ?? []).map(
           (item) => ({
             id: item.id,
             date:
@@ -365,7 +170,7 @@ export default function CourseSection() {
         );
 
       console.log(
-        "🟢 Supabase 最終課程資料：",
+        "🟢 Supabase 課程資料：",
         formattedCourses
       );
 
@@ -373,13 +178,7 @@ export default function CourseSection() {
         formattedCourses
       );
 
-      /*
-       * ------------------------------------
-       * ⑧ 同步更新本機 LocalStorage
-       *
-       * 之後手機／電腦都以雲端資料為準。
-       * ------------------------------------
-       */
+      // LocalStorage 只作為本機快取，不再拿來反向新增 Database 資料。
       try {
         localStorage.setItem(
           COURSE_STORAGE_KEY,
@@ -434,6 +233,17 @@ export default function CourseSection() {
   async function handleSave(
     course: Course
   ): Promise<void> {
+    // 同一個儲存流程只允許進入一次。
+    // 這是第二層保護，避免任何上層重複觸發造成兩筆 INSERT。
+    if (savingRef.current) {
+      console.warn(
+        "🟠 忽略重複的課程儲存請求"
+      );
+      return;
+    }
+
+    savingRef.current = true;
+
     try {
       const currentRole =
         await getCurrentUserRole();
@@ -801,6 +611,8 @@ export default function CourseSection() {
         "儲存課程時發生錯誤：\n\n" +
           message
       );
+    } finally {
+      savingRef.current = false;
     }
   }
 
