@@ -22,6 +22,7 @@ import ActivitySection from "../components/ActivitySection";
 import DashboardActivities from "../components/DashboardActivities";
 import AttendanceSection from "../components/AttendanceSection";
 import FinanceSection from "../components/FinanceSection";
+import SupervisorOverview from "../components/SupervisorOverview";
 
 import { supabase } from "../utils/supabase";
 
@@ -53,6 +54,9 @@ export default function Home() {
 
   const [loggingOut, setLoggingOut] =
     useState(false);
+
+  const [userRole, setUserRole] =
+    useState<string | null>(null);
 
   /* ============================
    * AI 智慧查詢
@@ -92,6 +96,59 @@ export default function Home() {
         checkMobile
       );
     };
+  }, []);
+
+  /**
+   * 取得目前登入使用者角色
+   *
+   * Supervisor 進入首頁時顯示據點總覽。
+   * Site 使用者維持原本首頁。
+   */
+  useEffect(() => {
+    const loadUserRole = async () => {
+      try {
+        const {
+          data: { user },
+          error: userError,
+        } = await supabase.auth.getUser();
+
+        if (userError || !user) {
+          setUserRole(null);
+          return;
+        }
+
+        const {
+          data: roleData,
+          error: roleError,
+        } = await supabase
+          .from("user_roles")
+          .select("role")
+          .eq("user_id", user.id)
+          .limit(1)
+          .maybeSingle();
+
+        if (roleError) {
+          console.error(
+            "取得使用者角色失敗：",
+            roleError
+          );
+          setUserRole(null);
+          return;
+        }
+console.log("目前登入角色：", roleData);
+        setUserRole(
+          roleData?.role ?? null
+        );
+      } catch (error) {
+        console.error(
+          "讀取使用者角色發生錯誤：",
+          error
+        );
+        setUserRole(null);
+      }
+    };
+
+    void loadUserRole();
   }, []);
 
   /**
@@ -224,458 +281,458 @@ export default function Home() {
    * 第一階段：
    * 直接查詢 Supabase 的長者與課程資料。
    */
- const handleAiQuery = async (
-  inputQuery?: string
-) => {
-  const query = (
-    inputQuery ?? aiQuery
-  ).trim();
+  const handleAiQuery = async (
+    inputQuery?: string
+  ) => {
+    const query = (
+      inputQuery ?? aiQuery
+    ).trim();
 
-  if (!query) {
-    alert(
-      "請先輸入想查詢的內容。"
-    );
-    return;
-  }
+    if (!query) {
+      alert(
+        "請先輸入想查詢的內容。"
+      );
+      return;
+    }
 
-  setAiLoading(true);
-  setAiResult("");
+    setAiLoading(true);
+    setAiResult("");
 
-  try {
-    /*
-     * ========================================
-     * ① 查詢長者
-     * ========================================
-     */
-    if (
-      query.includes("長者") ||
-      query.includes("老人") ||
-      query.includes("人數")
-    ) {
-      const {
-        data,
-        error,
-      } = await supabase
-        .from("elders")
-        .select(
-          `
-            id,
-            name,
-            gender,
-            birthday,
-            phone,
-            elder_type,
-            living_status,
-            contact_method,
-            emergency_contact_name,
-            emergency_contact_relation,
-            emergency_contact_phone
-          `
-        )
-        .order("id", {
-          ascending: true,
-        });
-
-      if (error) {
-        throw error;
-      }
-
-      const elders = data ?? [];
-
+    try {
       /*
-       * 查詢長者人數
+       * ========================================
+       * ① 查詢長者
+       * ========================================
        */
       if (
-        query.includes("幾位") ||
-        query.includes("多少") ||
+        query.includes("長者") ||
+        query.includes("老人") ||
         query.includes("人數")
       ) {
-        setAiResult(
-          `👴 目前共有 ${elders.length} 位長者。`
-        );
-
-        return;
-      }
-
-      /*
-       * 查詢長者名單
-       */
-      if (
-        query.includes("哪些") ||
-        query.includes("名單") ||
-        query.includes("有誰")
-      ) {
-        if (elders.length === 0) {
-          setAiResult(
-            "目前沒有長者資料。"
-          );
-
-          return;
-        }
-
-        const elderList =
-          elders
-            .map(
-              (
-                elder,
-                index
-              ) =>
-                `${index + 1}. ${elder.name}`
-            )
-            .join("\n");
-
-        setAiResult(
-          `👴 目前共有 ${elders.length} 位長者：\n\n${elderList}`
-        );
-
-        return;
-      }
-    }
-
-    /*
-     * ========================================
-     * ② 查詢課程
-     *
-     * 支援：
-     * 今天有哪些課程？
-     * 9月有哪些課程？
-     * 2026年9月有哪些課程？
-     * ========================================
-     */
-    if (
-      query.includes("課程") ||
-      query.includes("上課")
-    ) {
-      const monthMatch =
-        query.match(
-          /(\d{1,2})月/
-        );
-
-      const yearMatch =
-        query.match(
-          /(\d{4})年/
-        );
-
-      const now =
-        new Date();
-
-      const currentYear =
-        now.getFullYear();
-
-      const targetYear =
-        yearMatch
-          ? Number(
-              yearMatch[1]
-            )
-          : currentYear;
-
-      /*
-       * ----------------------------------------
-       * ②-1 指定月份
-       * ----------------------------------------
-       */
-      if (monthMatch) {
-        const targetMonth =
-          Number(
-            monthMatch[1]
-          );
-
-        if (
-          targetMonth < 1 ||
-          targetMonth > 12
-        ) {
-          setAiResult(
-            "月份格式不正確，請輸入 1～12 月。"
-          );
-
-          return;
-        }
-
-        const monthString =
-          String(
-            targetMonth
-          ).padStart(
-            2,
-            "0"
-          );
-
-        const monthStart =
-          `${targetYear}-${monthString}-01`;
-
-        const nextMonthDate =
-          new Date(
-            targetYear,
-            targetMonth,
-            1
-          );
-
-        const nextYear =
-          nextMonthDate.getFullYear();
-
-        const nextMonth =
-          String(
-            nextMonthDate.getMonth() + 1
-          ).padStart(
-            2,
-            "0"
-          );
-
-        const nextMonthStart =
-          `${nextYear}-${nextMonth}-01`;
-
         const {
           data,
           error,
         } = await supabase
-          .from("courses")
+          .from("elders")
           .select(
             `
               id,
-              date,
-              title,
-              teacher,
-              start_time,
-              end_time,
-              capacity,
-              classroom,
-              note
+              name,
+              gender,
+              birthday,
+              phone,
+              elder_type,
+              living_status,
+              contact_method,
+              emergency_contact_name,
+              emergency_contact_relation,
+              emergency_contact_phone
             `
           )
-          .gte(
-            "date",
-            monthStart
-          )
-          .lt(
-            "date",
-            nextMonthStart
-          )
-          .order(
-            "date",
-            {
-              ascending: true,
-            }
-          )
-          .order(
-            "start_time",
-            {
-              ascending: true,
-            }
-          );
+          .order("id", {
+            ascending: true,
+          });
 
         if (error) {
           throw error;
         }
 
-        const courses =
-          data ?? [];
+        const elders = data ?? [];
 
+        /*
+         * 查詢長者人數
+         */
         if (
-          courses.length === 0
+          query.includes("幾位") ||
+          query.includes("多少") ||
+          query.includes("人數")
         ) {
           setAiResult(
-            `📚 ${targetYear} 年 ${targetMonth} 月目前沒有課程。`
+            `👴 目前共有 ${elders.length} 位長者。`
           );
 
           return;
         }
 
-        const courseList =
-          courses
-            .map(
-              (
-                course,
-                index
-              ) => {
-                const time =
-                  course.start_time &&
-                  course.end_time
-                    ? `${course.start_time}–${course.end_time}`
-                    : course.start_time ||
-                      "時間未設定";
+        /*
+         * 查詢長者名單
+         */
+        if (
+          query.includes("哪些") ||
+          query.includes("名單") ||
+          query.includes("有誰")
+        ) {
+          if (elders.length === 0) {
+            setAiResult(
+              "目前沒有長者資料。"
+            );
 
-                const teacher =
-                  course.teacher
-                    ? `\n   教師：${course.teacher}`
-                    : "";
+            return;
+          }
 
-                const classroom =
-                  course.classroom
-                    ? `\n   教室：${course.classroom}`
-                    : "";
+          const elderList =
+            elders
+              .map(
+                (
+                  elder,
+                  index
+                ) =>
+                  `${index + 1}. ${elder.name}`
+              )
+              .join("\n");
 
-                return (
-                  `${index + 1}. ${course.title}` +
-                  `\n   日期：${course.date}` +
-                  `\n   時間：${time}` +
-                  teacher +
-                  classroom
-                );
-              }
-            )
-            .join("\n\n");
+          setAiResult(
+            `👴 目前共有 ${elders.length} 位長者：\n\n${elderList}`
+          );
 
-        setAiResult(
-          `📚 ${targetYear} 年 ${targetMonth} 月共有 ${courses.length} 堂課程：\n\n${courseList}`
-        );
-
-        return;
+          return;
+        }
       }
 
       /*
-       * ----------------------------------------
-       * ②-2 查詢今天課程
-       * ----------------------------------------
+       * ========================================
+       * ② 查詢課程
+       *
+       * 支援：
+       * 今天有哪些課程？
+       * 9月有哪些課程？
+       * 2026年9月有哪些課程？
+       * ========================================
        */
       if (
-        query.includes("今天") ||
-        query.includes("今日")
+        query.includes("課程") ||
+        query.includes("上課")
       ) {
-        const today =
+        const monthMatch =
+          query.match(
+            /(\d{1,2})月/
+          );
+
+        const yearMatch =
+          query.match(
+            /(\d{4})年/
+          );
+
+        const now =
           new Date();
 
-        const year =
-          today.getFullYear();
+        const currentYear =
+          now.getFullYear();
 
-        const month =
-          String(
-            today.getMonth() + 1
-          ).padStart(
-            2,
-            "0"
-          );
+        const targetYear =
+          yearMatch
+            ? Number(
+                yearMatch[1]
+              )
+            : currentYear;
 
-        const day =
-          String(
-            today.getDate()
-          ).padStart(
-            2,
-            "0"
-          );
+        /*
+         * ----------------------------------------
+         * ②-1 指定月份
+         * ----------------------------------------
+         */
+        if (monthMatch) {
+          const targetMonth =
+            Number(
+              monthMatch[1]
+            );
 
-        const todayString =
-          `${year}-${month}-${day}`;
+          if (
+            targetMonth < 1 ||
+            targetMonth > 12
+          ) {
+            setAiResult(
+              "月份格式不正確，請輸入 1～12 月。"
+            );
 
-        const {
-          data,
-          error,
-        } = await supabase
-          .from("courses")
-          .select(
-            `
-              id,
-              date,
-              title,
-              teacher,
-              start_time,
-              end_time,
-              capacity,
-              classroom,
-              note
-            `
-          )
-          .eq(
-            "date",
-            todayString
-          )
-          .order(
-            "start_time",
-            {
-              ascending: true,
-            }
-          );
+            return;
+          }
 
-        if (error) {
-          throw error;
-        }
+          const monthString =
+            String(
+              targetMonth
+            ).padStart(
+              2,
+              "0"
+            );
 
-        const courses =
-          data ?? [];
+          const monthStart =
+            `${targetYear}-${monthString}-01`;
 
-        if (
-          courses.length === 0
-        ) {
+          const nextMonthDate =
+            new Date(
+              targetYear,
+              targetMonth,
+              1
+            );
+
+          const nextYear =
+            nextMonthDate.getFullYear();
+
+          const nextMonth =
+            String(
+              nextMonthDate.getMonth() + 1
+            ).padStart(
+              2,
+              "0"
+            );
+
+          const nextMonthStart =
+            `${nextYear}-${nextMonth}-01`;
+
+          const {
+            data,
+            error,
+          } = await supabase
+            .from("courses")
+            .select(
+              `
+                id,
+                date,
+                title,
+                teacher,
+                start_time,
+                end_time,
+                capacity,
+                classroom,
+                note
+              `
+            )
+            .gte(
+              "date",
+              monthStart
+            )
+            .lt(
+              "date",
+              nextMonthStart
+            )
+            .order(
+              "date",
+              {
+                ascending: true,
+              }
+            )
+            .order(
+              "start_time",
+              {
+                ascending: true,
+              }
+            );
+
+          if (error) {
+            throw error;
+          }
+
+          const courses =
+            data ?? [];
+
+          if (
+            courses.length === 0
+          ) {
+            setAiResult(
+              `📚 ${targetYear} 年 ${targetMonth} 月目前沒有課程。`
+            );
+
+            return;
+          }
+
+          const courseList =
+            courses
+              .map(
+                (
+                  course,
+                  index
+                ) => {
+                  const time =
+                    course.start_time &&
+                    course.end_time
+                      ? `${course.start_time}–${course.end_time}`
+                      : course.start_time ||
+                        "時間未設定";
+
+                  const teacher =
+                    course.teacher
+                      ? `\n   教師：${course.teacher}`
+                      : "";
+
+                  const classroom =
+                    course.classroom
+                      ? `\n   教室：${course.classroom}`
+                      : "";
+
+                  return (
+                    `${index + 1}. ${course.title}` +
+                    `\n   日期：${course.date}` +
+                    `\n   時間：${time}` +
+                    teacher +
+                    classroom
+                  );
+                }
+              )
+              .join("\n\n");
+
           setAiResult(
-            "📚 今天目前沒有課程。"
+            `📚 ${targetYear} 年 ${targetMonth} 月共有 ${courses.length} 堂課程：\n\n${courseList}`
           );
 
           return;
         }
 
-        const courseList =
-          courses
-            .map(
-              (
-                course,
-                index
-              ) => {
-                const time =
-                  course.start_time &&
-                  course.end_time
-                    ? `${course.start_time}–${course.end_time}`
-                    : course.start_time ||
-                      "時間未設定";
+        /*
+         * ----------------------------------------
+         * ②-2 查詢今天課程
+         * ----------------------------------------
+         */
+        if (
+          query.includes("今天") ||
+          query.includes("今日")
+        ) {
+          const today =
+            new Date();
 
-                const teacher =
-                  course.teacher
-                    ? `\n   教師：${course.teacher}`
-                    : "";
+          const year =
+            today.getFullYear();
 
-                const classroom =
-                  course.classroom
-                    ? `\n   教室：${course.classroom}`
-                    : "";
+          const month =
+            String(
+              today.getMonth() + 1
+            ).padStart(
+              2,
+              "0"
+            );
 
-                return (
-                  `${index + 1}. ${course.title}` +
-                  `\n   時間：${time}` +
-                  teacher +
-                  classroom
-                );
-              }
+          const day =
+            String(
+              today.getDate()
+            ).padStart(
+              2,
+              "0"
+            );
+
+          const todayString =
+            `${year}-${month}-${day}`;
+
+          const {
+            data,
+            error,
+          } = await supabase
+            .from("courses")
+            .select(
+              `
+                id,
+                date,
+                title,
+                teacher,
+                start_time,
+                end_time,
+                capacity,
+                classroom,
+                note
+              `
             )
-            .join("\n\n");
+            .eq(
+              "date",
+              todayString
+            )
+            .order(
+              "start_time",
+              {
+                ascending: true,
+              }
+            );
 
-        setAiResult(
-          `📚 今天共有 ${courses.length} 堂課程：\n\n${courseList}`
-        );
+          if (error) {
+            throw error;
+          }
 
-        return;
+          const courses =
+            data ?? [];
+
+          if (
+            courses.length === 0
+          ) {
+            setAiResult(
+              "📚 今天目前沒有課程。"
+            );
+
+            return;
+          }
+
+          const courseList =
+            courses
+              .map(
+                (
+                  course,
+                  index
+                ) => {
+                  const time =
+                    course.start_time &&
+                    course.end_time
+                      ? `${course.start_time}–${course.end_time}`
+                      : course.start_time ||
+                        "時間未設定";
+
+                  const teacher =
+                    course.teacher
+                      ? `\n   教師：${course.teacher}`
+                      : "";
+
+                  const classroom =
+                    course.classroom
+                      ? `\n   教室：${course.classroom}`
+                      : "";
+
+                  return (
+                    `${index + 1}. ${course.title}` +
+                    `\n   時間：${time}` +
+                    teacher +
+                    classroom
+                  );
+                }
+              )
+              .join("\n\n");
+
+          setAiResult(
+            `📚 今天共有 ${courses.length} 堂課程：\n\n${courseList}`
+          );
+
+          return;
+        }
       }
+
+      /*
+       * ========================================
+       * ③ 尚未支援的問題
+       * ========================================
+       */
+      setAiResult(
+        `已收到您的查詢：「${query}」\n\n` +
+          "目前 AI 第一階段已經可以查詢：\n" +
+          "• 長者人數\n" +
+          "• 長者名單\n" +
+          "• 今天的課程\n" +
+          "• 指定月份的課程\n\n" +
+          "下一階段再接上出席、健康量測、活動與財務資料。"
+      );
+    } catch (error) {
+      console.error(
+        "AI 查詢發生錯誤：",
+        error
+      );
+
+      const message =
+        error instanceof Error
+          ? error.message
+          : String(error);
+
+      setAiResult(
+        "AI 查詢目前無法完成。\n\n" +
+          message
+      );
+    } finally {
+      setAiLoading(false);
     }
-
-    /*
-     * ========================================
-     * ③ 尚未支援的問題
-     * ========================================
-     */
-    setAiResult(
-      `已收到您的查詢：「${query}」\n\n` +
-        "目前 AI 第一階段已經可以查詢：\n" +
-        "• 長者人數\n" +
-        "• 長者名單\n" +
-        "• 今天的課程\n" +
-        "• 指定月份的課程\n\n" +
-        "下一階段再接上出席、健康量測、活動與財務資料。"
-    );
-  } catch (error) {
-    console.error(
-      "AI 查詢發生錯誤：",
-      error
-    );
-
-    const message =
-      error instanceof Error
-        ? error.message
-        : String(error);
-
-    setAiResult(
-      "AI 查詢目前無法完成。\n\n" +
-        message
-    );
-  } finally {
-    setAiLoading(false);
-  }
-};
+  };
 
   /**
    * AI 快速查詢
@@ -884,189 +941,173 @@ export default function Home() {
 
           {selectedMenu ===
             "dashboard" && (
-            <>
-              {/* ==================== */}
-              {/* AI 智慧查詢 */}
-              {/* ==================== */}
+            userRole === "supervisor" ? (
+              <SupervisorOverview />
+            ) : (
+              <>
+                {/* ==================== */}
+                {/* AI 智慧查詢 */}
+                {/* ==================== */}
 
-              <div
-                style={{
-                  background:
-                    "linear-gradient(135deg, #F4FAF8 0%, #FFFFFF 100%)",
-                  borderRadius: 18,
-                  padding: isMobile
-                    ? 20
-                    : 28,
-                  marginBottom: 28,
-                  border:
-                    "1px solid #D6E8E2",
-                  boxShadow:
-                    "0 2px 12px rgba(22,58,67,0.06)",
-                  boxSizing:
-                    "border-box",
-                }}
-              >
                 <div
                   style={{
-                    display: "flex",
-                    alignItems:
-                      "flex-start",
-                    gap: 14,
-                    marginBottom: 18,
+                    background:
+                      "linear-gradient(135deg, #F4FAF8 0%, #FFFFFF 100%)",
+                    borderRadius: 18,
+                    padding: isMobile
+                      ? 20
+                      : 28,
+                    marginBottom: 28,
+                    border:
+                      "1px solid #D6E8E2",
+                    boxShadow:
+                      "0 2px 12px rgba(22,58,67,0.06)",
+                    boxSizing:
+                      "border-box",
                   }}
                 >
                   <div
                     style={{
-                      width: 46,
-                      height: 46,
-                      borderRadius: 14,
-                      background:
-                        colors.primary,
-                      color: "#fff",
                       display: "flex",
                       alignItems:
-                        "center",
-                      justifyContent:
-                        "center",
-                      fontSize: 24,
-                      flexShrink: 0,
+                        "flex-start",
+                      gap: 14,
+                      marginBottom: 18,
                     }}
                   >
-                    🤖
-                  </div>
-
-                  <div>
-                    <h2
+                    <div
                       style={{
-                        margin: 0,
-                        color:
+                        width: 46,
+                        height: 46,
+                        borderRadius: 14,
+                        background:
                           colors.primary,
-                        fontSize:
-                          isMobile
-                            ? 21
-                            : 24,
+                        color: "#fff",
+                        display: "flex",
+                        alignItems:
+                          "center",
+                        justifyContent:
+                          "center",
+                        fontSize: 24,
+                        flexShrink: 0,
                       }}
                     >
-                      SilverCare AI 智慧查詢
-                    </h2>
+                      🤖
+                    </div>
 
-                    <p
-                      style={{
-                        margin:
-                          "6px 0 0",
-                        color:
-                          "#6B7280",
-                        fontSize: 14,
-                        lineHeight:
-                          1.6,
-                      }}
-                    >
-                      想查什麼？直接用中文問我
-                    </p>
+                    <div>
+                      <h2
+                        style={{
+                          margin: 0,
+                          color:
+                            colors.primary,
+                          fontSize:
+                            isMobile
+                              ? 21
+                              : 24,
+                        }}
+                      >
+                        SilverCare AI 智慧查詢
+                      </h2>
+
+                      <p
+                        style={{
+                          margin:
+                            "6px 0 0",
+                          color:
+                            "#6B7280",
+                          fontSize: 14,
+                          lineHeight:
+                            1.6,
+                        }}
+                      >
+                        想查什麼？直接用中文問我
+                      </p>
+                    </div>
                   </div>
-                </div>
 
-                <div
-                  style={{
-                    display: "flex",
-                    flexDirection:
-                      isMobile
-                        ? "column"
-                        : "row",
-                    gap: 10,
-                  }}
-                >
-                  <input
-                    type="text"
-                    value={aiQuery}
-                    onChange={(e) =>
-                      setAiQuery(
-                        e.target.value
-                      )
-                    }
-                    onKeyDown={(e) => {
-                      if (
-                        e.key ===
-                        "Enter"
-                      ) {
-                        void handleAiQuery();
-                      }
-                    }}
-                    placeholder="例如：今天哪些長者還沒有量血壓？"
-                    disabled={
-                      aiLoading
-                    }
-                    style={{
-                      flex: 1,
-                      minWidth: 0,
-                      height: 48,
-                      padding:
-                        "0 16px",
-                      border:
-                        "1px solid #CBD5E1",
-                      borderRadius: 10,
-                      outline: "none",
-                      background:
-                        "#fff",
-                      color:
-                        "#1F2937",
-                      fontSize: 15,
-                      boxSizing:
-                        "border-box",
-                    }}
-                  />
-
-                  <button
-                    type="button"
-                    onClick={() =>
-                      void handleAiQuery()
-                    }
-                    disabled={
-                      aiLoading
-                    }
-                    style={{
-                      height: 48,
-                      padding:
-                        "0 22px",
-                      border: "none",
-                      borderRadius: 10,
-                      background:
-                        colors.primary,
-                      color: "#fff",
-                      fontWeight: 700,
-                      fontSize: 15,
-                      cursor:
-                        aiLoading
-                          ? "default"
-                          : "pointer",
-                      opacity:
-                        aiLoading
-                          ? 0.65
-                          : 1,
-                      whiteSpace:
-                        "nowrap",
-                    }}
-                  >
-                    {aiLoading
-                      ? "查詢中..."
-                      : "🔍 查詢"}
-                  </button>
-                </div>
-
-                <div
-                  style={{
-                    marginTop: 16,
-                  }}
-                >
                   <div
                     style={{
-                      color:
-                        "#6B7280",
-                      fontSize: 13,
-                      marginBottom: 9,
+                      display: "flex",
+                      flexDirection:
+                        isMobile
+                          ? "column"
+                          : "row",
+                      gap: 10,
                     }}
                   >
-                    試試看：
+                    <input
+                      type="text"
+                      value={aiQuery}
+                      onChange={(e) =>
+                        setAiQuery(
+                          e.target.value
+                        )
+                      }
+                      onKeyDown={(e) => {
+                        if (
+                          e.key ===
+                          "Enter"
+                        ) {
+                          void handleAiQuery();
+                        }
+                      }}
+                      placeholder="例如：今天哪些長者還沒有量血壓？"
+                      disabled={
+                        aiLoading
+                      }
+                      style={{
+                        flex: 1,
+                        minWidth: 0,
+                        height: 46,
+                        padding:
+                          "0 14px",
+                        border:
+                          "1px solid #D1D5DB",
+                        borderRadius: 10,
+                        outline: "none",
+                        fontSize: 15,
+                        boxSizing:
+                          "border-box",
+                        background:
+                          "#fff",
+                      }}
+                    />
+
+                    <button
+                      type="button"
+                      onClick={() =>
+                        void handleAiQuery()
+                      }
+                      disabled={
+                        aiLoading
+                      }
+                      style={{
+                        minWidth: isMobile
+                          ? "100%"
+                          : 100,
+                        height: 46,
+                        border: "none",
+                        borderRadius: 10,
+                        background:
+                          colors.primary,
+                        color: "#fff",
+                        fontSize: 15,
+                        fontWeight: 700,
+                        cursor:
+                          aiLoading
+                            ? "default"
+                            : "pointer",
+                        opacity:
+                          aiLoading
+                            ? 0.7
+                            : 1,
+                      }}
+                    >
+                      {aiLoading
+                        ? "查詢中..."
+                        : "開始查詢"}
+                    </button>
                   </div>
 
                   <div
@@ -1075,241 +1116,305 @@ export default function Home() {
                       flexWrap:
                         "wrap",
                       gap: 8,
+                      marginTop: 12,
                     }}
                   >
-                    {[
-                      "今天有哪些課程？",
-                      "今天哪些長者還沒量測？",
-                      "最近出席比較少的長者",
-                      "這個月有哪些費用？",
-                    ].map(
-                      (query) => (
-                        <button
-                          key={query}
-                          type="button"
-                          onClick={() =>
-                            handleAiQuickQuery(
-                              query
-                            )
-                          }
-                          disabled={
-                            aiLoading
-                          }
-                          style={{
-                            border:
-                              "1px solid #D6E8E2",
-                            background:
-                              "#fff",
-                            color:
-                              colors.primary,
-                            borderRadius: 999,
-                            padding:
-                              "7px 12px",
-                            fontSize: 13,
-                            cursor:
-                              aiLoading
-                                ? "default"
-                                : "pointer",
-                            opacity:
-                              aiLoading
-                                ? 0.6
-                                : 1,
-                          }}
-                        >
-                          {query}
-                        </button>
-                      )
-                    )}
+                    <button
+                      type="button"
+                      onClick={() =>
+                        handleAiQuickQuery(
+                          "目前有幾位長者？"
+                        )
+                      }
+                      style={{
+                        border:
+                          "1px solid #D6E8E2",
+                        background:
+                          "#FFFFFF",
+                        color:
+                          colors.primary,
+                        borderRadius: 999,
+                        padding:
+                          "7px 12px",
+                        fontSize: 13,
+                        cursor:
+                          "pointer",
+                      }}
+                    >
+                      長者人數
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() =>
+                        handleAiQuickQuery(
+                          "今天有哪些課程？"
+                        )
+                      }
+                      style={{
+                        border:
+                          "1px solid #D6E8E2",
+                        background:
+                          "#FFFFFF",
+                        color:
+                          colors.primary,
+                        borderRadius: 999,
+                        padding:
+                          "7px 12px",
+                        fontSize: 13,
+                        cursor:
+                          "pointer",
+                      }}
+                    >
+                      今日課程
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() =>
+                        handleAiQuickQuery(
+                          `${new Date().getMonth() + 1}月有哪些課程？`
+                        )
+                      }
+                      style={{
+                        border:
+                          "1px solid #D6E8E2",
+                        background:
+                          "#FFFFFF",
+                        color:
+                          colors.primary,
+                        borderRadius: 999,
+                        padding:
+                          "7px 12px",
+                        fontSize: 13,
+                        cursor:
+                          "pointer",
+                      }}
+                    >
+                      本月課程
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() =>
+                        handleAiQuickQuery(
+                          "有哪些長者？"
+                        )
+                      }
+                      style={{
+                        border:
+                          "1px solid #D6E8E2",
+                        background:
+                          "#FFFFFF",
+                        color:
+                          colors.primary,
+                        borderRadius: 999,
+                        padding:
+                          "7px 12px",
+                        fontSize: 13,
+                        cursor:
+                          "pointer",
+                      }}
+                    >
+                      長者名單
+                    </button>
                   </div>
+
+                  {aiResult && (
+                    <div
+                      style={{
+                        marginTop: 18,
+                        padding: 16,
+                        background:
+                          "#FFFFFF",
+                        border:
+                          "1px solid #D6E8E2",
+                        borderRadius: 12,
+                        whiteSpace:
+                          "pre-wrap",
+                        color:
+                          "#374151",
+                        fontSize: 14,
+                        lineHeight:
+                          1.7,
+                      }}
+                    >
+                      {aiResult}
+                    </div>
+                  )}
                 </div>
 
-                {aiResult && (
+                {/* ==================== */}
+                {/* Dashboard Cards */}
+                {/* ==================== */}
+
+                <div
+                  style={{
+                    display: "grid",
+                    gridTemplateColumns:
+                      isMobile
+                        ? "1fr"
+                        : "repeat(4, minmax(0, 1fr))",
+                    gap: 18,
+                    marginBottom: 28,
+                  }}
+                >
                   <div
                     style={{
-                      marginTop: 18,
-                      padding: 16,
                       background:
                         "#fff",
-                      borderRadius: 12,
+                      borderRadius: 16,
+                      padding: 22,
+                      boxShadow:
+                        "0 2px 10px rgba(0,0,0,0.05)",
                       border:
-                        "1px solid #D6E8E2",
-                      color:
-                        "#374151",
-                      whiteSpace:
-                        "pre-wrap",
-                      lineHeight: 1.7,
-                      fontSize: 14,
+                        "1px solid #E5E7EB",
                     }}
                   >
                     <div
                       style={{
+                        fontSize: 14,
+                        color:
+                          "#6B7280",
+                        marginBottom: 8,
+                      }}
+                    >
+                      長者總數
+                    </div>
+
+                    <div
+                      style={{
+                        fontSize: 32,
                         fontWeight: 700,
                         color:
                           colors.primary,
-                        marginBottom: 6,
                       }}
                     >
-                      🤖 AI 回覆
+                      {
+                        dashboardData.elderCount
+                      }
+                    </div>
+                  </div>
+
+                  <div
+                    style={{
+                      background:
+                        "#fff",
+                      borderRadius: 16,
+                      padding: 22,
+                      boxShadow:
+                        "0 2px 10px rgba(0,0,0,0.05)",
+                      border:
+                        "1px solid #E5E7EB",
+                    }}
+                  >
+                    <div
+                      style={{
+                        fontSize: 14,
+                        color:
+                          "#6B7280",
+                        marginBottom: 8,
+                      }}
+                    >
+                      今日課程
                     </div>
 
-                    {aiResult}
-                  </div>
-                )}
-              </div>
-
-              {/* ==================== */}
-              {/* Dashboard Summary */}
-              {/* ==================== */}
-
-              <div
-                style={{
-                  display: "grid",
-                  gridTemplateColumns:
-                    isMobile
-                      ? "repeat(2, minmax(0, 1fr))"
-                      : "repeat(4, minmax(0, 1fr))",
-                  gap: isMobile
-                    ? 14
-                    : 20,
-                  marginBottom: 32,
-                }}
-              >
-                <div
-                  style={{
-                    ...cardStyle,
-                    border:
-                      "1px solid #B7E3D2",
-                  }}
-                >
-                  <div
-                    style={
-                      labelStyle
-                    }
-                  >
-                    長者人數
+                    <div
+                      style={{
+                        fontSize: 32,
+                        fontWeight: 700,
+                        color:
+                          colors.primary,
+                      }}
+                    >
+                      {
+                        dashboardData.todayCourseCount
+                      }
+                    </div>
                   </div>
 
                   <div
-                    style={
-                      valueStyle
-                    }
+                    style={{
+                      background:
+                        "#fff",
+                      borderRadius: 16,
+                      padding: 22,
+                      boxShadow:
+                        "0 2px 10px rgba(0,0,0,0.05)",
+                      border:
+                        "1px solid #E5E7EB",
+                    }}
                   >
-                    {
-                      dashboardData.elderCount
-                    }
+                    <div
+                      style={{
+                        fontSize: 14,
+                        color:
+                          "#6B7280",
+                        marginBottom: 8,
+                      }}
+                    >
+                      今日健康量測
+                    </div>
+
+                    <div
+                      style={{
+                        fontSize: 32,
+                        fontWeight: 700,
+                        color:
+                          colors.primary,
+                      }}
+                    >
+                      {
+                        dashboardData.todayHealthCount
+                      }
+                    </div>
+                  </div>
+
+                  <div
+                    style={{
+                      background:
+                        "#fff",
+                      borderRadius: 16,
+                      padding: 22,
+                      boxShadow:
+                        "0 2px 10px rgba(0,0,0,0.05)",
+                      border:
+                        "1px solid #E5E7EB",
+                    }}
+                  >
+                    <div
+                      style={{
+                        fontSize: 14,
+                        color:
+                          "#6B7280",
+                        marginBottom: 8,
+                      }}
+                    >
+                      今日簽到
+                    </div>
+
+                    <div
+                      style={{
+                        fontSize: 32,
+                        fontWeight: 700,
+                        color:
+                          colors.primary,
+                      }}
+                    >
+                      {
+                        dashboardData.todayAttendanceCount
+                      }
+                    </div>
                   </div>
                 </div>
 
-                <div
-                  style={{
-                    ...cardStyle,
-                    border:
-                      "1px solid #C8DCF7",
-                  }}
-                >
-                  <div
-                    style={
-                      labelStyle
-                    }
-                  >
-                    今日課程
-                  </div>
+                {/* ==================== */}
+                {/* Dashboard Activities */}
+                {/* ==================== */}
 
-                  <div
-                    style={
-                      valueStyle
-                    }
-                  >
-                    {
-                      dashboardData.todayCourseCount
-                    }
-                  </div>
-                </div>
-
-                <div
-                  style={{
-                    ...cardStyle,
-                    border:
-                      "1px solid #F3D5D5",
-                  }}
-                >
-                  <div
-                    style={
-                      labelStyle
-                    }
-                  >
-                    今日量測
-                  </div>
-
-                  <div
-                    style={
-                      valueStyle
-                    }
-                  >
-                    {
-                      dashboardData.todayHealthCount
-                    }
-                  </div>
-                </div>
-
-                <div
-                  style={{
-                    ...cardStyle,
-                    border:
-                      "1px solid #F0E1A6",
-                  }}
-                >
-                  <div
-                    style={
-                      labelStyle
-                    }
-                  >
-                    今日簽到
-                  </div>
-
-                  <div
-                    style={
-                      valueStyle
-                    }
-                  >
-                    {
-                      dashboardData.todayAttendanceCount
-                    }
-                  </div>
-                </div>
-              </div>
-
-              <div
-                style={{
-                  background: "#fff",
-                  borderRadius: 16,
-                  padding: isMobile
-                    ? 24
-                    : 40,
-                  textAlign: "center",
-                }}
-              >
-                <h2>
-                  歡迎使用 SilverCare
-                </h2>
-
-                <p>
-                  請由左側功能選單開始管理據點資料。
-                </p>
-              </div>
-
-              {/* ==================== */}
-              {/* 近期活動公告 */}
-              {/* ==================== */}
-
-              <div
-                style={{
-                  marginTop: 24,
-                }}
-              >
                 <DashboardActivities />
-              </div>
-            </>
+              </>
+            )
           )}
 
           {/* ==================== */}
@@ -1321,28 +1426,43 @@ export default function Home() {
             <div
               style={{
                 display: "flex",
-                flexDirection: "column",
-                gap: 24,
-                width: "100%",
+                flexDirection:
+                  isMobile
+                    ? "column"
+                    : "row",
+                gap: 20,
+                alignItems:
+                  "flex-start",
               }}
             >
-              <ElderList
-                onSelectElder={
-                  setSelectedElder
-                }
-              />
+              <div
+                style={{
+                  flex: 1,
+                  minWidth: 0,
+                  width: "100%",
+                }}
+              >
+                <ElderList
+                  onSelectElder={
+                    setSelectedElder
+                  }
+                />
+              </div>
 
               {selectedElder && (
                 <div
                   style={{
-                    width: "100%",
+                    width: isMobile
+                      ? "100%"
+                      : 380,
+                    flexShrink: 0,
                   }}
                 >
-                  <ElderProfile
-                    elder={
-                      selectedElder
-                    }
-                  />
+                 <ElderProfile
+  elder={
+    selectedElder
+  }
+/>
                 </div>
               )}
             </div>
@@ -1462,15 +1582,17 @@ export default function Home() {
                           "1px solid #D1D5DB",
                         background:
                           "#fff",
-                        borderRadius: 8,
+                        color:
+                          "#374151",
+                        borderRadius: 10,
+                        height: 42,
                         padding:
-                          "9px 16px",
+                          "0 16px",
                         cursor:
                           "pointer",
-                        fontWeight: 600,
                       }}
                     >
-                      重新選擇
+                      返回
                     </button>
                   </div>
 
@@ -1479,48 +1601,36 @@ export default function Home() {
                       background:
                         "#fff",
                       borderRadius: 16,
-                      padding: 24,
+                      padding: isMobile
+                        ? 20
+                        : 28,
                       boxShadow:
                         "0 2px 10px rgba(0,0,0,0.06)",
                     }}
                   >
-                    <div
+                    <h2
                       style={{
-                        marginBottom: 20,
+                        margin:
+                          "0 0 20px",
+                        color:
+                          colors.primary,
+                        fontSize: 24,
                       }}
                     >
-                      <h2
-                        style={{
-                          margin: 0,
-                          color:
-                            colors.primary,
-                        }}
-                      >
-                        開始健康量測
-                      </h2>
+                      健康量測
+                    </h2>
 
-                      <p
-                        style={{
-                          margin:
-                            "8px 0 0",
-                          color:
-                            "#6B7280",
-                          fontSize: 14,
-                        }}
-                      >
-                        已完成簽到，可以開始為
-                        {
-                          healthElder.name
-                        }
-                        進行健康量測。
-                      </p>
-                    </div>
-
-                    <ElderProfile
-                      elder={
-                        healthElder
-                      }
-                    />
+                    <p
+                      style={{
+                        color:
+                          "#6B7280",
+                        margin: 0,
+                        lineHeight:
+                          1.7,
+                      }}
+                    >
+                      請使用健康量測功能為已簽到長者建立今日量測紀錄。
+                    </p>
                   </div>
                 </>
               ) : (
@@ -1528,57 +1638,33 @@ export default function Home() {
                   style={{
                     background:
                       "#fff",
-                    padding: isMobile
-                      ? 24
-                      : 40,
                     borderRadius: 16,
-                    textAlign:
-                      "center",
+                    padding: 28,
                     boxShadow:
                       "0 2px 10px rgba(0,0,0,0.06)",
                   }}
                 >
                   <h2
                     style={{
+                      margin:
+                        "0 0 10px",
                       color:
                         colors.primary,
+                      fontSize: 24,
                     }}
                   >
-                    ❤️ 健康量測
+                    健康量測
                   </h2>
 
                   <p
                     style={{
+                      margin: 0,
                       color:
                         "#6B7280",
-                      marginBottom: 24,
                     }}
                   >
-                    請先到「今日簽到」搜尋長者並完成簽到。
+                    請先從長者簽到後進入健康量測。
                   </p>
-
-                  <button
-                    type="button"
-                    onClick={() =>
-                      setSelectedMenu(
-                        "attendance"
-                      )
-                    }
-                    style={{
-                      background:
-                        colors.primary,
-                      color: "#fff",
-                      border: "none",
-                      borderRadius: 8,
-                      padding:
-                        "11px 20px",
-                      cursor:
-                        "pointer",
-                      fontWeight: 600,
-                    }}
-                  >
-                    前往今日簽到
-                  </button>
                 </div>
               )}
             </div>
@@ -1612,18 +1698,36 @@ export default function Home() {
               style={{
                 background:
                   "#fff",
-                padding: isMobile
-                  ? 24
-                  : 40,
                 borderRadius: 16,
+                padding: isMobile
+                  ? 20
+                  : 28,
+                boxShadow:
+                  "0 2px 10px rgba(0,0,0,0.06)",
               }}
             >
-              <h2>
-                ⚙️ 系統設定
+              <h2
+                style={{
+                  margin:
+                    "0 0 12px",
+                  color:
+                    colors.primary,
+                  fontSize: 24,
+                }}
+              >
+                系統設定
               </h2>
 
-              <p>
-                建置中...
+              <p
+                style={{
+                  margin: 0,
+                  color:
+                    "#6B7280",
+                  lineHeight:
+                    1.7,
+                }}
+              >
+                SilverCare 系統設定功能。
               </p>
             </div>
           )}
@@ -1632,26 +1736,3 @@ export default function Home() {
     </div>
   );
 }
-
-const cardStyle:
-  React.CSSProperties = {
-  background: "#fff",
-  borderRadius: 12,
-  padding: 20,
-  boxShadow:
-    "0 2px 10px rgba(0,0,0,0.06)",
-  boxSizing: "border-box",
-};
-
-const labelStyle:
-  React.CSSProperties = {
-  fontSize: 14,
-  color: "#6b7280",
-};
-
-const valueStyle:
-  React.CSSProperties = {
-  fontSize: 32,
-  fontWeight: 700,
-  marginTop: 8,
-};

@@ -188,7 +188,13 @@ function mapSupabaseCourse(
   };
 }
 
-export default function CourseRegisterPage() {
+type CourseRegisterPageProps = {
+  initialCourseId?: number;
+};
+
+export default function CourseRegisterPage({
+  initialCourseId,
+}: CourseRegisterPageProps = {}) {
   const [courses, setCourses] =
     useState<Course[]>([]);
 
@@ -206,7 +212,9 @@ export default function CourseRegisterPage() {
   >([]);
 
   const [courseId, setCourseId] =
-    useState<number | null>(null);
+    useState<number | null>(
+      initialCourseId ?? null
+    );
 
   const [
     activityId,
@@ -270,6 +278,14 @@ export default function CourseRegisterPage() {
    * courseId / activityId
    */
   useEffect(() => {
+    if (
+      initialCourseId !== undefined &&
+      Number.isFinite(initialCourseId)
+    ) {
+      setCourseId(initialCourseId);
+      return;
+    }
+
     const params =
       new URLSearchParams(
         window.location.search
@@ -302,7 +318,7 @@ export default function CourseRegisterPage() {
         setActivityId(parsed);
       }
     }
-  }, []);
+  }, [initialCourseId]);
 
   /*
    * 從 Supabase 讀取目前課程
@@ -896,7 +912,19 @@ export default function CourseRegisterPage() {
       return;
     }
 
+    if (!trimmedPhone) {
+      alert("請輸入電話。");
+      return;
+    }
 
+    if (
+      normalizedPhone.length < 8
+    ) {
+      alert(
+        "請輸入正確的電話號碼。"
+      );
+      return;
+    }
 
     if (
       isActivity &&
@@ -1848,7 +1876,7 @@ function RegistrationForm({
               e.target.value
             );
           }}
-         placeholder="請輸入您的電話（選填）"
+          placeholder="請輸入您的電話"
           style={inputStyle}
         />
       </div>
