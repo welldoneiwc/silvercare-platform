@@ -135,7 +135,12 @@ export default function Home() {
           setUserRole(null);
           return;
         }
-console.log("目前登入角色：", roleData);
+
+        console.log(
+          "目前登入角色：",
+          roleData
+        );
+
         setUserRole(
           roleData?.role ?? null
         );
@@ -1458,11 +1463,11 @@ console.log("目前登入角色：", roleData);
                     flexShrink: 0,
                   }}
                 >
-                 <ElderProfile
-  elder={
-    selectedElder
-  }
-/>
+                  <ElderProfile
+                    elder={
+                      selectedElder
+                    }
+                  />
                 </div>
               )}
             </div>
@@ -1596,42 +1601,15 @@ console.log("目前登入角色：", roleData);
                     </button>
                   </div>
 
-                  <div
-                    style={{
-                      background:
-                        "#fff",
-                      borderRadius: 16,
-                      padding: isMobile
-                        ? 20
-                        : 28,
-                      boxShadow:
-                        "0 2px 10px rgba(0,0,0,0.06)",
-                    }}
-                  >
-                    <h2
-                      style={{
-                        margin:
-                          "0 0 20px",
-                        color:
-                          colors.primary,
-                        fontSize: 24,
-                      }}
-                    >
-                      健康量測
-                    </h2>
+                  {/* ==================== */}
+                  {/* 真正的健康量測功能 */}
+                  {/* ==================== */}
 
-                    <p
-                      style={{
-                        color:
-                          "#6B7280",
-                        margin: 0,
-                        lineHeight:
-                          1.7,
-                      }}
-                    >
-                      請使用健康量測功能為已簽到長者建立今日量測紀錄。
-                    </p>
-                  </div>
+                  <ElderProfile
+                    elder={
+                      healthElder
+                    }
+                  />
                 </>
               ) : (
                 <div
