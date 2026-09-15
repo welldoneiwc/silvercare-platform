@@ -1,6 +1,7 @@
 "use client";
 
 import {
+  useCallback,
   useEffect,
   useMemo,
   useState,
@@ -35,6 +36,10 @@ type Props = {
 function calculateAge(
   birthday: string
 ): number {
+  if (!birthday) {
+    return 0;
+  }
+
   const birth = new Date(birthday);
   const today = new Date();
 
@@ -163,72 +168,243 @@ export default function ElderList({
   const [editingElder, setEditingElder] =
     useState<Elder | null>(null);
 
+  const [currentRole, setCurrentRole] =
+    useState("");
+
+  const [currentLocationId, setCurrentLocationId] =
+    useState<number | null>(null);
+
   /**
-   * 預覽長者
+   * 取得 Supervisor 目前選取的據點
    *
-   * 點擊 👁️ 後：
-   * 1. 傳回目前長者
-   * 2. 手機版自動往下滑到詳細資料區域
+   * 不同版本的據點切換程式可能使用不同 key，
+   * 因此依序檢查目前可能存在的 key。
    */
-  const handlePreviewElder = (
-    elder: Elder
-  ) => {
-    onSelectElder(elder);
+  const getSelectedLocationId =
+    useCallback(() => {
+      if (
+        typeof window ===
+        "undefined"
+      ) {
+        return null;
+      }
 
-    if (
-      typeof window !==
-      "undefined"
-    ) {
-      window.setTimeout(() => {
-        window.scrollTo({
-          top:
-            document.documentElement
-              .scrollHeight,
-          behavior:
-            "smooth",
-        });
-      }, 120);
-    }
-  };
+      const keys = [
+        "silvercare-selected-location-id",
+        "silvercare-selected-location",
+        "selectedLocationId",
+        "selected-location-id",
+      ];
+
+      for (
+        const key of keys
+      ) {
+        const value =
+          window.localStorage.getItem(
+            key
+          );
+
+        if (
+          value === null ||
+          value === ""
+        ) {
+          continue;
+        }
+
+        const parsed =
+          Number(value);
+
+        if (
+          Number.isFinite(
+            parsed
+          ) &&
+          parsed > 0
+        ) {
+          return parsed;
+        }
+      }
+
+      return null;
+    }, []);
 
   /**
-   * 第一次載入 Supabase 長者資料
+   * 取得目前登入帳號的角色與據點
    */
-  useEffect(() => {
-    const loadElders = async () => {
-      try {
-        const {
-          data,
-          error,
-        } = await supabase
-          .from("elders")
+  const getUserContext =
+    useCallback(async () => {
+      const {
+        data: authData,
+        error: authError,
+      } =
+        await supabase.auth.getUser();
+
+      const user =
+        authData.user;
+
+      if (
+        authError ||
+        !user
+      ) {
+        console.error(
+          "取得目前登入使用者失敗：",
+          authError
+        );
+
+        return null;
+      }
+
+      console.log(
+        "目前登入使用者：",
+        {
+          id: user.id,
+          email: user.email,
+        }
+      );
+
+      const {
+        data: roleData,
+        error: roleError,
+      } =
+        await supabase
+          .from("user_roles")
           .select(
             `
-              id,
-              name,
-              gender,
-              birthday,
-              phone,
-              elder_type,
-              living_status,
-              contact_method,
-              emergency_contact_name,
-              emergency_contact_relation,
-              emergency_contact_phone
+              role,
+              location_id
             `
           )
-          .order("id", {
-            ascending: true,
-          });
+          .eq(
+            "user_id",
+            user.id
+          )
+          .maybeSingle();
 
-        if (error) {
-          console.error(
-            "讀取長者資料失敗：",
-            JSON.stringify(
-              error,
-              null,
-              2
+      if (roleError) {
+        console.error(
+          "取得使用者角色失敗：",
+          roleError
+        );
+
+        return null;
+      }
+
+      const role =
+        roleData?.role ??
+        "";
+
+      const roleLocationId =
+        roleData?.location_id !=
+        null
+          ? Number(
+              roleData.location_id
             )
+          : null;
+
+      let selectedLocationId:
+        | number
+        | null = null;
+
+      if (
+        role ===
+        "supervisor"
+      ) {
+        selectedLocationId =
+          getSelectedLocationId();
+      }
+
+      let effectiveLocationId:
+        | number
+        | null = null;
+
+      if (
+        role === "site"
+      ) {
+        effectiveLocationId =
+          roleLocationId;
+      } else if (
+        role ===
+        "supervisor"
+      ) {
+        effectiveLocationId =
+          selectedLocationId;
+      } else {
+        effectiveLocationId =
+          roleLocationId;
+      }
+
+      console.log(
+        "ElderList 據點權限：",
+        {
+          email: user.email,
+          role,
+          roleLocationId,
+          selectedLocationId,
+          effectiveLocationId,
+        }
+      );
+
+      return {
+        user,
+        role,
+        roleLocationId,
+        selectedLocationId,
+        effectiveLocationId,
+      };
+    }, [
+      getSelectedLocationId,
+    ]);
+
+  /**
+   * 載入長者資料
+   *
+   * 重要：
+   * Site 不再直接 select 全部 elders。
+   * 先取得 user_roles.location_id，
+   * 再用 .eq("location_id", locationId)
+   * 明確限制資料範圍。
+   *
+   * Supervisor 也只載入目前選取的據點。
+   */
+  const loadElders =
+    useCallback(async () => {
+      setLoaded(false);
+
+      try {
+        const context =
+          await getUserContext();
+
+        if (!context) {
+          setElders([]);
+          setCurrentRole("");
+          setCurrentLocationId(
+            null
+          );
+          setLoaded(true);
+          return;
+        }
+
+        setCurrentRole(
+          context.role
+        );
+
+        setCurrentLocationId(
+          context.effectiveLocationId
+        );
+
+        /**
+         * 目前這個 ElderList 的目標：
+         *
+         * 只顯示「目前使用中的據點」。
+         *
+         * 如果 Supervisor 尚未選擇據點，
+         * 不直接顯示全部 39 人，
+         * 避免又回到全部混在一起的狀態。
+         */
+        if (
+          !context.effectiveLocationId
+        ) {
+          console.warn(
+            "目前沒有有效的 location_id，暫不載入長者資料。"
           );
 
           setElders([]);
@@ -236,18 +412,93 @@ export default function ElderList({
           return;
         }
 
+        console.log(
+          "開始讀取 elders：",
+          {
+            location_id:
+              context.effectiveLocationId,
+            role:
+              context.role,
+          }
+        );
+
+        const {
+          data,
+          error,
+        } =
+          await supabase
+            .from("elders")
+            .select(
+              `
+                id,
+                name,
+                gender,
+                birthday,
+                phone,
+                elder_type,
+                living_status,
+                contact_method,
+                emergency_contact_name,
+                emergency_contact_relation,
+                emergency_contact_phone
+              `
+            )
+            .eq(
+              "location_id",
+              context.effectiveLocationId
+            )
+            .order("id", {
+              ascending: true,
+            });
+
+        if (error) {
+          console.error(
+            "讀取指定據點長者資料失敗：",
+            {
+              message:
+                error.message,
+              details:
+                error.details,
+              hint:
+                error.hint,
+              code:
+                error.code,
+            }
+          );
+
+          setElders([]);
+          setLoaded(true);
+          return;
+        }
+
+        console.log(
+          "指定據點長者資料讀取結果：",
+          {
+            location_id:
+              context.effectiveLocationId,
+            count:
+              data?.length ?? 0,
+          }
+        );
+
         const safeData: Elder[] =
           (data ?? []).map(
             (item) => ({
-              id: Number(item.id),
+              id: Number(
+                item.id
+              ),
               name:
-                item.name ?? "",
+                item.name ??
+                "",
               gender:
-                item.gender ?? "",
+                item.gender ??
+                "",
               birthday:
-                item.birthday ?? "",
+                item.birthday ??
+                "",
               phone:
-                item.phone ?? "",
+                item.phone ??
+                "",
               elder_type:
                 item.elder_type ??
                 "出席型",
@@ -269,7 +520,9 @@ export default function ElderList({
             })
           );
 
-        setElders(safeData);
+        setElders(
+          safeData
+        );
         setLoaded(true);
       } catch (error) {
         console.error(
@@ -280,274 +533,132 @@ export default function ElderList({
         setElders([]);
         setLoaded(true);
       }
-    };
-
-    loadElders();
-  }, []);
+    }, [
+      getUserContext,
+    ]);
 
   /**
-   * 新增長者到 Supabase
-   *
-   * Site 使用者：
-   * 自動從 user_roles 取得自己的 location_id，
-   * 並將長者綁定到該據點。
+   * 第一次載入
    */
-  const handleAddElder = async (
-    elder: Omit<Elder, "id">
+  useEffect(() => {
+    loadElders();
+  }, [
+    loadElders,
+  ]);
+
+  /**
+   * 據點切換後重新載入
+   *
+   * SilverCare 現有的 storage event：
+   * silvercare-storage-changed
+   */
+  useEffect(() => {
+    const handleStorageChanged =
+      () => {
+        console.log(
+          "ElderList 收到據點 / 資料變更事件，重新載入。"
+        );
+
+        loadElders();
+      };
+
+    window.addEventListener(
+      "storage",
+      handleStorageChanged
+    );
+
+    window.addEventListener(
+      "silvercare-storage-changed",
+      handleStorageChanged
+    );
+
+    return () => {
+      window.removeEventListener(
+        "storage",
+        handleStorageChanged
+      );
+
+      window.removeEventListener(
+        "silvercare-storage-changed",
+        handleStorageChanged
+      );
+    };
+  }, [
+    loadElders,
+  ]);
+
+  /**
+   * 預覽長者
+   */
+  const handlePreviewElder = (
+    elder: Elder
   ) => {
-    try {
-      const {
-        data: { user },
-        error: userError,
-      } =
-        await supabase.auth.getUser();
+    onSelectElder(
+      elder
+    );
 
-      console.log(
-        "目前登入使用者：",
-        {
-          id: user?.id,
-          email: user?.email,
-          userError,
-        }
-      );
-
-      if (userError || !user) {
-        console.error(
-          "取得目前登入使用者失敗：",
-          userError
-        );
-
-        window.alert(
-          "無法確認目前登入帳號，請重新登入後再試。"
-        );
-
-        return;
-      }
-
-      /**
-       * 取得目前登入使用者的據點角色
-       */
-      const {
-        data: roleData,
-        error: roleError,
-      } = await supabase
-        .from("user_roles")
-        .select(
-          `
-            role,
-            location_id
-          `
-        )
-        .eq(
-          "user_id",
-          user.id
-        )
-        .maybeSingle();
-
-      if (roleError) {
-        console.error(
-          "取得據點權限失敗：",
-          roleError
-        );
-
-        window.alert(
-          `取得據點權限失敗：${roleError.message}`
-        );
-
-        return;
-      }
-
-      const userRole =
-        roleData?.role ?? "";
-
-      const locationId =
-        roleData?.location_id;
-
-      console.log(
-        "目前使用者據點資訊：",
-        {
-          role: userRole,
-          location_id:
-            locationId,
-        }
-      );
-
-      /**
-       * Site 使用者必須有 location_id
-       */
-      if (
-        userRole === "site" &&
-        !locationId
-      ) {
-        console.error(
-          "Site 使用者沒有 location_id：",
-          roleData
-        );
-
-        window.alert(
-          "目前帳號尚未綁定據點，無法新增長者。"
-        );
-
-        return;
-      }
-
-      /**
-       * 建立新增資料
-       *
-       * Site：
-       * 自動加入自己的 location_id
-       *
-       * Supervisor：
-       * 保留原本行為，不指定 location_id
-       */
-      const insertData: Record<
-        string,
-        unknown
-      > = {
-        name: elder.name,
-        gender: elder.gender,
-        birthday: elder.birthday,
-        phone: elder.phone,
-        elder_type:
-          elder.elder_type,
-        living_status:
-          elder.living_status,
-        contact_method:
-          elder.contact_method,
-        emergency_contact_name:
-          elder.emergency_contact_name,
-        emergency_contact_relation:
-          elder.emergency_contact_relation,
-        emergency_contact_phone:
-          elder.emergency_contact_phone,
-      };
-
-      if (
-        userRole === "site" &&
-        locationId
-      ) {
-        insertData.location_id =
-          Number(locationId);
-      }
-
-      const {
-        data,
-        error,
-      } = await supabase
-        .from("elders")
-        .insert(insertData)
-        .select(
-          `
-            id,
-            name,
-            gender,
-            birthday,
-            phone,
-            elder_type,
-            living_status,
-            contact_method,
-            emergency_contact_name,
-            emergency_contact_relation,
-            emergency_contact_phone
-          `
-        )
-        .single();
-
-      if (error) {
-        console.error(
-          "新增長者失敗：",
-          {
-            message:
-              error.message,
-            details:
-              error.details,
-            hint:
-              error.hint,
-            code:
-              error.code,
-          }
-        );
-
-        window.alert(
-          `新增長者失敗：${error.message}`
-        );
-
-        return;
-      }
-
-      if (!data) {
-        window.alert(
-          "新增長者失敗：沒有取得新增資料。"
-        );
-
-        return;
-      }
-
-      const newElder: Elder = {
-        id: Number(data.id),
-        name:
-          data.name ?? "",
-        gender:
-          data.gender ?? "",
-        birthday:
-          data.birthday ?? "",
-        phone:
-          data.phone ?? "",
-        elder_type:
-          data.elder_type ??
-          "出席型",
-        living_status:
-          data.living_status ??
-          "一般",
-        contact_method:
-          data.contact_method ??
-          "電話",
-        emergency_contact_name:
-          data.emergency_contact_name ??
-          "",
-        emergency_contact_relation:
-          data.emergency_contact_relation ??
-          "",
-        emergency_contact_phone:
-          data.emergency_contact_phone ??
-          "",
-      };
-
-      setElders((prev) => [
-        ...prev,
-        newElder,
-      ]);
-
-      notifyStorageChanged();
-    } catch (error) {
-      console.error(
-        "新增長者發生錯誤：",
-        error
-      );
-
-      window.alert(
-        "新增長者失敗，請稍後再試。"
+    if (
+      typeof window !==
+      "undefined"
+    ) {
+      window.setTimeout(
+        () => {
+          window.scrollTo({
+            top:
+              document.documentElement
+                .scrollHeight,
+            behavior:
+              "smooth",
+          });
+        },
+        120
       );
     }
   };
 
   /**
-   * 更新長者到 Supabase
+   * 新增長者
    */
-  const handleUpdateElder = async (
-    elder: Elder
-  ) => {
-    try {
-      const {
-        data,
-        error,
-      } = await supabase
-        .from("elders")
-        .update({
-          name: elder.name,
-          gender: elder.gender,
-          birthday: elder.birthday,
-          phone: elder.phone,
+  const handleAddElder =
+    async (
+      elder: Omit<
+        Elder,
+        "id"
+      >
+    ) => {
+      try {
+        const context =
+          await getUserContext();
+
+        if (!context) {
+          window.alert(
+            "無法確認目前登入帳號，請重新登入後再試。"
+          );
+          return;
+        }
+
+        if (
+          !context.effectiveLocationId
+        ) {
+          window.alert(
+            "目前帳號沒有有效的據點，無法新增長者。"
+          );
+          return;
+        }
+
+        const insertData:
+          Record<
+            string,
+            unknown
+          > = {
+          name:
+            elder.name,
+          gender:
+            elder.gender,
+          birthday:
+            elder.birthday,
+          phone:
+            elder.phone,
           elder_type:
             elder.elder_type,
           living_status:
@@ -560,162 +671,397 @@ export default function ElderList({
             elder.emergency_contact_relation,
           emergency_contact_phone:
             elder.emergency_contact_phone,
-        })
-        .eq("id", elder.id)
-        .select(
-          `
-            id,
-            name,
-            gender,
-            birthday,
-            phone,
-            elder_type,
-            living_status,
-            contact_method,
-            emergency_contact_name,
-            emergency_contact_relation,
-            emergency_contact_phone
-          `
-        )
-        .single();
+          location_id:
+            Number(
+              context.effectiveLocationId
+            ),
+        };
 
-      if (error) {
+        console.log(
+          "新增長者資料：",
+          insertData
+        );
+
+        const {
+          data,
+          error,
+        } =
+          await supabase
+            .from("elders")
+            .insert(
+              insertData
+            )
+            .select(
+              `
+                id,
+                name,
+                gender,
+                birthday,
+                phone,
+                elder_type,
+                living_status,
+                contact_method,
+                emergency_contact_name,
+                emergency_contact_relation,
+                emergency_contact_phone
+              `
+            )
+            .single();
+
+        if (error) {
+          console.error(
+            "新增長者失敗：",
+            {
+              message:
+                error.message,
+              details:
+                error.details,
+              hint:
+                error.hint,
+              code:
+                error.code,
+            }
+          );
+
+          window.alert(
+            `新增長者失敗：${error.message}`
+          );
+
+          return;
+        }
+
+        if (!data) {
+          window.alert(
+            "新增長者失敗：沒有取得新增資料。"
+          );
+
+          return;
+        }
+
+        const newElder:
+          Elder = {
+          id: Number(
+            data.id
+          ),
+          name:
+            data.name ??
+            "",
+          gender:
+            data.gender ??
+            "",
+          birthday:
+            data.birthday ??
+            "",
+          phone:
+            data.phone ??
+            "",
+          elder_type:
+            data.elder_type ??
+            "出席型",
+          living_status:
+            data.living_status ??
+            "一般",
+          contact_method:
+            data.contact_method ??
+            "電話",
+          emergency_contact_name:
+            data.emergency_contact_name ??
+            "",
+          emergency_contact_relation:
+            data.emergency_contact_relation ??
+            "",
+          emergency_contact_phone:
+            data.emergency_contact_phone ??
+            "",
+        };
+
+        setElders(
+          (prev) => [
+            ...prev,
+            newElder,
+          ]
+        );
+
+        notifyStorageChanged();
+      } catch (error) {
         console.error(
-          "更新長者失敗：",
+          "新增長者發生錯誤：",
           error
         );
 
         window.alert(
-          `更新長者失敗：${error.message}`
+          "新增長者失敗，請稍後再試。"
         );
-
-        return;
       }
-
-      if (!data) {
-        window.alert(
-          "更新長者失敗：沒有取得更新資料。"
-        );
-
-        return;
-      }
-
-      const updatedElder: Elder = {
-        id: Number(data.id),
-        name:
-          data.name ?? "",
-        gender:
-          data.gender ?? "",
-        birthday:
-          data.birthday ?? "",
-        phone:
-          data.phone ?? "",
-        elder_type:
-          data.elder_type ??
-          "出席型",
-        living_status:
-          data.living_status ??
-          "一般",
-        contact_method:
-          data.contact_method ??
-          "電話",
-        emergency_contact_name:
-          data.emergency_contact_name ??
-          "",
-        emergency_contact_relation:
-          data.emergency_contact_relation ??
-          "",
-        emergency_contact_phone:
-          data.emergency_contact_phone ??
-          "",
-      };
-
-      setElders((prev) =>
-        prev.map((item) =>
-          item.id === elder.id
-            ? updatedElder
-            : item
-        )
-      );
-
-      notifyStorageChanged();
-    } catch (error) {
-      console.error(
-        "更新長者發生錯誤：",
-        error
-      );
-
-      window.alert(
-        "更新長者失敗，請稍後再試。"
-      );
-    }
-  };
+    };
 
   /**
-   * 從 Supabase 刪除長者
+   * 更新長者
    */
-  const handleDeleteElder = async (
-    id: number
-  ) => {
-    const confirmDelete =
-      window.confirm(
-        "確定要刪除此長者嗎？"
-      );
+  const handleUpdateElder =
+    async (
+      elder: Elder
+    ) => {
+      try {
+        const context =
+          await getUserContext();
 
-    if (!confirmDelete) {
-      return;
-    }
+        if (!context) {
+          window.alert(
+            "無法確認目前登入帳號，請重新登入後再試。"
+          );
+          return;
+        }
 
-    try {
-      const { error } =
-        await supabase
-          .from("elders")
-          .delete()
-          .eq("id", id);
+        if (
+          !context.effectiveLocationId
+        ) {
+          window.alert(
+            "目前帳號沒有有效的據點，無法更新長者。"
+          );
+          return;
+        }
 
-      if (error) {
+        const {
+          data,
+          error,
+        } =
+          await supabase
+            .from("elders")
+            .update({
+              name:
+                elder.name,
+              gender:
+                elder.gender,
+              birthday:
+                elder.birthday,
+              phone:
+                elder.phone,
+              elder_type:
+                elder.elder_type,
+              living_status:
+                elder.living_status,
+              contact_method:
+                elder.contact_method,
+              emergency_contact_name:
+                elder.emergency_contact_name,
+              emergency_contact_relation:
+                elder.emergency_contact_relation,
+              emergency_contact_phone:
+                elder.emergency_contact_phone,
+            })
+            .eq(
+              "id",
+              elder.id
+            )
+            .eq(
+              "location_id",
+              context.effectiveLocationId
+            )
+            .select(
+              `
+                id,
+                name,
+                gender,
+                birthday,
+                phone,
+                elder_type,
+                living_status,
+                contact_method,
+                emergency_contact_name,
+                emergency_contact_relation,
+                emergency_contact_phone
+              `
+            )
+            .single();
+
+        if (error) {
+          console.error(
+            "更新長者失敗：",
+            error
+          );
+
+          window.alert(
+            `更新長者失敗：${error.message}`
+          );
+
+          return;
+        }
+
+        if (!data) {
+          window.alert(
+            "更新長者失敗：沒有取得更新資料。"
+          );
+
+          return;
+        }
+
+        const updatedElder:
+          Elder = {
+          id: Number(
+            data.id
+          ),
+          name:
+            data.name ??
+            "",
+          gender:
+            data.gender ??
+            "",
+          birthday:
+            data.birthday ??
+            "",
+          phone:
+            data.phone ??
+            "",
+          elder_type:
+            data.elder_type ??
+            "出席型",
+          living_status:
+            data.living_status ??
+            "一般",
+          contact_method:
+            data.contact_method ??
+            "電話",
+          emergency_contact_name:
+            data.emergency_contact_name ??
+            "",
+          emergency_contact_relation:
+            data.emergency_contact_relation ??
+            "",
+          emergency_contact_phone:
+            data.emergency_contact_phone ??
+            "",
+        };
+
+        setElders(
+          (prev) =>
+            prev.map(
+              (item) =>
+                item.id ===
+                elder.id
+                  ? updatedElder
+                  : item
+            )
+        );
+
+        notifyStorageChanged();
+      } catch (error) {
         console.error(
-          "刪除長者失敗：",
+          "更新長者發生錯誤：",
           error
         );
 
         window.alert(
-          `刪除長者失敗：${error.message}`
+          "更新長者失敗，請稍後再試。"
+        );
+      }
+    };
+
+  /**
+   * 刪除長者
+   */
+  const handleDeleteElder =
+    async (
+      id: number
+    ) => {
+      const confirmDelete =
+        window.confirm(
+          "確定要刪除此長者嗎？"
         );
 
+      if (!confirmDelete) {
         return;
       }
 
-      setElders((prev) =>
-        prev.filter(
-          (item) =>
-            item.id !== id
-        )
-      );
+      try {
+        const context =
+          await getUserContext();
 
-      localStorage.removeItem(
-        `health-records-${id}`
-      );
+        if (!context) {
+          window.alert(
+            "無法確認目前登入帳號，請重新登入後再試。"
+          );
+          return;
+        }
 
-      notifyStorageChanged();
-    } catch (error) {
-      console.error(
-        "刪除長者發生錯誤：",
-        error
-      );
+        if (
+          !context.effectiveLocationId
+        ) {
+          window.alert(
+            "目前帳號沒有有效的據點，無法刪除長者。"
+          );
+          return;
+        }
 
-      window.alert(
-        "刪除長者失敗，請稍後再試。"
-      );
-    }
-  };
+        const {
+          error,
+        } =
+          await supabase
+            .from("elders")
+            .delete()
+            .eq(
+              "id",
+              id
+            )
+            .eq(
+              "location_id",
+              context.effectiveLocationId
+            );
+
+        if (error) {
+          console.error(
+            "刪除長者失敗：",
+            error
+          );
+
+          window.alert(
+            `刪除長者失敗：${error.message}`
+          );
+
+          return;
+        }
+
+        setElders(
+          (prev) =>
+            prev.filter(
+              (item) =>
+                item.id !==
+                id
+            )
+        );
+
+        localStorage.removeItem(
+          `health-records-${id}`
+        );
+
+        notifyStorageChanged();
+      } catch (error) {
+        console.error(
+          "刪除長者發生錯誤：",
+          error
+        );
+
+        window.alert(
+          "刪除長者失敗，請稍後再試。"
+        );
+      }
+    };
 
   const filteredElders =
     useMemo(() => {
-      console.log("Elder Debug:", {
-  elders: elders.length,
-  keyword,
-});
+      console.log(
+        "Elder Debug:",
+        {
+          elders:
+            elders.length,
+          keyword,
+          role:
+            currentRole,
+          location_id:
+            currentLocationId,
+        }
+      );
+
       return elders.filter(
         (elder) => {
           return (
@@ -743,7 +1089,12 @@ export default function ElderList({
           );
         }
       );
-    }, [elders, keyword]);
+    }, [
+      elders,
+      keyword,
+      currentRole,
+      currentLocationId,
+    ]);
 
   return (
     <>
@@ -934,7 +1285,8 @@ export default function ElderList({
             display: "flex",
             justifyContent:
               "space-between",
-            alignItems: "center",
+            alignItems:
+              "center",
             marginBottom: 20,
             flexWrap: "wrap",
             gap: 12,
@@ -948,7 +1300,8 @@ export default function ElderList({
             <h2
               style={{
                 margin: 0,
-                color: colors.primary,
+                color:
+                  colors.primary,
               }}
             >
               長者管理
@@ -962,7 +1315,9 @@ export default function ElderList({
               }}
             >
               共{" "}
-              {filteredElders.length}{" "}
+              {
+                filteredElders.length
+              }{" "}
               位長者
             </div>
           </div>
@@ -971,21 +1326,27 @@ export default function ElderList({
             <input
               className="silvercare-elder-search"
               placeholder="搜尋姓名 / 電話"
-              value={keyword}
-              onChange={(e) =>
+              value={
+                keyword
+              }
+              onChange={(
+                e
+              ) =>
                 setKeyword(
                   e.target.value
                 )
               }
               style={{
-                padding: "10px 12px",
+                padding:
+                  "10px 12px",
                 borderRadius: 8,
                 border:
                   "1px solid #D1D5DB",
                 background:
                   "#fff",
                 fontSize: 14,
-                outline: "none",
+                outline:
+                  "none",
               }}
             />
 
@@ -995,9 +1356,15 @@ export default function ElderList({
               aria-label="新增長者"
               className="silvercare-elder-add-button"
               onClick={() => {
-                setIsEditing(false);
-                setEditingElder(null);
-                setOpen(true);
+                setIsEditing(
+                  false
+                );
+                setEditingElder(
+                  null
+                );
+                setOpen(
+                  true
+                );
               }}
               style={{
                 width: 40,
@@ -1011,9 +1378,11 @@ export default function ElderList({
                 background:
                   colors.primary,
                 color: "#fff",
-                border: "none",
+                border:
+                  "none",
                 borderRadius: 10,
-                cursor: "pointer",
+                cursor:
+                  "pointer",
                 flex: "0 0 40px",
               }}
             >
@@ -1027,9 +1396,12 @@ export default function ElderList({
             className="silvercare-elder-mobile-empty"
             style={{
               padding: 32,
-              textAlign: "center",
-              color: colors.textLight,
-              background: "#F8FAFC",
+              textAlign:
+                "center",
+              color:
+                colors.textLight,
+              background:
+                "#F8FAFC",
               borderRadius: 10,
             }}
           >
@@ -1041,9 +1413,12 @@ export default function ElderList({
             className="silvercare-elder-mobile-empty"
             style={{
               padding: 32,
-              textAlign: "center",
-              color: colors.textLight,
-              background: "#F8FAFC",
+              textAlign:
+                "center",
+              color:
+                colors.textLight,
+              background:
+                "#F8FAFC",
               borderRadius: 10,
             }}
           >
@@ -1051,10 +1426,6 @@ export default function ElderList({
           </div>
         ) : (
           <>
-            {/* ==================== */}
-            {/* Desktop Table */}
-            {/* ==================== */}
-
             <div className="silvercare-elder-table-wrap">
               <table className="silvercare-elder-desktop-table">
                 <thead>
@@ -1113,16 +1484,22 @@ export default function ElderList({
 
                 <tbody>
                   {filteredElders.map(
-                    (elder) => (
+                    (
+                      elder
+                    ) => (
                       <tr
-                        key={elder.id}
+                        key={
+                          elder.id
+                        }
                       >
                         <td
                           style={{
                             padding: 12,
                           }}
                         >
-                          {elder.name}
+                          {
+                            elder.name
+                          }
                         </td>
 
                         <td
@@ -1132,7 +1509,9 @@ export default function ElderList({
                             padding: 12,
                           }}
                         >
-                          {elder.gender}
+                          {
+                            elder.gender
+                          }
                         </td>
 
                         <td
@@ -1153,7 +1532,9 @@ export default function ElderList({
                             padding: 12,
                           }}
                         >
-                          {elder.phone}
+                          {
+                            elder.phone
+                          }
                         </td>
 
                         <td
@@ -1244,25 +1625,28 @@ export default function ElderList({
               </table>
             </div>
 
-            {/* ==================== */}
-            {/* Mobile Cards */}
-            {/* ==================== */}
-
             <div className="silvercare-elder-mobile-list">
               {filteredElders.map(
-                (elder) => (
+                (
+                  elder
+                ) => (
                   <div
-                    key={elder.id}
+                    key={
+                      elder.id
+                    }
                     className="silvercare-elder-card"
                   >
                     <div className="silvercare-elder-card-top">
                       <div
                         style={{
-                          minWidth: 0,
+                          minWidth:
+                            0,
                         }}
                       >
                         <div className="silvercare-elder-card-name">
-                          {elder.name}
+                          {
+                            elder.name
+                          }
                         </div>
 
                         {elder.phone && (
@@ -1299,7 +1683,8 @@ export default function ElderList({
                             borderRadius: 8,
                             background:
                               "#198754",
-                            color: "#fff",
+                            color:
+                              "#fff",
                             cursor:
                               "pointer",
                           }}
@@ -1458,15 +1843,23 @@ export default function ElderList({
         )}
 
         <AddElderModal
-          open={open}
+          open={
+            open
+          }
           onClose={() => {
-            setOpen(false);
+            setOpen(
+              false
+            );
             setEditingElder(
               null
             );
-            setIsEditing(false);
+            setIsEditing(
+              false
+            );
           }}
-          onSave={handleAddElder}
+          onSave={
+            handleAddElder
+          }
           onUpdate={
             handleUpdateElder
           }

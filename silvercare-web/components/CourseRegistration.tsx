@@ -64,7 +64,7 @@ type SupabaseRegistration = {
   id: number;
   course_id: number;
   name: string;
-  phone: string;
+  phone: string | null;
   registered_at: string;
   status:
     | "confirmed"
@@ -89,7 +89,7 @@ function formatDate(date: string) {
 }
 
 function normalizePhone(
-  phone?: string
+  phone?: string | null
 ) {
   return (phone ?? "")
     .replace(/\s/g, "")
@@ -269,7 +269,6 @@ export default function CourseRegistration({
               ascending: true,
             }
           );
-          
 
         if (error) {
           console.error(
@@ -293,13 +292,29 @@ export default function CourseRegistration({
             ): CourseRegistration => {
               const matchedElder =
                 elders.find(
-                  (elder) =>
-                    normalizePhone(
-                      elder.phone
-                    ) ===
-                    normalizePhone(
-                      item.phone
-                    )
+                  (elder) => {
+                    const elderPhone =
+                      normalizePhone(
+                        elder.phone
+                      );
+
+                    const registrationPhone =
+                      normalizePhone(
+                        item.phone
+                      );
+
+                    if (
+                      !elderPhone ||
+                      !registrationPhone
+                    ) {
+                      return false;
+                    }
+
+                    return (
+                      elderPhone ===
+                      registrationPhone
+                    );
+                  }
                 );
 
               return {
@@ -315,7 +330,7 @@ export default function CourseRegistration({
                   item.name,
 
                 phone:
-                  item.phone,
+                  item.phone ?? "",
 
                 registeredAt:
                   item.registered_at,
@@ -493,6 +508,10 @@ export default function CourseRegistration({
    * 使用 Supabase RPC：
    * - 有名額 → 正取
    * - 額滿 → 候補
+   *
+   * 電話為選填：
+   * - 有填 → 傳送清理後的電話
+   * - 沒填 → 傳送 null
    */
   const handleRegister =
     async () => {
@@ -513,7 +532,8 @@ export default function CourseRegistration({
       }
 
       let name = "";
-      let phone = "";
+      let phone: string | null =
+        null;
 
       if (
         registrationMode ===
@@ -546,14 +566,28 @@ export default function CourseRegistration({
         name =
           selectedElder.name;
 
+        const normalizedPhone =
+          normalizePhone(
+            selectedElder.phone
+          );
+
         phone =
-          selectedElder.phone;
+          normalizedPhone
+            ? normalizedPhone
+            : null;
       } else {
         name =
           manualName.trim();
 
+        const normalizedPhone =
+          normalizePhone(
+            manualPhone
+          );
+
         phone =
-          manualPhone.trim();
+          normalizedPhone
+            ? normalizedPhone
+            : null;
 
         if (!name) {
           alert(
@@ -561,8 +595,6 @@ export default function CourseRegistration({
           );
           return;
         }
-
-
       }
 
       setSaving(true);
@@ -576,11 +608,11 @@ export default function CourseRegistration({
           {
             p_course_id:
               selectedCourse.id,
+
             p_name: name,
+
             p_phone:
-              normalizePhone(
-                phone
-              ),
+              phone,
           }
         );
 
@@ -707,13 +739,29 @@ export default function CourseRegistration({
             ): CourseRegistration => {
               const matchedElder =
                 elders.find(
-                  (elder) =>
-                    normalizePhone(
-                      elder.phone
-                    ) ===
-                    normalizePhone(
-                      item.phone
-                    )
+                  (elder) => {
+                    const elderPhone =
+                      normalizePhone(
+                        elder.phone
+                      );
+
+                    const registrationPhone =
+                      normalizePhone(
+                        item.phone
+                      );
+
+                    if (
+                      !elderPhone ||
+                      !registrationPhone
+                    ) {
+                      return false;
+                    }
+
+                    return (
+                      elderPhone ===
+                      registrationPhone
+                    );
+                  }
                 );
 
               return {
@@ -729,7 +777,7 @@ export default function CourseRegistration({
                   item.name,
 
                 phone:
-                  item.phone,
+                  item.phone ?? "",
 
                 registeredAt:
                   item.registered_at,
@@ -742,10 +790,12 @@ export default function CourseRegistration({
               };
             }
           );
-console.log(
-  "🟣 報名 mapped：",
-  mapped
-);
+
+        console.log(
+          "🟣 報名 mapped：",
+          mapped
+        );
+
         setRegistrations(
           mapped
         );
@@ -1283,28 +1333,27 @@ console.log(
                   電話
                 </label>
 
-               <input
-  type="tel"
-  value={
-    manualPhone
-  }
-  onChange={(e) =>
-    setManualPhone(
-      e.target.value
-    )
-  }
-  placeholder="請輸入電話（選填）"
-  style={{
-    width: "100%",
-    padding: 10,
-    border:
-      "1px solid #ddd",
-    borderRadius:
-      radius.md,
-    boxSizing:
-      "border-box",
-  }}
-
+                <input
+                  type="tel"
+                  value={
+                    manualPhone
+                  }
+                  onChange={(e) =>
+                    setManualPhone(
+                      e.target.value
+                    )
+                  }
+                  placeholder="請輸入電話（選填）"
+                  style={{
+                    width: "100%",
+                    padding: 10,
+                    border:
+                      "1px solid #ddd",
+                    borderRadius:
+                      radius.md,
+                    boxSizing:
+                      "border-box",
+                  }}
                 />
               </div>
             </div>
