@@ -912,12 +912,14 @@ export default function CourseRegisterPage({
       return;
     }
 
-    if (!trimmedPhone) {
-      alert("請輸入電話。");
-      return;
-    }
-
+    /*
+     * 電話為選填。
+     *
+     * 空白電話可以直接報名。
+     * 如果有填電話，才檢查至少 8 碼。
+     */
     if (
+      trimmedPhone &&
       normalizedPhone.length < 8
     ) {
       alert(
@@ -973,7 +975,9 @@ export default function CourseRegisterPage({
           {
             p_course_id: courseId,
             p_name: trimmedName,
-            p_phone: normalizedPhone,
+            p_phone:
+              normalizedPhone ||
+              null,
           }
         );
 
@@ -1758,7 +1762,8 @@ export default function CourseRegisterPage({
             >
               不需要先加入系統。
               <br />
-              直接輸入您的姓名與電話即可報名。
+              輸入您的姓名即可報名，
+              電話為選填。
             </p>
 
             <RegistrationForm
@@ -1865,7 +1870,7 @@ function RegistrationForm({
         <label
           style={labelStyle}
         >
-          電話
+          電話（選填）
         </label>
 
         <input
@@ -1876,7 +1881,7 @@ function RegistrationForm({
               e.target.value
             );
           }}
-          placeholder="請輸入您的電話"
+          placeholder="請輸入您的電話（選填）"
           style={inputStyle}
         />
       </div>
