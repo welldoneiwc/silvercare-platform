@@ -5,6 +5,8 @@ import {
   useState,
 } from "react";
 
+import Link from "next/link";
+
 import { supabase } from "../utils/supabase";
 import { colors } from "../styles/theme";
 import { radius } from "../styles/radius";
@@ -28,12 +30,17 @@ type SupervisorOverviewProps = {
 export default function SupervisorOverview({
   onSelectSite,
 }: SupervisorOverviewProps) {
-  const [sites, setSites] = useState<SiteInfo[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [errorMessage, setErrorMessage] = useState("");
+  const [sites, setSites] =
+    useState<SiteInfo[]>([]);
+
+  const [loading, setLoading] =
+    useState(true);
+
+  const [errorMessage, setErrorMessage] =
+    useState("");
 
   useEffect(() => {
-    loadSites();
+    void loadSites();
   }, []);
 
   const loadSites = async () => {
@@ -46,8 +53,13 @@ export default function SupervisorOverview({
         error: userError,
       } = await supabase.auth.getUser();
 
-      if (userError || !userData.user) {
-        setErrorMessage("目前尚未登入，無法載入據點資料。");
+      if (
+        userError ||
+        !userData.user
+      ) {
+        setErrorMessage(
+          "目前尚未登入，無法載入據點資料。"
+        );
         return;
       }
 
@@ -56,79 +68,172 @@ export default function SupervisorOverview({
         error: roleError,
       } = await supabase
         .from("user_roles")
-        .select("role, location_id")
-        .eq("user_id", userData.user.id)
+        .select(
+          "role, location_id"
+        )
+        .eq(
+          "user_id",
+          userData.user.id
+        )
         .limit(1)
         .maybeSingle();
 
       if (roleError) {
-        console.error("讀取使用者角色失敗：", roleError);
-        setErrorMessage("無法確認目前使用者權限。");
+        console.error(
+          "讀取使用者角色失敗：",
+          roleError
+        );
+
+        setErrorMessage(
+          "無法確認目前使用者權限。"
+        );
+
         return;
       }
 
-      if (roleData?.role !== "supervisor") {
-        setErrorMessage("此頁面僅提供 Supervisor 使用。");
+      if (
+        roleData?.role !==
+        "supervisor"
+      ) {
+        setErrorMessage(
+          "此頁面僅提供 Supervisor 使用。"
+        );
+
         return;
       }
 
-      const {
-        data: eldersData,
-        error: eldersError,
-      } = await supabase
-        .from("elders")
-        .select("id, location_id");
+      const [
+        eldersResult,
+        locationsResult,
+      ] = await Promise.all([
+        supabase
+          .from("elders")
+          .select(
+            "id, location_id"
+          ),
 
-      if (eldersError) {
-        console.error("讀取長者資料失敗：", eldersError);
-        setErrorMessage("無法載入據點長者資料。");
+        supabase
+          .from("locations")
+          .select(
+            "id, name"
+          )
+          .order(
+            "id",
+            {
+              ascending: true,
+            }
+          ),
+      ]);
+
+      if (eldersResult.error) {
+        console.error(
+          "讀取長者資料失敗：",
+          eldersResult.error
+        );
+
+        setErrorMessage(
+          "無法載入據點長者資料。"
+        );
+
+        return;
+      }
+
+      if (locationsResult.error) {
+        console.error(
+          "讀取據點資料失敗：",
+          locationsResult.error
+        );
+
+        setErrorMessage(
+          "無法載入據點資料。"
+        );
+
         return;
       }
 
       const elderRows: ElderRow[] =
-        (eldersData ?? []) as ElderRow[];
+        (eldersResult.data ??
+          []) as ElderRow[];
 
-      const countMap = new Map<number, number>();
+      const countMap =
+        new Map<
+          number,
+          number
+        >();
 
-      elderRows.forEach((elder: ElderRow) => {
-        if (
-          elder.location_id === null ||
-          elder.location_id === undefined
-        ) {
-          return;
+      elderRows.forEach(
+        (
+          elder: ElderRow
+        ) => {
+          if (
+            elder.location_id ===
+              null ||
+            elder.location_id ===
+              undefined
+          ) {
+            return;
+          }
+
+          const locationId =
+            Number(
+              elder.location_id
+            );
+
+          if (
+            !Number.isFinite(
+              locationId
+            )
+          ) {
+            return;
+          }
+
+          countMap.set(
+            locationId,
+            (countMap.get(
+              locationId
+            ) ?? 0) + 1
+          );
         }
+      );
 
-        const locationId = Number(elder.location_id);
+      const siteList: SiteInfo[] =
+        (
+          locationsResult.data ??
+          []
+        )
+          .map(
+            (location) => {
+              const locationId =
+                Number(
+                  location.id
+                );
 
-        if (!Number.isFinite(locationId)) {
-          return;
-        }
+              return {
+                location_id:
+                  locationId,
 
-        countMap.set(
-          locationId,
-          (countMap.get(locationId) ?? 0) + 1
-        );
-      });
+                siteName:
+                  location.name ??
+                  `據點 ${locationId}`,
 
-      const knownSiteNames: Record<number, string> = {
-        1: "公理堂據點",
-        2: "測試據點2",
-      };
-
-      const siteList: SiteInfo[] = Array.from(
-        countMap.entries()
-      )
-        .map(([locationId, elderCount]) => ({
-          location_id: locationId,
-          siteName:
-            knownSiteNames[locationId] ??
-            `據點 ${locationId}`,
-          elderCount,
-        }))
-        .sort(
-          (a, b) =>
-            a.location_id - b.location_id
-        );
+                elderCount:
+                  countMap.get(
+                    locationId
+                  ) ?? 0,
+              };
+            }
+          )
+          .filter(
+            (site) =>
+              Number.isFinite(
+                site.location_id
+              )
+          )
+          .sort(
+            (a, b) =>
+              a.location_id -
+              b.location_id
+          );
 
       setSites(siteList);
     } catch (error) {
@@ -149,7 +254,9 @@ export default function SupervisorOverview({
     locationId: number
   ) => {
     if (onSelectSite) {
-      onSelectSite(locationId);
+      onSelectSite(
+        locationId
+      );
     }
   };
 
@@ -160,7 +267,8 @@ export default function SupervisorOverview({
         minHeight: "100%",
         padding: "24px",
         boxSizing: "border-box",
-        background: colors.background,
+        background:
+          colors.background,
       }}
     >
       <div
@@ -171,16 +279,21 @@ export default function SupervisorOverview({
       >
         <div
           style={{
-            marginBottom: "24px",
+            marginBottom:
+              "24px",
           }}
         >
           <h1
             style={{
               margin: 0,
-              fontSize: "28px",
-              lineHeight: 1.4,
-              fontWeight: 700,
-              color: colors.primary,
+              fontSize:
+                "28px",
+              lineHeight:
+                1.4,
+              fontWeight:
+                700,
+              color:
+                colors.primary,
             }}
           >
             據點總覽
@@ -188,10 +301,14 @@ export default function SupervisorOverview({
 
           <p
             style={{
-              margin: "8px 0 0",
-              fontSize: "15px",
-              lineHeight: 1.6,
-              color: "#667579",
+              margin:
+                "8px 0 0",
+              fontSize:
+                "15px",
+              lineHeight:
+                1.6,
+              color:
+                "#667579",
             }}
           >
             Supervisor 可查看所有據點，各據點資料獨立顯示。
@@ -201,44 +318,60 @@ export default function SupervisorOverview({
         {loading && (
           <div
             style={{
-              padding: "40px 24px",
-              background: "#FFFFFF",
-              borderRadius: radius.lg,
-              boxShadow: shadow.sm,
-              textAlign: "center",
-              color: "#667579",
+              padding:
+                "30px 24px",
+              background:
+                "#FFFFFF",
+              borderRadius:
+                radius.lg,
+              boxShadow:
+                shadow.sm,
+              color:
+                "#667579",
             }}
           >
             正在載入據點資料...
           </div>
         )}
 
-        {!loading && errorMessage && (
-          <div
-            style={{
-              padding: "20px 24px",
-              background: "#FFFFFF",
-              borderRadius: radius.lg,
-              boxShadow: shadow.sm,
-              color: "#B42318",
-              fontSize: "15px",
-            }}
-          >
-            {errorMessage}
-          </div>
-        )}
+        {!loading &&
+          errorMessage && (
+            <div
+              style={{
+                padding:
+                  "20px 24px",
+                background:
+                  "#FFFFFF",
+                borderRadius:
+                  radius.lg,
+                boxShadow:
+                  shadow.sm,
+                color:
+                  "#B42318",
+              }}
+            >
+              {
+                errorMessage
+              }
+            </div>
+          )}
 
         {!loading &&
           !errorMessage &&
-          sites.length === 0 && (
+          sites.length ===
+            0 && (
             <div
               style={{
-                padding: "40px 24px",
-                background: "#FFFFFF",
-                borderRadius: radius.lg,
-                boxShadow: shadow.sm,
-                textAlign: "center",
-                color: "#667579",
+                padding:
+                  "30px 24px",
+                background:
+                  "#FFFFFF",
+                borderRadius:
+                  radius.lg,
+                boxShadow:
+                  shadow.sm,
+                color:
+                  "#667579",
               }}
             >
               目前沒有找到任何據點資料。
@@ -247,169 +380,226 @@ export default function SupervisorOverview({
 
         {!loading &&
           !errorMessage &&
-          sites.length > 0 && (
+          sites.length >
+            0 && (
             <div
               style={{
-                display: "grid",
-                gridTemplateColumns:
-                  "repeat(auto-fit, minmax(280px, 1fr))",
-                gap: "20px",
+                background:
+                  "#FFFFFF",
+                border:
+                  "1px solid #DDE5E7",
+                borderRadius:
+                  radius.lg,
+                boxShadow:
+                  shadow.sm,
+                overflow:
+                  "hidden",
               }}
             >
               {sites.map(
-                (site: SiteInfo) => (
-                  <button
-                    key={site.location_id}
-                    type="button"
-                    onClick={() =>
-                      handleSelectSite(
-                        site.location_id
-                      )
+                (
+                  site,
+                  index
+                ) => (
+                  <div
+                    key={
+                      site.location_id
                     }
                     style={{
-                      width: "100%",
-                      padding: "24px",
-                      border:
-                        "1px solid #DDE5E7",
-                      borderRadius: radius.lg,
-                      background: "#FFFFFF",
-                      boxShadow: shadow.sm,
-                      textAlign: "left",
-                      cursor: onSelectSite
-                        ? "pointer"
-                        : "default",
-                      transition:
-                        "transform 0.15s ease, box-shadow 0.15s ease",
-                    }}
-                    onMouseEnter={(event) => {
-                      if (!onSelectSite) {
-                        return;
-                      }
-
-                      event.currentTarget.style.transform =
-                        "translateY(-2px)";
-
-                      event.currentTarget.style.boxShadow =
-                        shadow.md;
-                    }}
-                    onMouseLeave={(event) => {
-                      if (!onSelectSite) {
-                        return;
-                      }
-
-                      event.currentTarget.style.transform =
-                        "translateY(0)";
-
-                      event.currentTarget.style.boxShadow =
-                        shadow.sm;
+                      borderBottom:
+                        index ===
+                        sites.length -
+                          1
+                          ? "none"
+                          : "1px solid #E5EAEC",
                     }}
                   >
-                    <div
+                    <Link
+                      href={`/supervisor/site?locationId=${site.location_id}`}
+                      onClick={() =>
+                        handleSelectSite(
+                          site.location_id
+                        )
+                      }
                       style={{
-                        display: "flex",
-                        alignItems: "center",
+                        display:
+                          "flex",
+                        alignItems:
+                          "center",
                         justifyContent:
                           "space-between",
-                        gap: "12px",
-                        marginBottom: "20px",
+                        gap:
+                          "20px",
+                        width:
+                          "100%",
+                        padding:
+                          "20px 24px",
+                        boxSizing:
+                          "border-box",
+                        textDecoration:
+                          "none",
+                        color:
+                          "inherit",
+                        background:
+                          "#FFFFFF",
                       }}
                     >
-                      <div>
+                      <div
+                        style={{
+                          display:
+                            "flex",
+                          alignItems:
+                            "center",
+                          gap:
+                            "18px",
+                          minWidth:
+                            0,
+                          flex: 1,
+                        }}
+                      >
                         <div
                           style={{
-                            fontSize: "12px",
-                            color: "#7A898D",
-                            marginBottom: "6px",
-                          }}
-                        >
-                          LOCATION ID
-                        </div>
-
-                        <div
-                          style={{
-                            fontSize: "22px",
-                            fontWeight: 700,
+                            width:
+                              "42px",
+                            height:
+                              "42px",
+                            minWidth:
+                              "42px",
+                            borderRadius:
+                              radius.md,
+                            background:
+                              "#F4F7F8",
+                            display:
+                              "flex",
+                            alignItems:
+                              "center",
+                            justifyContent:
+                              "center",
+                            fontSize:
+                              "15px",
+                            fontWeight:
+                              700,
                             color:
                               colors.primary,
                           }}
                         >
-                          {site.siteName}
+                          {index +
+                            1}
+                        </div>
+
+                        <div
+                          style={{
+                            minWidth:
+                              0,
+                          }}
+                        >
+                          <div
+                            style={{
+                              fontSize:
+                                "12px",
+                              color:
+                                "#7A898D",
+                              marginBottom:
+                                "4px",
+                            }}
+                          >
+                            LOCATION ID：
+                            {
+                              site.location_id
+                            }
+                          </div>
+
+                          <div
+                            style={{
+                              fontSize:
+                                "19px",
+                              lineHeight:
+                                1.4,
+                              fontWeight:
+                                700,
+                              color:
+                                colors.primary,
+                              overflow:
+                                "hidden",
+                              textOverflow:
+                                "ellipsis",
+                              whiteSpace:
+                                "nowrap",
+                            }}
+                          >
+                            {
+                              site.siteName
+                            }
+                          </div>
                         </div>
                       </div>
 
-                      {onSelectSite && (
+                      <div
+                        style={{
+                          display:
+                            "flex",
+                          alignItems:
+                            "center",
+                          gap:
+                            "24px",
+                          flexShrink:
+                            0,
+                        }}
+                      >
                         <div
                           style={{
-                            fontSize: "14px",
+                            textAlign:
+                              "right",
+                          }}
+                        >
+                          <div
+                            style={{
+                              fontSize:
+                                "12px",
+                              color:
+                                "#7A898D",
+                              marginBottom:
+                                "3px",
+                            }}
+                          >
+                            長者人數
+                          </div>
+
+                          <div
+                            style={{
+                              fontSize:
+                                "22px",
+                              lineHeight:
+                                1.2,
+                              fontWeight:
+                                700,
+                              color:
+                                colors.primary,
+                            }}
+                          >
+                            {
+                              site.elderCount
+                            }
+                          </div>
+                        </div>
+
+                        <div
+                          style={{
+                            fontSize:
+                              "14px",
+                            fontWeight:
+                              600,
                             color:
                               colors.primary,
                             whiteSpace:
                               "nowrap",
                           }}
                         >
-                          查看
-                        </div>
-                      )}
-                    </div>
-
-                    <div
-                      style={{
-                        display: "grid",
-                        gridTemplateColumns:
-                          "1fr",
-                        gap: "12px",
-                      }}
-                    >
-                      <div
-                        style={{
-                          padding: "16px",
-                          borderRadius:
-                            radius.md,
-                          background:
-                            "#F4F7F8",
-                        }}
-                      >
-                        <div
-                          style={{
-                            fontSize: "13px",
-                            color:
-                              "#667579",
-                            marginBottom:
-                              "6px",
-                          }}
-                        >
-                          長者人數
-                        </div>
-
-                        <div
-                          style={{
-                            fontSize: "30px",
-                            lineHeight: 1.2,
-                            fontWeight: 700,
-                            color:
-                              colors.primary,
-                          }}
-                        >
-                          {site.elderCount}
+                          查看據點 →
                         </div>
                       </div>
-                    </div>
-
-                    <div
-                      style={{
-                        marginTop: "16px",
-                        paddingTop: "14px",
-                        borderTop:
-                          "1px solid #E8EEEF",
-                        fontSize: "12px",
-                        color:
-                          "#7A898D",
-                      }}
-                    >
-                      location_id：
-                      {site.location_id}
-                    </div>
-                  </button>
+                    </Link>
+                  </div>
                 )
               )}
             </div>
