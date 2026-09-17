@@ -211,214 +211,61 @@ export default function Home() {
   /**
    * 讀取長者資料
    *
-   * 長者資料統一從 Supabase 讀取，讓長者管理、簽到
-   * 與健康量測使用同一份最新資料。
-   *
-   * Site：只讀自己的 location_id。
-   * Supervisor：有選擇據點時讀該據點；沒有選擇時讀全部據點。
+   * 簽到需要使用與長者管理
+   * 相同的 LocalStorage 資料。
    */
   useEffect(() => {
-    let cancelled = false;
-
-    const getSelectedLocationId = () => {
-      const keys = [
-        "silvercare-selected-location-id",
-        "silvercare-selected-location",
-        "selectedLocationId",
-        "selected-location-id",
-      ];
-
-      for (const key of keys) {
-        const value = window.localStorage.getItem(key);
-
-        if (value === null || value === "") {
-          continue;
-        }
-
-        const parsed = Number(value);
-
-        if (Number.isFinite(parsed) && parsed > 0) {
-          return parsed;
-        }
-      }
-
-      return null;
-    };
-
-    const loadElders = async () => {
+    const loadElders = () => {
       try {
-        const {
-          data: { user },
-          error: userError,
-        } = await supabase.auth.getUser();
-
-        if (userError || !user) {
-          if (!cancelled) {
-            setElders([]);
-          }
-
-          console.error(
-            "取得目前登入使用者失敗：",
-            userError
+        const saved =
+          localStorage.getItem(
+            ELDER_STORAGE_KEY
           );
 
+        if (!saved) {
+          setElders([]);
           return;
         }
 
-        const {
-          data: roleData,
-          error: roleError,
-        } = await supabase
-          .from("user_roles")
-          .select("role, location_id")
-          .eq("user_id", user.id)
-          .limit(1)
-          .maybeSingle();
+        const parsed =
+          JSON.parse(saved) as Elder[];
 
-        if (roleError) {
-          if (!cancelled) {
-            setElders([]);
-          }
-
-          console.error(
-            "取得使用者角色失敗：",
-            roleError
-          );
-
-          return;
-        }
-
-        const role = roleData?.role ?? "";
-        const roleLocationId =
-          roleData?.location_id != null
-            ? Number(roleData.location_id)
-            : null;
-
-        const selectedLocationId =
-          role === "supervisor"
-            ? getSelectedLocationId()
-            : null;
-
-        let query = supabase
-          .from("elders")
-          .select(
-            `
-              id,
-              name,
-              gender,
-              birthday,
-              phone,
-              elder_type,
-              living_status,
-              contact_method,
-              emergency_contact_name,
-              emergency_contact_relation,
-              emergency_contact_phone
-            `
-          )
-          .order("id", { ascending: true });
-
-        if (role === "site") {
-          if (!roleLocationId) {
-            if (!cancelled) {
-              setElders([]);
-            }
-
-            console.warn(
-              "Site 使用者沒有有效的 location_id，暫不載入長者資料。"
-            );
-
-            return;
-          }
-
-          query = query.eq(
-            "location_id",
-            roleLocationId
-          );
-        } else if (role === "supervisor") {
-          if (selectedLocationId) {
-            query = query.eq(
-              "location_id",
-              selectedLocationId
-            );
-          }
-          // Supervisor 沒有選擇據點時，不加 location_id 條件，
-          // 讓 Supervisor 可以看到全部據點的長者資料。
-        } else {
-          if (!roleLocationId) {
-            if (!cancelled) {
-              setElders([]);
-            }
-
-            console.warn(
-              "目前使用者沒有有效的 location_id，暫不載入長者資料。"
-            );
-
-            return;
-          }
-
-          query = query.eq(
-            "location_id",
-            roleLocationId
-          );
-        }
-
-        const {
-          data,
-          error,
-        } = await query;
-
-        if (error) {
-          throw error;
-        }
-
-        if (!cancelled) {
-          setElders(
-            Array.isArray(data)
-              ? (data as Elder[])
-              : []
-          );
-        }
+        setElders(
+          Array.isArray(parsed)
+            ? parsed
+            : []
+        );
       } catch (error) {
         console.error(
           "讀取長者資料失敗：",
           error
         );
 
-        if (!cancelled) {
-          setElders([]);
-        }
+        setElders([]);
       }
     };
 
-    void loadElders();
-
-    const handleStorageChange = () => {
-      void loadElders();
-    };
+    loadElders();
 
     window.addEventListener(
       "storage",
-      handleStorageChange
+      loadElders
     );
 
     const removeStorageChangedListener =
       addStorageChangedListener(
-        handleStorageChange
+        loadElders
       );
 
     return () => {
-      cancelled = true;
-
       window.removeEventListener(
         "storage",
-        handleStorageChange
+        loadElders
       );
 
       removeStorageChangedListener();
     };
   }, []);
-
 
   /**
    * 簽到成功後：

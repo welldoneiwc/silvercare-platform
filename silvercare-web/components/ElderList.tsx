@@ -357,13 +357,13 @@ export default function ElderList({
   /**
    * 載入長者資料
    *
-   * Site：
-   * 只載入自己的 location_id。
+   * 重要：
+   * Site 不再直接 select 全部 elders。
+   * 先取得 user_roles.location_id，
+   * 再用 .eq("location_id", locationId)
+   * 明確限制資料範圍。
    *
-   * Supervisor：
-   * 如果有選取據點，就只載入該據點。
-   * 如果尚未選取據點，則載入全部 elders，
-   * 讓 Supervisor 的長者管理可以正常看到全部資料。
+   * Supervisor 也只載入目前選取的據點。
    */
   const loadElders =
     useCallback(async () => {
@@ -391,18 +391,42 @@ export default function ElderList({
           context.effectiveLocationId
         );
 
+        /**
+         * 目前這個 ElderList 的目標：
+         *
+         * 只顯示「目前使用中的據點」。
+         *
+         * 如果 Supervisor 尚未選擇據點，
+         * 不直接顯示全部 39 人，
+         * 避免又回到全部混在一起的狀態。
+         */
+        if (
+          !context.effectiveLocationId
+        ) {
+          console.warn(
+            "目前沒有有效的 location_id，暫不載入長者資料。"
+          );
+
+          setElders([]);
+          setLoaded(true);
+          return;
+        }
+
         console.log(
           "開始讀取 elders：",
           {
-            role:
-              context.role,
             location_id:
               context.effectiveLocationId,
+            role:
+              context.role,
           }
         );
 
-        let query =
-          supabase
+        const {
+          data,
+          error,
+        } =
+          await supabase
             .from("elders")
             .select(
               `
@@ -418,77 +442,18 @@ export default function ElderList({
                 emergency_contact_relation,
                 emergency_contact_phone
               `
-            );
-
-        /**
-         * Site：
-         * 必須限制在自己的 location_id。
-         *
-         * Supervisor：
-         * 有選據點時限制該據點。
-         * 沒有選據點時不加 location_id filter，
-         * 因此可以讀到全部據點的長者。
-         */
-        if (
-          context.role ===
-          "site"
-        ) {
-          if (
-            !context.roleLocationId
-          ) {
-            console.warn(
-              "Site 帳號沒有有效的 location_id，暫不載入長者資料。"
-            );
-
-            setElders([]);
-            setLoaded(true);
-            return;
-          }
-
-          query =
-            query.eq(
+            )
+            .eq(
               "location_id",
-              context.roleLocationId
-            );
-        } else if (
-          context.role ===
-          "supervisor"
-        ) {
-          if (
-            context.effectiveLocationId
-          ) {
-            query =
-              query.eq(
-                "location_id",
-                context.effectiveLocationId
-              );
-          }
-        } else {
-          if (
-            context.effectiveLocationId
-          ) {
-            query =
-              query.eq(
-                "location_id",
-                context.effectiveLocationId
-              );
-          }
-        }
-
-        const {
-          data,
-          error,
-        } =
-          await query.order(
-            "id",
-            {
+              context.effectiveLocationId
+            )
+            .order("id", {
               ascending: true,
-            }
-          );
+            });
 
         if (error) {
           console.error(
-            "讀取長者資料失敗：",
+            "讀取指定據點長者資料失敗：",
             {
               message:
                 error.message,
@@ -507,10 +472,8 @@ export default function ElderList({
         }
 
         console.log(
-          "長者資料讀取結果：",
+          "指定據點長者資料讀取結果：",
           {
-            role:
-              context.role,
             location_id:
               context.effectiveLocationId,
             count:
