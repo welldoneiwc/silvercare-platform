@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import {
   addStorageChangedListener,
 } from "./storageEvents";
+import { supabase } from "./supabase";
 
 export type DashboardData = {
   elderCount: number;
@@ -57,16 +58,50 @@ export function useDashboardData() {
     });
 
   useEffect(() => {
-    function loadData() {
+  console.log("useDashboardData 已啟動");
+
+  let cancelled = false;
+
+    async function loadData() {
       if (typeof window === "undefined") {
         return;
       }
 
-      const elders = readArray<{
-        id: number;
-      }>(
-        "silvercare-elders"
-      );
+      let elderCount = 0;
+
+      try {
+        const {
+          data: elderData,
+          error: elderError,
+        } = await supabase
+          .from("elders")
+          .select("id")
+          .order("id", {
+            ascending: true,
+          });
+
+        if (elderError) {
+          console.error(
+            "讀取 Supabase 長者資料失敗：",
+            elderError
+          );
+        } else {
+          elderCount =
+            Array.isArray(elderData)
+              ? elderData.length
+              : 0;
+
+          console.log(
+            "Dashboard elderCount =",
+            elderCount
+          );
+        }
+      } catch (error) {
+        console.error(
+          "讀取 Supabase 長者資料失敗：",
+          error
+        );
+      }
 
       const courses = readArray<{
         date: string;
@@ -74,13 +109,6 @@ export function useDashboardData() {
         "silvercare-courses"
       );
 
-      /*
-       * 簽到資料的正確 Storage Key
-       *
-       * AttendanceSection.tsx
-       * 使用的是：
-       * "attendance-records"
-       */
       const attendance =
         readArray<{
           date: string;
@@ -88,9 +116,16 @@ export function useDashboardData() {
           "attendance-records"
         );
 
+      const localElders =
+        readArray<{
+          id: number;
+        }>(
+          "silvercare-elders"
+        );
+
       let todayHealthCount = 0;
 
-      elders.forEach(
+      localElders.forEach(
         (elder) => {
           const records =
             readArray<{
@@ -107,9 +142,12 @@ export function useDashboardData() {
         }
       );
 
+      if (cancelled) {
+        return;
+      }
+
       setData({
-        elderCount:
-          elders.length,
+        elderCount,
 
         todayCourseCount:
           courses.filter(
@@ -127,35 +165,51 @@ export function useDashboardData() {
       });
     }
 
-    loadData();
+    void loadData();
 
-    /*
-     * SilverCare 自訂同步事件
-     *
-     * 同一個分頁內的 LocalStorage
-     * 修改，也可以即時更新 Dashboard。
-     */
     const removeListener =
       addStorageChangedListener(
-        loadData
+        () => {
+          void loadData();
+        }
       );
 
-    /*
-     * 保留瀏覽器原生 storage event，
-     * 支援其他分頁／視窗同步。
-     */
+    const handleStorage =
+      () => {
+        void loadData();
+      };
+
     window.addEventListener(
       "storage",
-      loadData
+      handleStorage
     );
 
+    const {
+      data: authListener,
+    } =
+      supabase.auth.onAuthStateChange(
+        (event) => {
+          if (
+            event === "SIGNED_IN" ||
+            event === "TOKEN_REFRESHED" ||
+            event === "SIGNED_OUT"
+          ) {
+            void loadData();
+          }
+        }
+      );
+
     return () => {
+      cancelled = true;
+
       removeListener();
 
       window.removeEventListener(
         "storage",
-        loadData
+        handleStorage
       );
+
+      authListener.subscription.unsubscribe();
     };
   }, []);
 
