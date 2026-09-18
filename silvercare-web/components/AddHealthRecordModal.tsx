@@ -29,6 +29,14 @@ type Props = {
   ) => void;
 };
 
+type RecognitionResult = {
+  systolic: number | null;
+  diastolic: number | null;
+  pulse: number | null;
+  height: number | null;
+  weight: number | null;
+};
+
 export default function AddHealthRecordModal({
   open,
   editingRecord,
@@ -84,17 +92,17 @@ export default function AddHealthRecordModal({
         editingRecord.pulse.toString()
       );
 
-     setHeight(
-  editingRecord.height !== null
-    ? editingRecord.height.toString()
-    : ""
-);
+      setHeight(
+        editingRecord.height !== null
+          ? editingRecord.height.toString()
+          : ""
+      );
 
-setWeight(
-  editingRecord.weight !== null
-    ? editingRecord.weight.toString()
-    : ""
-);
+      setWeight(
+        editingRecord.weight !== null
+          ? editingRecord.weight.toString()
+          : ""
+      );
     } else {
       setDate(
         new Date()
@@ -139,35 +147,190 @@ setWeight(
     reader.readAsDataURL(file);
   };
 
-  const handleStartRecognition = () => {
-    if (!photoPreview) {
-      alert(
-        "請先拍照或上傳健康量測照片。"
-      );
-      return;
-    }
+  const handleStartRecognition =
+    async () => {
+      if (!photoPreview) {
+        alert(
+          "請先拍照或上傳健康量測照片。"
+        );
+        return;
+      }
 
-    /*
-     * 目前先建立 AI 辨識流程的 UI。
-     *
-     * 真正的 AI OCR / Vision API
-     * 下一步再接入。
-     *
-     * 這裡不會把照片儲存到
-     * LocalStorage。
-     */
+      setIsRecognizing(true);
+      setRecognized(false);
 
-    setIsRecognizing(true);
+      try {
+        const response =
+          await fetch("/api/openai", {
+            method: "POST",
+            headers: {
+              "Content-Type":
+                "application/json",
+            },
+            body: JSON.stringify({
+              image: photoPreview,
+            }),
+          });
 
-    window.setTimeout(() => {
-      setIsRecognizing(false);
-      setRecognized(true);
+        const data =
+          await response.json();
 
-      alert(
-        "照片已準備完成。下一步將接入 AI 辨識量測數值。"
-      );
-    }, 800);
-  };
+        if (
+          !response.ok ||
+          !data?.success
+        ) {
+          throw new Error(
+            data?.error ||
+              "AI 辨識失敗，請稍後再試。"
+          );
+        }
+
+        const rawResult =
+          typeof data.result ===
+          "string"
+            ? data.result.trim()
+            : "";
+
+        if (!rawResult) {
+          throw new Error(
+            "AI 沒有回傳辨識結果，請重新拍照。"
+          );
+        }
+
+        let parsedResult:
+          RecognitionResult;
+
+        try {
+          parsedResult =
+            JSON.parse(rawResult);
+        } catch {
+          const cleanedResult =
+            rawResult
+              .replace(
+                /^```json\s*/i,
+                ""
+              )
+              .replace(
+                /^```\s*/i,
+                ""
+              )
+              .replace(
+                /\s*```$/i,
+                ""
+              )
+              .trim();
+
+          parsedResult =
+            JSON.parse(
+              cleanedResult
+            );
+        }
+
+        if (
+          parsedResult.systolic !==
+            null &&
+          typeof parsedResult.systolic ===
+            "number"
+        ) {
+          setSystolic(
+            String(
+              parsedResult.systolic
+            )
+          );
+        }
+
+        if (
+          parsedResult.diastolic !==
+            null &&
+          typeof parsedResult.diastolic ===
+            "number"
+        ) {
+          setDiastolic(
+            String(
+              parsedResult.diastolic
+            )
+          );
+        }
+
+        if (
+          parsedResult.pulse !==
+            null &&
+          typeof parsedResult.pulse ===
+            "number"
+        ) {
+          setPulse(
+            String(
+              parsedResult.pulse
+            )
+          );
+        }
+
+        if (
+          parsedResult.height !==
+            null &&
+          typeof parsedResult.height ===
+            "number"
+        ) {
+          setHeight(
+            String(
+              parsedResult.height
+            )
+          );
+        }
+
+        if (
+          parsedResult.weight !==
+            null &&
+          typeof parsedResult.weight ===
+            "number"
+        ) {
+          setWeight(
+            String(
+              parsedResult.weight
+            )
+          );
+        }
+
+        const hasBloodPressure =
+          parsedResult.systolic !==
+            null &&
+          parsedResult.diastolic !==
+            null;
+
+        const hasPulse =
+          parsedResult.pulse !==
+          null;
+
+        if (
+          !hasBloodPressure &&
+          !hasPulse
+        ) {
+          throw new Error(
+            "AI 無法從照片清楚辨識血壓或脈搏，請重新拍攝清楚的量測畫面。"
+          );
+        }
+
+        setRecognized(true);
+
+        alert(
+          "AI 辨識完成，請確認辨識結果後再儲存。"
+        );
+      } catch (error) {
+        console.error(
+          "健康量測 AI 辨識失敗：",
+          error
+        );
+
+        const message =
+          error instanceof Error
+            ? error.message
+            : "AI 辨識失敗，請稍後再試。";
+
+        alert(message);
+      } finally {
+        setIsRecognizing(false);
+      }
+    };
 
   const handleSave = () => {
     if (!date) {
@@ -178,12 +341,10 @@ setWeight(
     if (
       !systolic ||
       !diastolic ||
-      !pulse ||
-      !height ||
-      !weight
+      !pulse
     ) {
       alert(
-        "目前請確認血壓、脈搏、身高與體重都有辨識結果。"
+        "請確認收縮壓、舒張壓與脈搏都有辨識結果。"
       );
       return;
     }
@@ -193,8 +354,14 @@ setWeight(
       systolic: Number(systolic),
       diastolic: Number(diastolic),
       pulse: Number(pulse),
-      height: Number(height),
-      weight: Number(weight),
+      height:
+        height.trim() !== ""
+          ? Number(height)
+          : null,
+      weight:
+        weight.trim() !== ""
+          ? Number(weight)
+          : null,
     });
 
     setDate("");
@@ -222,7 +389,7 @@ setWeight(
          * 手機底部 Sidebar 的 z-index
          * 不可以蓋住 Modal。
          */
-     zIndex: 99999,
+        zIndex: 99999,
 
         /*
          * 讓 Modal 本身可以正確處理
@@ -243,7 +410,7 @@ setWeight(
            * 留出手機底部導覽列及安全區域。
            */
           maxHeight:
-             "calc(100dvh - 32px)",
+            "calc(100dvh - 32px)",
 
           overflowY: "auto",
 
@@ -257,7 +424,7 @@ setWeight(
            * 儲存按鈕貼到底部。
            */
           padding:
-           "24px 24px calc(120px + env(safe-area-inset-bottom))",
+            "24px 24px calc(120px + env(safe-area-inset-bottom))",
 
           boxSizing: "border-box",
 
@@ -293,8 +460,8 @@ setWeight(
           }}
         >
           拍攝或上傳健康量測設備畫面，
-          下一步由 AI 自動辨識血壓、
-          脈搏、身高與體重。
+          由 AI 自動辨識血壓、脈搏、
+          身高與體重。
         </p>
 
         <div
@@ -398,7 +565,7 @@ setWeight(
                 }}
               >
                 {isRecognizing
-                  ? "AI 辨識準備中..."
+                  ? "AI 辨識中..."
                   : "🤖 開始 AI 辨識"}
               </button>
             </div>
@@ -418,7 +585,7 @@ setWeight(
                 fontWeight: 600,
               }}
             >
-              ✓ 已進入辨識結果確認流程
+              ✓ AI 辨識完成，請確認下方結果
             </div>
           )}
 
@@ -430,7 +597,7 @@ setWeight(
               lineHeight: 1.6,
             }}
           >
-            照片目前只用於辨識流程，
+            照片只用於 AI 辨識流程，
             不會寫入健康紀錄
             LocalStorage。
           </div>
@@ -552,7 +719,7 @@ setWeight(
                     e.target.value
                   )
                 }
-                placeholder="AI 辨識結果"
+                placeholder="AI 辨識結果（可留空）"
                 style={inputStyle}
               />
             </div>
@@ -570,7 +737,7 @@ setWeight(
                     e.target.value
                   )
                 }
-                placeholder="AI 辨識結果"
+                placeholder="AI 辨識結果（可留空）"
                 style={inputStyle}
               />
             </div>
