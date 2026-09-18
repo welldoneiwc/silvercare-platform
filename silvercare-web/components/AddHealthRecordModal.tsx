@@ -122,7 +122,154 @@ export default function AddHealthRecordModal({
     return null;
   }
 
-  const handlePhotoChange = (
+  /*
+   * 將手機拍攝的圖片轉成 JPEG。
+   *
+   * iPhone 可能提供 HEIC / HEIF，
+   * 但 /api/openai 目前接受的是
+   * JPEG / PNG / WEBP / GIF。
+   *
+   * 先在瀏覽器轉成 JPEG，
+   * 再送給 AI，可避免手機圖片格式造成
+   * AI API 無法辨識的問題。
+   */
+  const convertImageToJpeg = (
+    file: File
+  ): Promise<string> => {
+    return new Promise(
+      (resolve, reject) => {
+        const reader =
+          new FileReader();
+
+        reader.onload = () => {
+          const result =
+            reader.result;
+
+          if (
+            typeof result !==
+            "string"
+          ) {
+            reject(
+              new Error(
+                "無法讀取照片，請重新選擇照片。"
+              )
+            );
+            return;
+          }
+
+          const image =
+            new Image();
+
+          image.onload = () => {
+            const maxSize = 1600;
+
+            let width =
+              image.naturalWidth;
+
+            let height =
+              image.naturalHeight;
+
+            if (
+              width > maxSize ||
+              height > maxSize
+            ) {
+              const scale =
+                Math.min(
+                  maxSize / width,
+                  maxSize / height
+                );
+
+              width =
+                Math.round(
+                  width * scale
+                );
+
+              height =
+                Math.round(
+                  height * scale
+                );
+            }
+
+            const canvas =
+              document.createElement(
+                "canvas"
+              );
+
+            canvas.width =
+              width;
+
+            canvas.height =
+              height;
+
+            const context =
+              canvas.getContext(
+                "2d"
+              );
+
+            if (!context) {
+              reject(
+                new Error(
+                  "無法處理照片，請重新選擇照片。"
+                )
+              );
+              return;
+            }
+
+            context.drawImage(
+              image,
+              0,
+              0,
+              width,
+              height
+            );
+
+            const jpeg =
+              canvas.toDataURL(
+                "image/jpeg",
+                0.85
+              );
+
+            if (
+              !jpeg.startsWith(
+                "data:image/jpeg"
+              )
+            ) {
+              reject(
+                new Error(
+                  "照片格式轉換失敗，請重新拍攝照片。"
+                )
+              );
+              return;
+            }
+
+            resolve(jpeg);
+          };
+
+          image.onerror = () => {
+            reject(
+              new Error(
+                "無法讀取這張照片，請重新拍攝或選擇照片。"
+              )
+            );
+          };
+
+          image.src = result;
+        };
+
+        reader.onerror = () => {
+          reject(
+            new Error(
+              "照片讀取失敗，請重新選擇照片。"
+            )
+          );
+        };
+
+        reader.readAsDataURL(file);
+      }
+    );
+  };
+
+  const handlePhotoChange = async (
     event: ChangeEvent<HTMLInputElement>
   ) => {
     const file =
@@ -130,21 +277,34 @@ export default function AddHealthRecordModal({
 
     if (!file) return;
 
-    const reader =
-      new FileReader();
+    try {
+      setRecognized(false);
 
-    reader.onload = () => {
-      setPhotoPreview(
-        typeof reader.result ===
-          "string"
-          ? reader.result
-          : null
+      const jpeg =
+        await convertImageToJpeg(
+          file
+        );
+
+      setPhotoPreview(jpeg);
+    } catch (error) {
+      console.error(
+        "健康量測照片處理失敗：",
+        error
       );
 
-      setRecognized(false);
-    };
+      const message =
+        error instanceof Error
+          ? error.message
+          : "照片處理失敗，請重新選擇照片。";
 
-    reader.readAsDataURL(file);
+      alert(message);
+    } finally {
+      /*
+       * 讓同一張照片再次選擇時，
+       * iPhone 也能觸發 onChange。
+       */
+      event.target.value = "";
+    }
   };
 
   const handleStartRecognition =
@@ -161,16 +321,20 @@ export default function AddHealthRecordModal({
 
       try {
         const response =
-          await fetch("/api/openai", {
-            method: "POST",
-            headers: {
-              "Content-Type":
-                "application/json",
-            },
-            body: JSON.stringify({
-              image: photoPreview,
-            }),
-          });
+          await fetch(
+            "/api/openai",
+            {
+              method: "POST",
+              headers: {
+                "Content-Type":
+                  "application/json",
+              },
+              body: JSON.stringify({
+                image:
+                  photoPreview,
+              }),
+            }
+          );
 
         const data =
           await response.json();
@@ -202,7 +366,9 @@ export default function AddHealthRecordModal({
 
         try {
           parsedResult =
-            JSON.parse(rawResult);
+            JSON.parse(
+              rawResult
+            );
         } catch {
           const cleanedResult =
             rawResult
@@ -291,6 +457,12 @@ export default function AddHealthRecordModal({
           );
         }
 
+        /*
+         * 儲存所需的核心資料：
+         * 收縮壓 + 舒張壓 + 脈搏。
+         *
+         * 身高、體重可以沒有。
+         */
         const hasBloodPressure =
           parsedResult.systolic !==
             null &&
@@ -302,11 +474,11 @@ export default function AddHealthRecordModal({
           null;
 
         if (
-          !hasBloodPressure &&
+          !hasBloodPressure ||
           !hasPulse
         ) {
           throw new Error(
-            "AI 無法從照片清楚辨識血壓或脈搏，請重新拍攝清楚的量測畫面。"
+            "AI 無法從照片清楚辨識收縮壓、舒張壓與脈搏，請重新拍攝清楚的量測畫面。"
           );
         }
 
@@ -338,6 +510,12 @@ export default function AddHealthRecordModal({
       return;
     }
 
+    /*
+     * 只要求：
+     * 收縮壓 + 舒張壓 + 脈搏
+     *
+     * 身高、體重可以留空。
+     */
     if (
       !systolic ||
       !diastolic ||
@@ -351,9 +529,12 @@ export default function AddHealthRecordModal({
 
     onSave({
       date,
-      systolic: Number(systolic),
-      diastolic: Number(diastolic),
-      pulse: Number(pulse),
+      systolic:
+        Number(systolic),
+      diastolic:
+        Number(diastolic),
+      pulse:
+        Number(pulse),
       height:
         height.trim() !== ""
           ? Number(height)
@@ -382,22 +563,14 @@ export default function AddHealthRecordModal({
         background:
           "rgba(0,0,0,0.35)",
         display: "flex",
-        justifyContent: "center",
+        justifyContent:
+          "center",
         alignItems: "center",
-
-        /*
-         * 手機底部 Sidebar 的 z-index
-         * 不可以蓋住 Modal。
-         */
         zIndex: 99999,
-
-        /*
-         * 讓 Modal 本身可以正確處理
-         * 手機瀏覽器的安全區域。
-         */
         padding:
           "16px 16px calc(16px + env(safe-area-inset-bottom))",
-        boxSizing: "border-box",
+        boxSizing:
+          "border-box",
       }}
     >
       <div
@@ -405,33 +578,18 @@ export default function AddHealthRecordModal({
           width: 560,
           maxWidth:
             "calc(100vw - 32px)",
-
-          /*
-           * 留出手機底部導覽列及安全區域。
-           */
           maxHeight:
             "calc(100dvh - 32px)",
-
           overflowY: "auto",
-
           background: "#fff",
-          borderRadius: radius.lg,
-          boxShadow: shadow.lg,
-
-          /*
-           * 原本只有 24px。
-           * 增加底部空間，避免最後的
-           * 儲存按鈕貼到底部。
-           */
+          borderRadius:
+            radius.lg,
+          boxShadow:
+            shadow.lg,
           padding:
             "24px 24px calc(120px + env(safe-area-inset-bottom))",
-
-          boxSizing: "border-box",
-
-          /*
-           * 確保手機滑動時內容不會
-           * 被瀏覽器底部區域吃掉。
-           */
+          boxSizing:
+            "border-box",
           overscrollBehavior:
             "contain",
           WebkitOverflowScrolling:
@@ -442,7 +600,8 @@ export default function AddHealthRecordModal({
           style={{
             marginTop: 0,
             marginBottom: 8,
-            color: colors.primary,
+            color:
+              colors.primary,
           }}
         >
           {editingRecord
@@ -467,8 +626,10 @@ export default function AddHealthRecordModal({
         <div
           style={{
             padding: 18,
-            borderRadius: radius.md,
-            background: "#F7FAFC",
+            borderRadius:
+              radius.md,
+            background:
+              "#F7FAFC",
             border:
               "1px solid #E5E7EB",
             marginBottom: 24,
@@ -477,7 +638,8 @@ export default function AddHealthRecordModal({
           <div
             style={{
               fontWeight: 700,
-              color: colors.primary,
+              color:
+                colors.primary,
               marginBottom: 12,
             }}
           >
@@ -487,15 +649,21 @@ export default function AddHealthRecordModal({
           <label
             style={{
               display: "block",
-              padding: "14px 18px",
-              borderRadius: radius.md,
-              background: "#fff",
+              padding:
+                "14px 18px",
+              borderRadius:
+                radius.md,
+              background:
+                "#fff",
               border:
                 "1px solid #D1D5DB",
-              textAlign: "center",
-              cursor: "pointer",
+              textAlign:
+                "center",
+              cursor:
+                "pointer",
               fontWeight: 600,
-              color: colors.primary,
+              color:
+                colors.primary,
             }}
           >
             {photoPreview
@@ -525,10 +693,12 @@ export default function AddHealthRecordModal({
                 src={photoPreview}
                 alt="健康量測照片預覽"
                 style={{
-                  display: "block",
+                  display:
+                    "block",
                   width: "100%",
                   maxHeight: 260,
-                  objectFit: "contain",
+                  objectFit:
+                    "contain",
                   borderRadius:
                     radius.md,
                   background:
@@ -548,14 +718,16 @@ export default function AddHealthRecordModal({
                   width: "100%",
                   marginTop: 14,
                   padding: 12,
-                  border: "none",
+                  border:
+                    "none",
                   borderRadius:
                     radius.md,
                   background:
                     isRecognizing
                       ? "#9CA3AF"
                       : colors.primary,
-                  color: "#fff",
+                  color:
+                    "#fff",
                   cursor:
                     isRecognizing
                       ? "default"
@@ -580,7 +752,8 @@ export default function AddHealthRecordModal({
                   radius.md,
                 background:
                   "#ECFDF5",
-                color: "#166534",
+                color:
+                  "#166534",
                 fontSize: 14,
                 fontWeight: 600,
               }}
@@ -593,7 +766,8 @@ export default function AddHealthRecordModal({
             style={{
               marginTop: 12,
               fontSize: 13,
-              color: "#6B7280",
+              color:
+                "#6B7280",
               lineHeight: 1.6,
             }}
           >
@@ -606,7 +780,8 @@ export default function AddHealthRecordModal({
         <div
           style={{
             padding: 18,
-            borderRadius: radius.md,
+            borderRadius:
+              radius.md,
             border:
               "1px solid #E5E7EB",
             marginBottom: 24,
@@ -615,7 +790,8 @@ export default function AddHealthRecordModal({
           <div
             style={{
               fontWeight: 700,
-              color: colors.primary,
+              color:
+                colors.primary,
               marginBottom: 16,
             }}
           >
@@ -659,14 +835,18 @@ export default function AddHealthRecordModal({
 
               <input
                 type="number"
-                value={systolic}
+                value={
+                  systolic
+                }
                 onChange={(e) =>
                   setSystolic(
                     e.target.value
                   )
                 }
                 placeholder="AI 辨識結果"
-                style={inputStyle}
+                style={
+                  inputStyle
+                }
               />
             </div>
 
@@ -677,14 +857,18 @@ export default function AddHealthRecordModal({
 
               <input
                 type="number"
-                value={diastolic}
+                value={
+                  diastolic
+                }
                 onChange={(e) =>
                   setDiastolic(
                     e.target.value
                   )
                 }
                 placeholder="AI 辨識結果"
-                style={inputStyle}
+                style={
+                  inputStyle
+                }
               />
             </div>
 
@@ -702,7 +886,9 @@ export default function AddHealthRecordModal({
                   )
                 }
                 placeholder="AI 辨識結果"
-                style={inputStyle}
+                style={
+                  inputStyle
+                }
               />
             </div>
 
@@ -720,7 +906,9 @@ export default function AddHealthRecordModal({
                   )
                 }
                 placeholder="AI 辨識結果（可留空）"
-                style={inputStyle}
+                style={
+                  inputStyle
+                }
               />
             </div>
 
@@ -738,7 +926,9 @@ export default function AddHealthRecordModal({
                   )
                 }
                 placeholder="AI 辨識結果（可留空）"
-                style={inputStyle}
+                style={
+                  inputStyle
+                }
               />
             </div>
           </div>
@@ -750,26 +940,27 @@ export default function AddHealthRecordModal({
             justifyContent:
               "flex-end",
             gap: 12,
-            flexWrap: "wrap",
-
-            /*
-             * 再保留一點按鈕區底部空間。
-             */
+            flexWrap:
+              "wrap",
             paddingBottom: 8,
           }}
         >
           <button
             type="button"
-            onClick={onClose}
+            onClick={
+              onClose
+            }
             style={{
               padding:
                 "10px 18px",
               border:
                 "1px solid #D1D5DB",
-              background: "#fff",
+              background:
+                "#fff",
               borderRadius:
                 radius.md,
-              cursor: "pointer",
+              cursor:
+                "pointer",
             }}
           >
             取消
@@ -784,12 +975,14 @@ export default function AddHealthRecordModal({
               background:
                 colors.primary,
               color: "#fff",
-              border: "none",
+              border:
+                "none",
               borderRadius:
                 radius.md,
               padding:
                 "10px 20px",
-              cursor: "pointer",
+              cursor:
+                "pointer",
               fontWeight: 600,
             }}
           >
@@ -810,7 +1003,10 @@ const inputStyle:
   padding: 10,
   border:
     "1px solid #D1D5DB",
-  borderRadius: radius.md,
-  boxSizing: "border-box",
-  background: "#fff",
+  borderRadius:
+    radius.md,
+  boxSizing:
+    "border-box",
+  background:
+    "#fff",
 };
