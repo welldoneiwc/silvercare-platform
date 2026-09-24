@@ -34,6 +34,16 @@ import {
 const ELDER_STORAGE_KEY =
   "silvercare-elders";
 
+type HealthRecordForAi = {
+  id: number;
+  date: string;
+  systolic: number;
+  diastolic: number;
+  pulse: number;
+  height: number | null;
+  weight: number | null;
+};
+
 export default function Home() {
   const router = useRouter();
 
@@ -284,7 +294,13 @@ export default function Home() {
    * AI 智慧查詢
    *
    * 第一階段：
-   * 直接查詢 Supabase 的長者與課程資料。
+   * 查詢 Supabase 的長者與課程資料。
+   *
+   * 健康量測：
+   * 目前健康紀錄依 ElderProfile 的既有設計，
+   * 儲存在 localStorage：
+   *
+   * health-records-${elder.id}
    */
   const handleAiQuery = async (
     inputQuery?: string
@@ -306,7 +322,595 @@ export default function Home() {
     try {
       /*
        * ========================================
-       * ① 查詢長者
+       * ① 健康量測查詢
+       *
+       * 必須放在一般「長者查詢」之前。
+       *
+       * 否則：
+       * 「哪些長者血壓偏高？」
+       * 會先被「哪些 + 長者」判斷成
+       * 一般長者名單，導致列出全部長者。
+       * ========================================
+       */
+      const isHealthQuery =
+        query.includes("血壓") ||
+        query.includes("收縮壓") ||
+        query.includes("舒張壓") ||
+        query.includes("脈搏") ||
+        query.includes("心跳") ||
+        query.includes("量血壓") ||
+        query.includes("量過血壓") ||
+        query.includes("健康量測") ||
+        query.includes("健康紀錄") ||
+        query.includes("健康記錄");
+
+      if (isHealthQuery) {
+        const {
+          data,
+          error,
+        } = await supabase
+          .from("elders")
+          .select(
+            `
+              id,
+              name,
+              gender,
+              birthday,
+              phone,
+              elder_type,
+              living_status,
+              contact_method,
+              emergency_contact_name,
+              emergency_contact_relation,
+              emergency_contact_phone
+            `
+          )
+          .order("id", {
+            ascending: true,
+          });
+
+        if (error) {
+          throw error;
+        }
+
+        const healthElders =
+          data ?? [];
+
+        const getTodayString = () => {
+          const today =
+            new Date();
+
+          const year =
+            today.getFullYear();
+
+          const month =
+            String(
+              today.getMonth() + 1
+            ).padStart(
+              2,
+              "0"
+            );
+
+          const day =
+            String(
+              today.getDate()
+            ).padStart(
+              2,
+              "0"
+            );
+
+          return `${year}-${month}-${day}`;
+        };
+
+        const getRecordDateString = (
+          date: string
+        ) => {
+          if (!date) {
+            return "";
+          }
+
+          /*
+           * 健康量測目前通常使用
+           * YYYY-MM-DD。
+           *
+           * 如果未來資料是完整 ISO 日期，
+           * 這裡也能正常處理。
+           */
+          if (
+            /^\d{4}-\d{2}-\d{2}$/.test(
+              date
+            )
+          ) {
+            return date;
+          }
+
+          const parsed =
+            new Date(date);
+
+          if (
+            Number.isNaN(
+              parsed.getTime()
+            )
+          ) {
+            return date.slice(
+              0,
+              10
+            );
+          }
+
+          const year =
+            parsed.getFullYear();
+
+          const month =
+            String(
+              parsed.getMonth() + 1
+            ).padStart(
+              2,
+              "0"
+            );
+
+          const day =
+            String(
+              parsed.getDate()
+            ).padStart(
+              2,
+              "0"
+            );
+
+          return `${year}-${month}-${day}`;
+        };
+
+        const loadHealthRecords = (
+          elderId: number
+        ): HealthRecordForAi[] => {
+          try {
+            const saved =
+              localStorage.getItem(
+                `health-records-${elderId}`
+              );
+
+            if (!saved) {
+              return [];
+            }
+
+            const parsed =
+              JSON.parse(
+                saved
+              ) as HealthRecordForAi[];
+
+            if (
+              !Array.isArray(parsed)
+            ) {
+              return [];
+            }
+
+            return parsed.filter(
+              (record) =>
+                record &&
+                typeof record.systolic ===
+                  "number" &&
+                typeof record.diastolic ===
+                  "number" &&
+                typeof record.pulse ===
+                  "number"
+            );
+          } catch (error) {
+            console.error(
+              `讀取長者 ${elderId} 健康紀錄失敗：`,
+              error
+            );
+
+            return [];
+          }
+        };
+
+        const elderHealthData =
+          healthElders.map(
+            (elder) => {
+              const records =
+                loadHealthRecords(
+                  elder.id
+                );
+
+              const sortedRecords =
+                [...records].sort(
+                  (a, b) =>
+                    new Date(
+                      b.date
+                    ).getTime() -
+                    new Date(
+                      a.date
+                    ).getTime()
+                );
+
+              return {
+                elder,
+                records,
+                latest:
+                  sortedRecords[0] ??
+                  null,
+              };
+            }
+          );
+
+        /*
+         * ----------------------------------------
+         * ①-1 今天哪些長者還沒有量血壓？
+         * ----------------------------------------
+         */
+        if (
+          query.includes("今天") &&
+          (
+            query.includes("還沒有") ||
+            query.includes("沒有") ||
+            query.includes("未量") ||
+            query.includes("沒量")
+          ) &&
+          (
+            query.includes("量血壓") ||
+            query.includes("量過血壓") ||
+            query.includes("血壓")
+          )
+        ) {
+          const today =
+            getTodayString();
+
+          const notMeasured =
+            elderHealthData.filter(
+              ({
+                records,
+              }) =>
+                !records.some(
+                  (record) =>
+                    getRecordDateString(
+                      record.date
+                    ) === today
+                )
+            );
+
+          if (
+            notMeasured.length === 0
+          ) {
+            setAiResult(
+              "今天目前所有長者都有健康量測紀錄。"
+            );
+
+            return;
+          }
+
+          const elderList =
+            notMeasured
+              .map(
+                (
+                  item,
+                  index
+                ) =>
+                  `${index + 1}. ${item.elder.name}`
+              )
+              .join("\n");
+
+          setAiResult(
+            `今天尚未量血壓的長者共有 ${notMeasured.length} 位：\n\n${elderList}`
+          );
+
+          return;
+        }
+
+        /*
+         * ----------------------------------------
+         * ①-2 今天有幾位長者量過血壓？
+         * ----------------------------------------
+         */
+        if (
+          query.includes("今天") &&
+          (
+            query.includes("幾位") ||
+            query.includes("多少") ||
+            query.includes("人數") ||
+            query.includes("幾個")
+          ) &&
+          (
+            query.includes("量血壓") ||
+            query.includes("量過血壓") ||
+            query.includes("血壓")
+          )
+        ) {
+          const today =
+            getTodayString();
+
+          const measuredToday =
+            elderHealthData.filter(
+              ({
+                records,
+              }) =>
+                records.some(
+                  (record) =>
+                    getRecordDateString(
+                      record.date
+                    ) === today
+                )
+            );
+
+          setAiResult(
+            `今天共有 ${measuredToday.length} 位長者有血壓量測紀錄。`
+          );
+
+          return;
+        }
+
+        /*
+         * ----------------------------------------
+         * ①-3 哪些長者血壓偏高？
+         *
+         * 沿用 ElderProfile 目前的判斷：
+         * 收縮壓 >= 140 或舒張壓 >= 90
+         * ----------------------------------------
+         */
+        if (
+          (
+            query.includes("偏高") ||
+            query.includes("高血壓") ||
+            query.includes("血壓高")
+          ) &&
+          (
+            query.includes("哪些") ||
+            query.includes("名單") ||
+            query.includes("有誰") ||
+            query.includes("長者")
+          )
+        ) {
+          const highBloodPressure =
+            elderHealthData.filter(
+              ({
+                latest,
+              }) =>
+                latest !== null &&
+                (
+                  latest.systolic >= 140 ||
+                  latest.diastolic >= 90
+                )
+            );
+
+          if (
+            highBloodPressure.length ===
+            0
+          ) {
+            setAiResult(
+              "目前沒有找到符合血壓偏高條件的長者。\n\n判斷規則：最近一次量測收縮壓 ≥ 140 或舒張壓 ≥ 90。"
+            );
+
+            return;
+          }
+
+          const elderList =
+            highBloodPressure
+              .map(
+                (
+                  item,
+                  index
+                ) => {
+                  const latest =
+                    item.latest!;
+
+                  return (
+                    `${index + 1}. ${item.elder.name}` +
+                    `\n   最近量測：${latest.date}` +
+                    `\n   血壓：${latest.systolic}/${latest.diastolic}` +
+                    ` mmHg` +
+                    `\n   脈搏：${latest.pulse}`
+                  );
+                }
+              )
+              .join("\n\n");
+
+          setAiResult(
+            `目前共有 ${highBloodPressure.length} 位長者，最近一次血壓符合偏高條件：\n\n${elderList}\n\n判斷規則：收縮壓 ≥ 140 或舒張壓 ≥ 90。`
+          );
+
+          return;
+        }
+
+        /*
+         * ----------------------------------------
+         * ①-4 誰最近的收縮壓最高？
+         * ----------------------------------------
+         */
+        if (
+          (
+            query.includes("收縮壓") ||
+            query.includes("血壓")
+          ) &&
+          (
+            query.includes("最高") ||
+            query.includes("最大")
+          )
+        ) {
+          const withLatest =
+            elderHealthData.filter(
+              ({
+                latest,
+              }) =>
+                latest !== null
+            );
+
+          if (
+            withLatest.length === 0
+          ) {
+            setAiResult(
+              "目前沒有健康量測紀錄。"
+            );
+
+            return;
+          }
+
+          const sorted =
+            [...withLatest].sort(
+              (a, b) =>
+                b.latest!.systolic -
+                a.latest!.systolic
+            );
+
+          const top =
+            sorted[0];
+
+          const latest =
+            top.latest!;
+
+          setAiResult(
+            `最近一次收縮壓最高的是：${top.elder.name}\n\n` +
+            `量測日期：${latest.date}\n` +
+            `血壓：${latest.systolic}/${latest.diastolic} mmHg\n` +
+            `脈搏：${latest.pulse}`
+          );
+
+          return;
+        }
+
+        /*
+         * ----------------------------------------
+         * ①-5 指定長者最近一次血壓
+         *
+         * 例如：
+         * 王○○最近一次血壓是多少？
+         * ----------------------------------------
+         */
+        const matchedElder =
+          healthElders.find(
+            (elder) =>
+              elder.name &&
+              query.includes(
+                elder.name
+              )
+          );
+
+        if (
+          matchedElder
+        ) {
+          const records =
+            loadHealthRecords(
+              matchedElder.id
+            );
+
+          const sortedRecords =
+            [...records].sort(
+              (a, b) =>
+                new Date(
+                  b.date
+                ).getTime() -
+                new Date(
+                  a.date
+                ).getTime()
+            );
+
+          const latest =
+            sortedRecords[0];
+
+          if (!latest) {
+            setAiResult(
+              `${matchedElder.name} 目前沒有健康量測紀錄。`
+            );
+
+            return;
+          }
+
+          setAiResult(
+            `${matchedElder.name} 最近一次健康量測：\n\n` +
+            `日期：${latest.date}\n` +
+            `血壓：${latest.systolic}/${latest.diastolic} mmHg\n` +
+            `脈搏：${latest.pulse}` +
+            (
+              latest.height !== null &&
+              latest.height !== undefined
+                ? `\n身高：${latest.height} cm`
+                : ""
+            ) +
+            (
+              latest.weight !== null &&
+              latest.weight !== undefined
+                ? `\n體重：${latest.weight} kg`
+                : ""
+            )
+          );
+
+          return;
+        }
+
+        /*
+         * ----------------------------------------
+         * ①-6 哪些長者最近有量血壓？
+         * ----------------------------------------
+         */
+        if (
+          (
+            query.includes("哪些") ||
+            query.includes("名單") ||
+            query.includes("有誰")
+          ) &&
+          (
+            query.includes("量過") ||
+            query.includes("量過血壓") ||
+            query.includes("有量") ||
+            query.includes("量血壓")
+          )
+        ) {
+          const measured =
+            elderHealthData.filter(
+              ({
+                latest,
+              }) =>
+                latest !== null
+            );
+
+          if (
+            measured.length === 0
+          ) {
+            setAiResult(
+              "目前沒有任何長者的健康量測紀錄。"
+            );
+
+            return;
+          }
+
+          const elderList =
+            measured
+              .map(
+                (
+                  item,
+                  index
+                ) =>
+                  `${index + 1}. ${item.elder.name}（${item.latest!.date}，${item.latest!.systolic}/${item.latest!.diastolic} mmHg）`
+              )
+              .join("\n");
+
+          setAiResult(
+            `目前共有 ${measured.length} 位長者有健康量測紀錄：\n\n${elderList}`
+          );
+
+          return;
+        }
+
+        /*
+         * ----------------------------------------
+         * ①-7 一般健康查詢沒有符合
+         * ----------------------------------------
+         */
+        setAiResult(
+          `已收到您的健康查詢：「${query}」\n\n` +
+            "目前可以查詢：\n" +
+            "• 哪些長者血壓偏高\n" +
+            "• 指定長者最近一次血壓\n" +
+            "• 今天有幾位長者量過血壓\n" +
+            "• 今天哪些長者還沒有量血壓\n" +
+            "• 哪些長者有健康量測紀錄\n" +
+            "• 最近收縮壓最高的長者"
+        );
+
+        return;
+      }
+
+      /*
+       * ========================================
+       * ② 查詢長者
        * ========================================
        */
       if (
@@ -396,7 +1000,7 @@ export default function Home() {
 
       /*
        * ========================================
-       * ② 查詢課程
+       * ③ 查詢課程
        *
        * 支援：
        * 今天有哪些課程？
@@ -433,7 +1037,7 @@ export default function Home() {
 
         /*
          * ----------------------------------------
-         * ②-1 指定月份
+         * ③-1 指定月份
          * ----------------------------------------
          */
         if (monthMatch) {
@@ -585,7 +1189,7 @@ export default function Home() {
 
         /*
          * ----------------------------------------
-         * ②-2 查詢今天課程
+         * ③-2 查詢今天課程
          * ----------------------------------------
          */
         if (
@@ -707,17 +1311,22 @@ export default function Home() {
 
       /*
        * ========================================
-       * ③ 尚未支援的問題
+       * ④ 尚未支援的問題
        * ========================================
        */
       setAiResult(
         `已收到您的查詢：「${query}」\n\n` +
-          "目前 AI 第一階段已經可以查詢：\n" +
+          "目前 AI 已經可以查詢：\n" +
           "• 長者人數\n" +
           "• 長者名單\n" +
           "• 今天的課程\n" +
-          "• 指定月份的課程\n\n" +
-          "下一階段再接上出席、健康量測、活動與財務資料。"
+          "• 指定月份的課程\n" +
+          "• 哪些長者血壓偏高\n" +
+          "• 指定長者最近一次血壓\n" +
+          "• 今天有幾位長者量過血壓\n" +
+          "• 今天哪些長者還沒有量血壓\n" +
+          "• 健康量測紀錄\n" +
+          "• 最近收縮壓最高的長者"
       );
     } catch (error) {
       console.error(
