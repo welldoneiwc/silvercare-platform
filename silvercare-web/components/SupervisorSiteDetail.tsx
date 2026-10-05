@@ -527,10 +527,69 @@ setErrorMessage("");
         throw failedResult.error;
       }
 
+      const elderRows =
+        (eldersResult.data ??
+          []) as RecordRow[];
+
+      const healthRows =
+        (
+          healthRecordsResult.data ??
+          []
+        ) as RecordRow[];
+
+      const elderNameMap =
+        new Map<
+          string,
+          string
+        >();
+
+      elderRows.forEach(
+        (elder) => {
+          const elderId =
+            elder.id;
+
+          const elderName =
+            elder.name;
+
+          if (
+            elderId !==
+              null &&
+            elderId !==
+              undefined
+          ) {
+            elderNameMap.set(
+              String(
+                elderId
+              ),
+              elderName !==
+                  null &&
+                elderName !==
+                  undefined
+                ? String(
+                    elderName
+                  )
+                : ""
+            );
+          }
+        }
+      );
+
+      const healthRowsWithName =
+        healthRows.map(
+          (row) => ({
+            ...row,
+            name:
+              elderNameMap.get(
+                String(
+                  row.elder_id
+                )
+              ) ?? "",
+          })
+        );
+
       setRecords({
         elders:
-          (eldersResult.data ??
-            []) as RecordRow[],
+          elderRows,
 
         courses:
           (coursesResult.data ??
@@ -557,8 +616,7 @@ setErrorMessage("");
             []) as RecordRow[],
 
         healthRecords:
-          (healthRecordsResult.data ??
-            []) as RecordRow[],
+          healthRowsWithName,
       });
 
       const {
@@ -617,26 +675,30 @@ const summaryCards = [
 {
 key: "elders",
 title: "長者人數",
-value: records.elders.length,
+value:
+records.elders.length,
 suffix: "人",
 },
 {
 key: "courses",
 title: "課程數",
-value: records.courses.length,
+value:
+records.courses.length,
 suffix: "堂",
 },
 {
 key: "activities",
 title: "活動數",
-value: records.activities.length,
+value:
+records.activities.length,
 suffix: "場",
 },
 {
 key: "courseRegistrations",
 title: "課程報名",
 value:
-records.courseRegistrations.length,
+records.courseRegistrations
+.length,
 suffix: "筆",
 },
 {
@@ -689,30 +751,26 @@ margin: "0 auto",
 <button
 type="button"
 onClick={() => {
-window.location.href = "/";
+window.location.href =
+"/";
 }}
 style={{
-appearance:
-"none",
+appearance: "none",
 border:
 "1px solid #163A43",
 borderRadius: 8,
-background:
-"#FFFFFF",
-color:
-"#163A43",
-padding:
-"9px 14px",
+background: "#FFFFFF",
+color: "#163A43",
+padding: "9px 14px",
 fontSize: 14,
 fontWeight: 600,
-cursor:
-"pointer",
+cursor: "pointer",
 marginBottom: 20,
 }}
 >
 返回據點總覽 </button>
 
-```
+
     <div
       style={{
         background:
@@ -723,16 +781,14 @@ marginBottom: 20,
           radius.lg,
         boxShadow:
           shadow.sm,
-        padding:
-          "24px",
+        padding: "24px",
         marginBottom: 20,
       }}
     >
       <div
         style={{
           fontSize: 13,
-          color:
-            "#7A898D",
+          color: "#7A898D",
           marginBottom: 6,
         }}
       >
@@ -756,8 +812,7 @@ marginBottom: 20,
         style={{
           marginTop: 8,
           fontSize: 13,
-          color:
-            "#7A898D",
+          color: "#7A898D",
         }}
       >
         location_id：
@@ -766,8 +821,7 @@ marginBottom: 20,
 
       <div
         style={{
-          display:
-            "grid",
+          display: "grid",
           gridTemplateColumns:
             "repeat(auto-fit, minmax(150px, 1fr))",
           gap: 12,
@@ -836,8 +890,7 @@ marginBottom: 20,
             radius.md,
           background:
             "#F8FAFA",
-          color:
-            "#667579",
+          color: "#667579",
           fontSize: 13,
         }}
       >
@@ -867,8 +920,7 @@ marginBottom: 20,
             shadow.sm,
           padding:
             "30px 24px",
-          color:
-            "#667579",
+          color: "#667579",
         }}
       >
         正在載入{" "}
@@ -891,8 +943,7 @@ marginBottom: 20,
               shadow.sm,
             padding:
               "20px 24px",
-            color:
-              "#B42318",
+            color: "#B42318",
           }}
         >
           {errorMessage}
@@ -904,18 +955,14 @@ marginBottom: 20,
         <>
           <div
             style={{
-              display:
-                "flex",
-              flexWrap:
-                "wrap",
+              display: "flex",
+              flexWrap: "wrap",
               gap: 8,
               marginBottom: 16,
             }}
           >
             {sections.map(
-              (
-                section
-              ) => {
+              (section) => {
                 const count =
                   records[
                     section.key
@@ -956,7 +1003,8 @@ marginBottom: 20,
                       padding:
                         "10px 14px",
                       fontSize: 14,
-                      fontWeight: 600,
+                      fontWeight:
+                        600,
                       cursor:
                         "pointer",
                     }}
