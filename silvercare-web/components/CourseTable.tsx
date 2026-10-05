@@ -29,7 +29,6 @@ function formatDate(date?: string) {
   ).padStart(2, "0")}`;
 }
 
-/* 報名管理 Icon */
 function RegistrationIcon() {
   return (
     <svg
@@ -43,13 +42,7 @@ function RegistrationIcon() {
       strokeLinejoin="round"
       aria-hidden="true"
     >
-      <rect
-        x="4"
-        y="3"
-        width="16"
-        height="18"
-        rx="2"
-      />
+      <rect x="4" y="3" width="16" height="18" rx="2" />
       <path d="M8 7h8" />
       <path d="M8 11h8" />
       <path d="M8 15h5" />
@@ -57,7 +50,6 @@ function RegistrationIcon() {
   );
 }
 
-/* 報名連結 Icon */
 function LinkIcon() {
   return (
     <svg
@@ -77,7 +69,6 @@ function LinkIcon() {
   );
 }
 
-/* 編輯 Icon */
 function EditIcon() {
   return (
     <svg
@@ -97,7 +88,6 @@ function EditIcon() {
   );
 }
 
-/* 刪除 Icon */
 function DeleteIcon() {
   return (
     <svg
@@ -126,28 +116,22 @@ export default function CourseTable({
   onDelete,
   onRegistration,
 }: Props) {
-  const handleCopyRegistrationLink = (
-    course: Course
-  ) => {
+  const handleCopyRegistrationLink = (course: Course) => {
     if (course.id === undefined) {
       alert("此課程沒有有效的課程 ID");
       return;
     }
 
-    const link = `${window.location.origin}/course/register?courseId=${course.id}`;
+    // 使用路徑式網址，不再依賴 ?courseId= Query String。
+    const link = `${window.location.origin}/course/register?courseId=${course.id}#courseId=${course.id}`;
 
     navigator.clipboard
       .writeText(link)
       .then(() => {
-        alert(
-          "報名連結已複製，可以貼到 LINE 群組。"
-        );
+        alert("報名連結已複製，可以貼到 LINE 群組。");
       })
       .catch(() => {
-        window.prompt(
-          "請複製以下報名連結：",
-          link
-        );
+        window.prompt("請複製以下報名連結：", link);
       });
   };
 
@@ -159,11 +143,7 @@ export default function CourseTable({
         overflow: "hidden",
       }}
     >
-      <div
-        style={{
-          paddingBottom: 12,
-        }}
-      >
+      <div style={{ paddingBottom: 12 }}>
         <h3
           style={{
             margin: 0,
@@ -174,12 +154,7 @@ export default function CourseTable({
           課程列表
         </h3>
 
-        <div
-          style={{
-            width: "100%",
-            overflowX: "auto",
-          }}
-        >
+        <div style={{ width: "100%", overflowX: "auto" }}>
           <table
             style={{
               width: "100%",
@@ -188,178 +163,98 @@ export default function CourseTable({
             }}
           >
             <thead>
-              <tr
-                style={{
-                  background: "#F7FAFC",
-                }}
-              >
-                <th style={thStyle}>
-                  課程
-                </th>
-
-                <th style={thStyle}>
-                  老師
-                </th>
-
-                <th style={thStyle}>
-                  日期
-                </th>
-
-                <th style={thStyle}>
-                  時間
-                </th>
-
-                <th style={thStyle}>
-                  容量
-                </th>
-
-                <th style={thStyle}>
-                  教室
-                </th>
-
-                <th style={thStyle}>
-                  操作
-                </th>
+              <tr style={{ background: "#F7FAFC" }}>
+                <th style={thStyle}>課程</th>
+                <th style={thStyle}>老師</th>
+                <th style={thStyle}>日期</th>
+                <th style={thStyle}>時間</th>
+                <th style={thStyle}>容量</th>
+                <th style={thStyle}>教室</th>
+                <th style={thStyle}>操作</th>
               </tr>
             </thead>
 
             <tbody>
               {courses.length === 0 ? (
                 <tr>
-                  <td
-                    colSpan={7}
-                    style={tdStyle}
-                  >
+                  <td colSpan={7} style={tdStyle}>
                     尚無課程資料
                   </td>
                 </tr>
               ) : (
                 courses
-                  .filter(
-                    (course) =>
-                      course.id !== undefined
-                  )
+                  .filter((course) => course.id !== undefined)
                   .map((course) => (
-                    <tr
-                      key={course.id}
-                    >
+                    <tr key={course.id}>
+                      <td style={tdStyle}>{course.title}</td>
+                      <td style={tdStyle}>{course.teacher}</td>
+                      <td style={tdStyle}>{formatDate(course.date)}</td>
                       <td style={tdStyle}>
-                        {course.title}
+                        {course.startTime} ~ {course.endTime}
                       </td>
-
-                      <td style={tdStyle}>
-                        {course.teacher}
-                      </td>
-
-                      <td style={tdStyle}>
-                        {formatDate(
-                          course.date
-                        )}
-                      </td>
-
-                      <td style={tdStyle}>
-                        {course.startTime}
-                        {" ~ "}
-                        {course.endTime}
-                      </td>
-
-                      <td style={tdStyle}>
-                        {course.capacity}
-                        {" 人"}
-                      </td>
-
-                      <td style={tdStyle}>
-                        {course.classroom ||
-                          "-"}
-                      </td>
-
+                      <td style={tdStyle}>{course.capacity} 人</td>
+                      <td style={tdStyle}>{course.classroom || "-"}</td>
                       <td style={tdStyle}>
                         <div
                           style={{
                             display: "flex",
-                            justifyContent:
-                              "center",
-                            alignItems:
-                              "center",
+                            justifyContent: "center",
+                            alignItems: "center",
                             gap: 6,
-                            flexWrap:
-                              "nowrap",
+                            flexWrap: "nowrap",
                           }}
                         >
-                          {/* 報名管理 */}
                           <button
                             type="button"
-                            onClick={() =>
-                              onRegistration(
-                                course
-                              )
-                            }
+                            onClick={() => onRegistration(course)}
                             title="報名管理"
                             aria-label="報名管理"
                             style={{
                               ...iconButtonStyle,
-                              background:
-                                "#198754",
+                              background: "#198754",
                             }}
                           >
                             <RegistrationIcon />
                           </button>
 
-                          {/* 報名連結 */}
                           <button
                             type="button"
-                            onClick={() =>
-                              handleCopyRegistrationLink(
-                                course
-                              )
-                            }
+                            onClick={() => handleCopyRegistrationLink(course)}
                             title="複製報名連結"
                             aria-label="複製報名連結"
                             style={{
                               ...iconButtonStyle,
-                              background:
-                                "#7C3AED",
+                              background: "#7C3AED",
                             }}
                           >
                             <LinkIcon />
                           </button>
 
-                          {/* 編輯 */}
                           <button
                             type="button"
-                            onClick={() =>
-                              onEdit(course)
-                            }
+                            onClick={() => onEdit(course)}
                             title="編輯課程"
                             aria-label="編輯課程"
                             style={{
                               ...iconButtonStyle,
-                              background:
-                                "#2563EB",
+                              background: "#2563EB",
                             }}
                           >
                             <EditIcon />
                           </button>
 
-                          {/* 刪除 */}
                           <button
                             type="button"
                             onClick={() => {
-                              if (
-                                course.id !==
-                                undefined
-                              ) {
-                                onDelete(
-                                  course.id
-                                );
+                              if (course.id !== undefined) {
+                                onDelete(course.id);
                               }
                             }}
                             title="刪除課程"
                             aria-label="刪除課程"
                             style={{
                               ...iconButtonStyle,
-                              background:
-                                "#DC2626",
+                              background: "#DC2626",
                             }}
                           >
                             <DeleteIcon />
@@ -394,8 +289,7 @@ const iconButtonStyle: React.CSSProperties = {
 const thStyle: React.CSSProperties = {
   padding: "12px",
   textAlign: "center",
-  borderBottom:
-    "1px solid #E5E7EB",
+  borderBottom: "1px solid #E5E7EB",
   color: colors.primary,
   fontWeight: 600,
   fontSize: 14,
@@ -404,7 +298,6 @@ const thStyle: React.CSSProperties = {
 const tdStyle: React.CSSProperties = {
   padding: "14px 12px",
   textAlign: "center",
-  borderBottom:
-    "1px solid #F3F4F6",
+  borderBottom: "1px solid #F3F4F6",
   fontSize: 14,
 };
