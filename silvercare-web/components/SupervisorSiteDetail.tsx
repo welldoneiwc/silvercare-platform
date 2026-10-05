@@ -11,12 +11,6 @@ import { colors } from "../styles/theme";
 import { radius } from "../styles/radius";
 import { shadow } from "../styles/shadow";
 
-type SiteInfo = {
-  location_id: number;
-  siteName: string;
-  elderCount: number;
-};
-
 type RecordRow = Record<string, unknown>;
 
 type SiteRecords = {
@@ -30,8 +24,7 @@ type SiteRecords = {
 };
 
 type SupervisorSiteDetailProps = {
-  site: SiteInfo;
-  onBack: () => void;
+  locationId: number;
 };
 
 type SectionKey =
@@ -290,8 +283,7 @@ function RecordTable({
 }
 
 export default function SupervisorSiteDetail({
-  site,
-  onBack,
+  locationId,
 }: SupervisorSiteDetailProps) {
   const [
     records,
@@ -305,6 +297,13 @@ export default function SupervisorSiteDetail({
     financePayers: [],
     financePayments: [],
   });
+
+  const [
+    siteName,
+    setSiteName,
+  ] = useState(
+    `據點 ${locationId}`
+  );
 
   const [
     loading,
@@ -325,217 +324,248 @@ export default function SupervisorSiteDetail({
     );
 
   useEffect(() => {
+    const loadSiteRecords =
+      async () => {
+        try {
+          setLoading(true);
+          setErrorMessage("");
+
+          if (
+            !Number.isFinite(
+              locationId
+            ) ||
+            locationId <= 0
+          ) {
+            setErrorMessage(
+              "無效的據點 ID。"
+            );
+            return;
+          }
+
+          const {
+            data: userData,
+            error: userError,
+          } =
+            await supabase.auth.getUser();
+
+          if (
+            userError ||
+            !userData.user
+          ) {
+            setErrorMessage(
+              "目前尚未登入，無法查看據點資料。"
+            );
+            return;
+          }
+
+          const {
+            data: roleData,
+            error: roleError,
+          } =
+            await supabase
+              .from("user_roles")
+              .select("role")
+              .eq(
+                "user_id",
+                userData.user.id
+              )
+              .limit(1)
+              .maybeSingle();
+
+          if (roleError) {
+            throw roleError;
+          }
+
+          if (
+            roleData?.role !==
+            "supervisor"
+          ) {
+            setErrorMessage(
+              "此頁面僅提供 Supervisor 使用。"
+            );
+            return;
+          }
+
+          const [
+            eldersResult,
+            coursesResult,
+            activitiesResult,
+            registrationsResult,
+            chargesResult,
+            payersResult,
+            paymentsResult,
+          ] =
+            await Promise.all([
+              supabase
+                .from("elders")
+                .select("*")
+                .eq(
+                  "location_id",
+                  locationId
+                ),
+
+              supabase
+                .from("courses")
+                .select("*")
+                .eq(
+                  "location_id",
+                  locationId
+                )
+                .order(
+                  "date",
+                  {
+                    ascending:
+                      false,
+                  }
+                ),
+
+              supabase
+                .from("activities")
+                .select("*")
+                .eq(
+                  "location_id",
+                  locationId
+                )
+                .order(
+                  "date",
+                  {
+                    ascending:
+                      false,
+                  }
+                ),
+
+              supabase
+                .from(
+                  "course_registrations"
+                )
+                .select("*")
+                .eq(
+                  "location_id",
+                  locationId
+                ),
+
+              supabase
+                .from(
+                  "finance_charges"
+                )
+                .select("*")
+                .eq(
+                  "location_id",
+                  locationId
+                ),
+
+              supabase
+                .from(
+                  "finance_payers"
+                )
+                .select("*")
+                .eq(
+                  "location_id",
+                  locationId
+                ),
+
+              supabase
+                .from(
+                  "finance_payments"
+                )
+                .select("*")
+                .eq(
+                  "location_id",
+                  locationId
+                ),
+            ]);
+
+          const results = [
+            eldersResult,
+            coursesResult,
+            activitiesResult,
+            registrationsResult,
+            chargesResult,
+            payersResult,
+            paymentsResult,
+          ];
+
+          const failedResult =
+            results.find(
+              (result) =>
+                result.error
+            );
+
+          if (
+            failedResult?.error
+          ) {
+            throw failedResult.error;
+          }
+
+          setRecords({
+            elders:
+              (eldersResult.data ??
+                []) as RecordRow[],
+
+            courses:
+              (coursesResult.data ??
+                []) as RecordRow[],
+
+            activities:
+              (activitiesResult.data ??
+                []) as RecordRow[],
+
+            courseRegistrations:
+              (registrationsResult.data ??
+                []) as RecordRow[],
+
+            financeCharges:
+              (chargesResult.data ??
+                []) as RecordRow[],
+
+            financePayers:
+              (payersResult.data ??
+                []) as RecordRow[],
+
+            financePayments:
+              (paymentsResult.data ??
+                []) as RecordRow[],
+          });
+
+          const {
+            data: locationData,
+            error: locationError,
+          } =
+            await supabase
+              .from("locations")
+              .select("id, name")
+              .eq(
+                "id",
+                locationId
+              )
+              .maybeSingle();
+
+          if (
+            !locationError &&
+            locationData?.name
+          ) {
+            setSiteName(
+              locationData.name
+            );
+          }
+        } catch (error) {
+          console.error(
+            "載入個別據點資料失敗：",
+            error
+          );
+
+          setErrorMessage(
+            error instanceof Error
+              ? error.message
+              : "載入據點資料時發生錯誤。"
+          );
+        } finally {
+          setLoading(false);
+        }
+      };
+
     void loadSiteRecords();
-  }, [site.location_id]);
-
-  const loadSiteRecords =
-    async () => {
-      try {
-        setLoading(true);
-        setErrorMessage("");
-
-        const {
-          data: userData,
-          error: userError,
-        } =
-          await supabase.auth.getUser();
-
-        if (
-          userError ||
-          !userData.user
-        ) {
-          setErrorMessage(
-            "目前尚未登入，無法查看據點資料。"
-          );
-          return;
-        }
-
-        const {
-          data: roleData,
-          error: roleError,
-        } =
-          await supabase
-            .from("user_roles")
-            .select("role")
-            .eq(
-              "user_id",
-              userData.user.id
-            )
-            .limit(1)
-            .maybeSingle();
-
-        if (roleError) {
-          throw roleError;
-        }
-
-        if (
-          roleData?.role !==
-          "supervisor"
-        ) {
-          setErrorMessage(
-            "此頁面僅提供 Supervisor 使用。"
-          );
-          return;
-        }
-
-        const locationId =
-          site.location_id;
-
-        const [
-          eldersResult,
-          coursesResult,
-          activitiesResult,
-          registrationsResult,
-          chargesResult,
-          payersResult,
-          paymentsResult,
-        ] =
-          await Promise.all([
-            supabase
-              .from("elders")
-              .select("*")
-              .eq(
-                "location_id",
-                locationId
-              ),
-
-            supabase
-              .from("courses")
-              .select("*")
-              .eq(
-                "location_id",
-                locationId
-              )
-              .order(
-                "date",
-                {
-                  ascending:
-                    false,
-                }
-              ),
-
-            supabase
-              .from("activities")
-              .select("*")
-              .eq(
-                "location_id",
-                locationId
-              )
-              .order(
-                "date",
-                {
-                  ascending:
-                    false,
-                }
-              ),
-
-            supabase
-              .from(
-                "course_registrations"
-              )
-              .select("*")
-              .eq(
-                "location_id",
-                locationId
-              ),
-
-            supabase
-              .from(
-                "finance_charges"
-              )
-              .select("*")
-              .eq(
-                "location_id",
-                locationId
-              ),
-
-            supabase
-              .from(
-                "finance_payers"
-              )
-              .select("*")
-              .eq(
-                "location_id",
-                locationId
-              ),
-
-            supabase
-              .from(
-                "finance_payments"
-              )
-              .select("*")
-              .eq(
-                "location_id",
-                locationId
-              ),
-          ]);
-
-        const results = [
-          eldersResult,
-          coursesResult,
-          activitiesResult,
-          registrationsResult,
-          chargesResult,
-          payersResult,
-          paymentsResult,
-        ];
-
-        const failedResult =
-          results.find(
-            (result) =>
-              result.error
-          );
-
-        if (
-          failedResult?.error
-        ) {
-          throw failedResult.error;
-        }
-
-        setRecords({
-          elders:
-            (eldersResult.data ??
-              []) as RecordRow[],
-
-          courses:
-            (coursesResult.data ??
-              []) as RecordRow[],
-
-          activities:
-            (activitiesResult.data ??
-              []) as RecordRow[],
-
-          courseRegistrations:
-            (registrationsResult.data ??
-              []) as RecordRow[],
-
-          financeCharges:
-            (chargesResult.data ??
-              []) as RecordRow[],
-
-          financePayers:
-            (payersResult.data ??
-              []) as RecordRow[],
-
-          financePayments:
-            (paymentsResult.data ??
-              []) as RecordRow[],
-        });
-      } catch (error) {
-        console.error(
-          "載入個別據點資料失敗：",
-          error
-        );
-
-        setErrorMessage(
-          error instanceof Error
-            ? error.message
-            : "載入據點資料時發生錯誤。"
-        );
-      } finally {
-        setLoading(false);
-      }
-    };
+  }, [locationId]);
 
   const activeRows =
     records[activeSection];
@@ -546,6 +576,55 @@ export default function SupervisorSiteDetail({
         total + rows.length,
       0
     );
+
+  const summaryCards = [
+    {
+      key: "elders",
+      title: "長者人數",
+      value: records.elders.length,
+      suffix: "人",
+    },
+    {
+      key: "courses",
+      title: "課程數",
+      value: records.courses.length,
+      suffix: "堂",
+    },
+    {
+      key: "activities",
+      title: "活動數",
+      value: records.activities.length,
+      suffix: "場",
+    },
+    {
+      key: "courseRegistrations",
+      title: "課程報名",
+      value:
+        records.courseRegistrations.length,
+      suffix: "筆",
+    },
+    {
+      key: "financeCharges",
+      title: "財務收費",
+      value:
+        records.financeCharges.length,
+      suffix: "筆",
+    },
+    {
+      key: "financePayers",
+      title: "付款人",
+      value:
+        records.financePayers.length,
+      suffix: "人",
+    },
+    {
+      key: "financePayments",
+      title: "付款紀錄",
+      value:
+        records.financePayments.length,
+      suffix: "筆",
+    },
+  ];
 
   return (
     <div
@@ -566,7 +645,9 @@ export default function SupervisorSiteDetail({
       >
         <button
           type="button"
-          onClick={onBack}
+          onClick={() => {
+            window.location.href = "/";
+          }}
           style={{
             appearance:
               "none",
@@ -625,7 +706,7 @@ export default function SupervisorSiteDetail({
                 colors.primary,
             }}
           >
-            {site.siteName}
+            {siteName}
           </h1>
 
           <div
@@ -637,87 +718,96 @@ export default function SupervisorSiteDetail({
             }}
           >
             location_id：
-            {site.location_id}
+            {locationId}
           </div>
 
           <div
             style={{
               display:
-                "flex",
-              flexWrap:
-                "wrap",
+                "grid",
+              gridTemplateColumns:
+                "repeat(auto-fit, minmax(150px, 1fr))",
               gap: 12,
               marginTop: 20,
             }}
           >
-            <div
+            {summaryCards.map(
+              (card) => (
+                <div
+                  key={card.key}
+                  style={{
+                    minWidth: 0,
+                    padding:
+                      "14px 16px",
+                    borderRadius:
+                      radius.md,
+                    background:
+                      "#F4F7F8",
+                    border:
+                      "1px solid #E3EAEC",
+                  }}
+                >
+                  <div
+                    style={{
+                      fontSize: 13,
+                      color:
+                        "#667579",
+                    }}
+                  >
+                    {card.title}
+                  </div>
+
+                  <div
+                    style={{
+                      marginTop: 4,
+                      fontSize: 24,
+                      fontWeight: 700,
+                      color:
+                        colors.primary,
+                    }}
+                  >
+                    {card.value}
+                    <span
+                      style={{
+                        marginLeft: 4,
+                        fontSize: 14,
+                        fontWeight: 500,
+                        color:
+                          "#667579",
+                      }}
+                    >
+                      {card.suffix}
+                    </span>
+                  </div>
+                </div>
+              )
+            )}
+          </div>
+
+          <div
+            style={{
+              marginTop: 12,
+              padding:
+                "12px 14px",
+              borderRadius:
+                radius.md,
+              background:
+                "#F8FAFA",
+              color:
+                "#667579",
+              fontSize: 13,
+            }}
+          >
+            目前共載入{" "}
+            <strong
               style={{
-                minWidth: 150,
-                padding:
-                  "14px 16px",
-                borderRadius:
-                  radius.md,
-                background:
-                  "#F4F7F8",
+                color:
+                  colors.primary,
               }}
             >
-              <div
-                style={{
-                  fontSize: 13,
-                  color:
-                    "#667579",
-                }}
-              >
-                長者
-              </div>
-
-              <div
-                style={{
-                  marginTop: 4,
-                  fontSize: 24,
-                  fontWeight: 700,
-                  color:
-                    colors.primary,
-                }}
-              >
-                {site.elderCount}
-                人
-              </div>
-            </div>
-
-            <div
-              style={{
-                minWidth: 150,
-                padding:
-                  "14px 16px",
-                borderRadius:
-                  radius.md,
-                background:
-                  "#F4F7F8",
-              }}
-            >
-              <div
-                style={{
-                  fontSize: 13,
-                  color:
-                    "#667579",
-                }}
-              >
-                已載入紀錄
-              </div>
-
-              <div
-                style={{
-                  marginTop: 4,
-                  fontSize: 24,
-                  fontWeight: 700,
-                  color:
-                    colors.primary,
-                }}
-              >
-                {totalRecords}
-              </div>
-            </div>
+              {totalRecords}
+            </strong>{" "}
+            筆據點資料。
           </div>
         </div>
 
@@ -739,7 +829,7 @@ export default function SupervisorSiteDetail({
             }}
           >
             正在載入{" "}
-            {site.siteName}
+            {siteName}
             的完整紀錄...
           </div>
         )}
