@@ -16,6 +16,7 @@ import { radius } from "../styles/radius";
 import { shadow } from "../styles/shadow";
 
 import { notifyStorageChanged } from "../utils/storageEvents";
+import { supabase } from "../utils/supabase";
 
 export type HealthRecord = {
   id: number;
@@ -74,8 +75,9 @@ export default function ElderProfile({
 }: Props) {
   const [records, setRecords] =
     useState<HealthRecord[]>([]);
-    const [loaded, setLoaded] =
-  useState(false);
+
+  const [loaded, setLoaded] =
+    useState(false);
 
   const [openModal, setOpenModal] =
     useState(false);
@@ -119,59 +121,406 @@ export default function ElderProfile({
     return `health-records-${elder.id}`;
   }, [elder]);
 
- useEffect(() => {
-  if (!storageKey) {
-    setRecords([]);
-    setLoaded(true);
-    return;
-  }
+  /*
+   * ================================
+   * Health Records
+   * Supabase 正式資料來源
+   * ================================
+   *
+   * 舊版本健康紀錄存在：
+   * localStorage -> health-records-{elder.id}
+   *
+   * 現在改為：
+   * Supabase -> health_records
+   *
+   * 如果 Supabase 尚無資料，但瀏覽器仍有舊的
+   * LocalStorage 健康紀錄，第一次開啟時會自動搬移。
+   */
 
-  try {
-    const saved =
-      localStorage.getItem(
-        storageKey
-      );
+  useEffect(() => {
+    let cancelled = false;
 
-    if (!saved) {
-      setRecords([]);
-      setLoaded(true);
-      return;
-    }
+    const loadHealthRecords =
+      async () => {
+        if (!elder || !storageKey) {
+          setRecords([]);
+          setLoaded(true);
+          return;
+        }
 
-    const parsed =
-      JSON.parse(saved) as HealthRecord[];
+        setLoaded(false);
 
-    setRecords(
-      Array.isArray(parsed)
-        ? parsed
-        : []
-    );
-  } catch (error) {
-    console.error(
-      "讀取健康紀錄失敗：",
-      error
-    );
+        try {
+          const {
+            data: elderData,
+            error: elderError,
+          } = await supabase
+            .from("elders")
+            .select("location_id")
+            .eq("id", elder.id)
+            .single();
 
-    setRecords([]);
-  } finally {
-    setLoaded(true);
-  }
-}, [storageKey]);
+          if (elderError) {
+            throw elderError;
+          }
 
-useEffect(() => {
-  if (!storageKey || !loaded) {
-    return;
-  }
+          const locationId =
+            Number(
+              elderData?.location_id
+            );
 
-  localStorage.setItem(
-    storageKey,
-    JSON.stringify(records)
-  );
-}, [
-  records,
-  storageKey,
-  loaded,
-]);
+          if (
+            !Number.isFinite(
+              locationId
+            ) ||
+            locationId <= 0
+          ) {
+            throw new Error(
+              "找不到這位長者的據點資料。"
+            );
+          }
+
+          const {
+            data,
+            error,
+          } = await supabase
+            .from("health_records")
+            .select(
+              "id, elder_id, location_id, date, systolic, diastolic, pulse, height, weight, created_at"
+            )
+            .eq("elder_id", elder.id)
+            .order("date", {
+              ascending: false,
+            });
+
+          if (error) {
+            throw error;
+          }
+
+          const supabaseRecords: HealthRecord[] =
+            (data ?? []).map(
+              (item) => ({
+                id: Number(item.id),
+                date: String(
+                  item.date
+                ),
+                systolic: Number(
+                  item.systolic
+                ),
+                diastolic: Number(
+                  item.diastolic
+                ),
+                pulse: Number(
+                  item.pulse
+                ),
+                height:
+                  item.height ===
+                    null ||
+                  item.height ===
+                    undefined
+                    ? null
+                    : Number(
+                        item.height
+                      ),
+                weight:
+                  item.weight ===
+                    null ||
+                  item.weight ===
+                    undefined
+                    ? null
+                    : Number(
+                        item.weight
+                      ),
+              })
+            );
+
+          /*
+           * Supabase 已經有正式資料：
+           * 直接使用 Supabase。
+           */
+          if (
+            supabaseRecords.length >
+            0
+          ) {
+            if (!cancelled) {
+              setRecords(
+                supabaseRecords
+              );
+              setLoaded(true);
+            }
+
+            return;
+          }
+
+          /*
+           * Supabase 尚無資料。
+           * 檢查舊 LocalStorage，
+           * 保留之前已經建立的健康紀錄。
+           */
+          let localRecords: HealthRecord[] =
+            [];
+
+          try {
+            const saved =
+              localStorage.getItem(
+                storageKey
+              );
+
+            if (saved) {
+              const parsed =
+                JSON.parse(saved);
+
+              if (
+                Array.isArray(
+                  parsed
+                )
+              ) {
+                localRecords =
+                  parsed.filter(
+                    (record) =>
+                      record &&
+                      typeof record ===
+                        "object"
+                  ) as HealthRecord[];
+              }
+            }
+          } catch (localError) {
+            console.error(
+              "讀取舊健康紀錄失敗：",
+              localError
+            );
+          }
+
+          /*
+           * 沒有舊資料：
+           * 正常顯示空白健康紀錄。
+           */
+          if (
+            localRecords.length ===
+            0
+          ) {
+            if (!cancelled) {
+              setRecords([]);
+              setLoaded(true);
+            }
+
+            return;
+          }
+
+          /*
+           * 將舊 LocalStorage 健康紀錄
+           * 搬移到 Supabase。
+           *
+           * 不沿用舊的 Date.now() id，
+           * 讓 health_records 自己產生新的 identity id。
+           */
+          const migrationPayload =
+            localRecords.map(
+              (record) => ({
+                elder_id:
+                  elder.id,
+                location_id:
+                  locationId,
+                date: record.date,
+                systolic:
+                  Number(
+                    record.systolic
+                  ),
+                diastolic:
+                  Number(
+                    record.diastolic
+                  ),
+                pulse:
+                  Number(
+                    record.pulse
+                  ),
+                height:
+                  record.height ===
+                    null ||
+                  record.height ===
+                    undefined
+                    ? null
+                    : Number(
+                        record.height
+                      ),
+                weight:
+                  record.weight ===
+                    null ||
+                  record.weight ===
+                    undefined
+                    ? null
+                    : Number(
+                        record.weight
+                      ),
+              })
+            );
+
+          const {
+            data: migratedData,
+            error:
+              migrationError,
+          } = await supabase
+            .from("health_records")
+            .insert(
+              migrationPayload
+            )
+            .select(
+              "id, elder_id, location_id, date, systolic, diastolic, pulse, height, weight, created_at"
+            );
+
+          if (
+            migrationError
+          ) {
+            throw migrationError;
+          }
+
+          const migratedRecords: HealthRecord[] =
+            (migratedData ?? [])
+              .map(
+                (item) => ({
+                  id: Number(
+                    item.id
+                  ),
+                  date: String(
+                    item.date
+                  ),
+                  systolic:
+                    Number(
+                      item.systolic
+                    ),
+                  diastolic:
+                    Number(
+                      item.diastolic
+                    ),
+                  pulse:
+                    Number(
+                      item.pulse
+                    ),
+                  height:
+                    item.height ===
+                      null ||
+                    item.height ===
+                      undefined
+                      ? null
+                      : Number(
+                          item.height
+                        ),
+                  weight:
+                    item.weight ===
+                      null ||
+                    item.weight ===
+                      undefined
+                      ? null
+                      : Number(
+                          item.weight
+                        ),
+                })
+              );
+
+          /*
+           * 搬移成功後，
+           * LocalStorage 舊資料可以移除，
+           * 避免之後誤把舊資料當成正式資料。
+           */
+          if (
+            migratedRecords.length >
+            0
+          ) {
+            try {
+              localStorage.removeItem(
+                storageKey
+              );
+            } catch (removeError) {
+              console.error(
+                "清除舊健康紀錄快取失敗：",
+                removeError
+              );
+            }
+          }
+
+          if (!cancelled) {
+            setRecords(
+              migratedRecords
+            );
+            setLoaded(true);
+          }
+
+          notifyStorageChanged();
+
+          console.log(
+            "HEALTH RECORDS MIGRATION SUCCESS:",
+            elder.id,
+            migratedRecords
+          );
+        } catch (error) {
+          console.error(
+            "讀取健康紀錄失敗：",
+            error
+          );
+
+          /*
+           * 如果 Supabase 讀取失敗，
+           * 為了避免現有資料畫面突然消失，
+           * 暫時使用舊 LocalStorage 顯示。
+           *
+           * 這不會把 LocalStorage 當成正式資料寫回，
+           * 只是作為讀取失敗時的安全 fallback。
+           */
+          try {
+            const saved =
+              storageKey
+                ? localStorage.getItem(
+                    storageKey
+                  )
+                : null;
+
+            if (saved) {
+              const parsed =
+                JSON.parse(saved);
+
+              if (
+                Array.isArray(
+                  parsed
+                )
+              ) {
+                if (!cancelled) {
+                  setRecords(
+                    parsed as HealthRecord[]
+                  );
+                }
+              } else if (
+                !cancelled
+              ) {
+                setRecords([]);
+              }
+            } else if (
+              !cancelled
+            ) {
+              setRecords([]);
+            }
+          } catch (fallbackError) {
+            console.error(
+              "讀取健康紀錄備份失敗：",
+              fallbackError
+            );
+
+            if (!cancelled) {
+              setRecords([]);
+            }
+          }
+
+          if (!cancelled) {
+            setLoaded(true);
+          }
+        }
+      };
+
+    loadHealthRecords();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [elder, storageKey]);
 
   useEffect(() => {
     if (!elder) {
@@ -347,9 +696,8 @@ useEffect(() => {
   }, [elder]);
 
   const bmi = useMemo(() => {
-    if (!latestRecord) { 
+    if (!latestRecord) {
       return "-";
-      
     }
 
     if (
@@ -379,7 +727,7 @@ useEffect(() => {
     ).toFixed(1);
   }, [latestRecord]);
 
-    const healthSummary = useMemo(() => {
+  const healthSummary = useMemo(() => {
     if (records.length === 0) {
       return {
         text: "目前尚無健康量測紀錄。",
@@ -511,65 +859,56 @@ useEffect(() => {
     };
   }, [records]);
 
-  const handleDelete = (
-  id: number
-) => {
+  /*
+   * ================================
+   * Health Record Delete
+   * ================================
+   */
+ const handleDelete = async (id: number) => {
+  if (!elder) return;
+
   try {
-    if (!storageKey) {
-      return;
+    const { error } = await supabase
+      .from("health_records")
+      .delete()
+      .eq("id", id)
+      .eq(
+        "elder_id",
+        elder.id
+      );
+
+    if (error) {
+      throw error;
     }
 
-    const saved =
-      localStorage.getItem(
-        storageKey
-      );
+      const updatedRecords =
+        records.filter(
+          (record) =>
+            Number(record.id) !==
+            Number(id)
+        );
 
-    const existingRecords =
-      saved
-        ? JSON.parse(saved)
-        : [];
-
-    const safeRecords =
-      Array.isArray(existingRecords)
-        ? (existingRecords as HealthRecord[])
-        : [];
-
-    const updatedRecords =
-      safeRecords.filter(
-        (record) =>
-          Number(record.id) !==
-          Number(id)
-      );
-
-    localStorage.setItem(
-      storageKey,
-      JSON.stringify(
+      setRecords(
         updatedRecords
-      )
-    );
+      );
 
-    setRecords(
-      updatedRecords
-    );
+      notifyStorageChanged();
 
-    notifyStorageChanged();
+      console.log(
+        "HEALTH DELETE SUCCESS:",
+        id
+      );
+    } catch (error) {
+      console.error(
+        "健康紀錄刪除失敗：",
+        error
+      );
 
-    console.log(
-      "🗑️ HEALTH DELETE SUCCESS:",
-      id,
-      updatedRecords
-    );
-  } catch (error) {
-    console.error(
-      "健康紀錄刪除失敗：",
-      error
-    );
-
-    alert(
-      "健康紀錄刪除失敗，請稍後再試。"
-    );
-  }
-};
+      alert(
+        "健康紀錄刪除失敗，請稍後再試。"
+      );
+    }
+  };
 
   const handleEdit = (
     record: HealthRecord
@@ -1196,414 +1535,414 @@ useEffect(() => {
   return (
     <>
       <div
-  style={{
-    flex: 1,
-    minWidth: 0,
-    width: "100%",
-    boxSizing: "border-box",
-    background: "#fff",
-    borderRadius: radius.lg,
-    boxShadow: shadow.md,
-    padding: 24,
-    display: "flex",
-    flexDirection: "column",
-    gap: 24,
-    overflowX: "auto",
-    overflowY: "auto",
-  }}
->
+        style={{
+          flex: 1,
+          minWidth: 0,
+          width: "100%",
+          boxSizing: "border-box",
+          background: "#fff",
+          borderRadius: radius.lg,
+          boxShadow: shadow.md,
+          padding: 24,
+          display: "flex",
+          flexDirection: "column",
+          gap: 24,
+          overflowX: "auto",
+          overflowY: "auto",
+        }}
+      >
         {/* ==================== */}
-{/* Elder Header */}
-{/* ==================== */}
-
-<div
-  style={{
-    display: "flex",
-    justifyContent: "space-between",
-    alignItems: "flex-start",
-    gap: 24,
-    flexWrap: "wrap",
-  }}
->
-  <div
-    style={{
-      flex: 1,
-      minWidth: 280,
-    }}
-  >
-    <h2
-      style={{
-        margin: 0,
-        color: colors.primary,
-        fontSize: 32,
-        fontWeight: 700,
-      }}
-    >
-      {elder.name}
-    </h2>
-
-    {/* ==================== */}
-    {/* 基本資料 */}
-    {/* ==================== */}
-
-    <div
-      style={{
-        marginTop: 14,
-        display: "grid",
-        gridTemplateColumns:
-          "repeat(auto-fit, minmax(180px, 1fr))",
-        gap: 10,
-      }}
-    >
-      <div
-        style={{
-          padding: "10px 14px",
-          background: "#F8FAFC",
-          borderRadius: radius.md,
-        }}
-      >
-        <div
-          style={{
-            color: colors.textLight,
-            fontSize: 12,
-          }}
-        >
-          性別
-        </div>
+        {/* Elder Header */}
+        {/* ==================== */}
 
         <div
           style={{
-            marginTop: 3,
-            color: "#374151",
-            fontWeight: 600,
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "flex-start",
+            gap: 24,
+            flexWrap: "wrap",
           }}
         >
-          {elder.gender}
-        </div>
-      </div>
-
-      <div
-        style={{
-          padding: "10px 14px",
-          background: "#F8FAFC",
-          borderRadius: radius.md,
-        }}
-      >
-        <div
-          style={{
-            color: colors.textLight,
-            fontSize: 12,
-          }}
-        >
-          生日
-        </div>
-
-        <div
-          style={{
-            marginTop: 3,
-            color: "#374151",
-            fontWeight: 600,
-          }}
-        >
-          {elder.birthday}
-        </div>
-      </div>
-
-      <div
-        style={{
-          padding: "10px 14px",
-          background: "#F8FAFC",
-          borderRadius: radius.md,
-        }}
-      >
-        <div
-          style={{
-            color: colors.textLight,
-            fontSize: 12,
-          }}
-        >
-          年齡
-        </div>
-
-        <div
-          style={{
-            marginTop: 3,
-            color: "#374151",
-            fontWeight: 600,
-          }}
-        >
-          {age} 歲
-        </div>
-      </div>
-
-      <div
-        style={{
-          padding: "10px 14px",
-          background: "#F8FAFC",
-          borderRadius: radius.md,
-        }}
-      >
-        <div
-          style={{
-            color: colors.textLight,
-            fontSize: 12,
-          }}
-        >
-          電話
-        </div>
-
-        <div
-          style={{
-            marginTop: 3,
-            color: "#374151",
-            fontWeight: 600,
-          }}
-        >
-          {elder.phone}
-        </div>
-      </div>
-    </div>
-
-    {/* ==================== */}
-    {/* 長者屬性 */}
-    {/* ==================== */}
-
-    <div
-      style={{
-        marginTop: 18,
-        padding: 16,
-        background: "#F8FAFC",
-        borderRadius: radius.md,
-        border: "1px solid #E5E7EB",
-      }}
-    >
-      <div
-        style={{
-          color: colors.primary,
-          fontSize: 15,
-          fontWeight: 700,
-          marginBottom: 12,
-        }}
-      >
-        長者屬性
-      </div>
-
-      <div
-        style={{
-          display: "grid",
-          gridTemplateColumns:
-            "repeat(auto-fit, minmax(180px, 1fr))",
-          gap: 12,
-        }}
-      >
-        <div>
           <div
             style={{
-              color: colors.textLight,
-              fontSize: 12,
+              flex: 1,
+              minWidth: 280,
             }}
           >
-            長者類型
+            <h2
+              style={{
+                margin: 0,
+                color: colors.primary,
+                fontSize: 32,
+                fontWeight: 700,
+              }}
+            >
+              {elder.name}
+            </h2>
+
+            {/* ==================== */}
+            {/* 基本資料 */}
+            {/* ==================== */}
+
+            <div
+              style={{
+                marginTop: 14,
+                display: "grid",
+                gridTemplateColumns:
+                  "repeat(auto-fit, minmax(180px, 1fr))",
+                gap: 10,
+              }}
+            >
+              <div
+                style={{
+                  padding: "10px 14px",
+                  background: "#F8FAFC",
+                  borderRadius: radius.md,
+                }}
+              >
+                <div
+                  style={{
+                    color: colors.textLight,
+                    fontSize: 12,
+                  }}
+                >
+                  性別
+                </div>
+
+                <div
+                  style={{
+                    marginTop: 3,
+                    color: "#374151",
+                    fontWeight: 600,
+                  }}
+                >
+                  {elder.gender}
+                </div>
+              </div>
+
+              <div
+                style={{
+                  padding: "10px 14px",
+                  background: "#F8FAFC",
+                  borderRadius: radius.md,
+                }}
+              >
+                <div
+                  style={{
+                    color: colors.textLight,
+                    fontSize: 12,
+                  }}
+                >
+                  生日
+                </div>
+
+                <div
+                  style={{
+                    marginTop: 3,
+                    color: "#374151",
+                    fontWeight: 600,
+                  }}
+                >
+                  {elder.birthday}
+                </div>
+              </div>
+
+              <div
+                style={{
+                  padding: "10px 14px",
+                  background: "#F8FAFC",
+                  borderRadius: radius.md,
+                }}
+              >
+                <div
+                  style={{
+                    color: colors.textLight,
+                    fontSize: 12,
+                  }}
+                >
+                  年齡
+                </div>
+
+                <div
+                  style={{
+                    marginTop: 3,
+                    color: "#374151",
+                    fontWeight: 600,
+                  }}
+                >
+                  {age} 歲
+                </div>
+              </div>
+
+              <div
+                style={{
+                  padding: "10px 14px",
+                  background: "#F8FAFC",
+                  borderRadius: radius.md,
+                }}
+              >
+                <div
+                  style={{
+                    color: colors.textLight,
+                    fontSize: 12,
+                  }}
+                >
+                  電話
+                </div>
+
+                <div
+                  style={{
+                    marginTop: 3,
+                    color: "#374151",
+                    fontWeight: 600,
+                  }}
+                >
+                  {elder.phone}
+                </div>
+              </div>
+            </div>
+
+            {/* ==================== */}
+            {/* 長者屬性 */}
+            {/* ==================== */}
+
+            <div
+              style={{
+                marginTop: 18,
+                padding: 16,
+                background: "#F8FAFC",
+                borderRadius: radius.md,
+                border: "1px solid #E5E7EB",
+              }}
+            >
+              <div
+                style={{
+                  color: colors.primary,
+                  fontSize: 15,
+                  fontWeight: 700,
+                  marginBottom: 12,
+                }}
+              >
+                長者屬性
+              </div>
+
+              <div
+                style={{
+                  display: "grid",
+                  gridTemplateColumns:
+                    "repeat(auto-fit, minmax(180px, 1fr))",
+                  gap: 12,
+                }}
+              >
+                <div>
+                  <div
+                    style={{
+                      color: colors.textLight,
+                      fontSize: 12,
+                    }}
+                  >
+                    長者類型
+                  </div>
+
+                  <div
+                    style={{
+                      marginTop: 5,
+                      display: "inline-flex",
+                      padding: "5px 10px",
+                      borderRadius: 999,
+                      background: "#E8F1F3",
+                      color: colors.primary,
+                      fontSize: 13,
+                      fontWeight: 700,
+                    }}
+                  >
+                    {elder.elder_type}
+                  </div>
+                </div>
+
+                <div>
+                  <div
+                    style={{
+                      color: colors.textLight,
+                      fontSize: 12,
+                    }}
+                  >
+                    居住／服務狀態
+                  </div>
+
+                  <div
+                    style={{
+                      marginTop: 5,
+                      display: "inline-flex",
+                      padding: "5px 10px",
+                      borderRadius: 999,
+                      background:
+                        elder.living_status === "獨居"
+                          ? "#FFF4E5"
+                          : elder.living_status === "電訪"
+                            ? "#F0ECF8"
+                            : "#F3F4F6",
+                      color:
+                        elder.living_status === "獨居"
+                          ? "#9A5B00"
+                          : elder.living_status === "電訪"
+                            ? "#654A8B"
+                            : "#4B5563",
+                      fontSize: 13,
+                      fontWeight: 700,
+                    }}
+                  >
+                    {elder.living_status}
+                  </div>
+                </div>
+
+                <div>
+                  <div
+                    style={{
+                      color: colors.textLight,
+                      fontSize: 12,
+                    }}
+                  >
+                    聯絡方式
+                  </div>
+
+                  <div
+                    style={{
+                      marginTop: 5,
+                      color: "#374151",
+                      fontWeight: 600,
+                    }}
+                  >
+                    {elder.contact_method}
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* ==================== */}
+            {/* 緊急聯絡人 */}
+            {/* ==================== */}
+
+            <div
+              style={{
+                marginTop: 14,
+                padding: 16,
+                background: "#FFFBEB",
+                borderRadius: radius.md,
+                border: "1px solid #FDE68A",
+              }}
+            >
+              <div
+                style={{
+                  color: "#92400E",
+                  fontSize: 15,
+                  fontWeight: 700,
+                  marginBottom: 12,
+                }}
+              >
+                緊急聯絡人
+              </div>
+
+              <div
+                style={{
+                  display: "grid",
+                  gridTemplateColumns:
+                    "repeat(auto-fit, minmax(180px, 1fr))",
+                  gap: 12,
+                }}
+              >
+                <div>
+                  <div
+                    style={{
+                      color: "#92400E",
+                      fontSize: 12,
+                    }}
+                  >
+                    姓名
+                  </div>
+
+                  <div
+                    style={{
+                      marginTop: 4,
+                      color: "#374151",
+                      fontWeight: 600,
+                    }}
+                  >
+                    {elder.emergency_contact_name ||
+                      "未填寫"}
+                  </div>
+                </div>
+
+                <div>
+                  <div
+                    style={{
+                      color: "#92400E",
+                      fontSize: 12,
+                    }}
+                  >
+                    與長者關係
+                  </div>
+
+                  <div
+                    style={{
+                      marginTop: 4,
+                      color: "#374151",
+                      fontWeight: 600,
+                    }}
+                  >
+                    {elder.emergency_contact_relation ||
+                      "未填寫"}
+                  </div>
+                </div>
+
+                <div>
+                  <div
+                    style={{
+                      color: "#92400E",
+                      fontSize: 12,
+                    }}
+                  >
+                    電話
+                  </div>
+
+                  <div
+                    style={{
+                      marginTop: 4,
+                      color: "#374151",
+                      fontWeight: 600,
+                    }}
+                  >
+                    {elder.emergency_contact_phone ||
+                      "未填寫"}
+                  </div>
+                </div>
+              </div>
+            </div>
           </div>
 
-          <div
-            style={{
-              marginTop: 5,
-              display: "inline-flex",
-              padding: "5px 10px",
-              borderRadius: 999,
-              background: "#E8F1F3",
-              color: colors.primary,
-              fontSize: 13,
-              fontWeight: 700,
+          <button
+            type="button"
+            onClick={() => {
+              setEditingRecord(null);
+              setOpenModal(true);
             }}
-          >
-            {elder.elder_type}
-          </div>
-        </div>
-
-        <div>
-          <div
             style={{
-              color: colors.textLight,
-              fontSize: 12,
-            }}
-          >
-            居住／服務狀態
-          </div>
-
-          <div
-            style={{
-              marginTop: 5,
-              display: "inline-flex",
-              padding: "5px 10px",
-              borderRadius: 999,
-              background:
-                elder.living_status === "獨居"
-                  ? "#FFF4E5"
-                  : elder.living_status === "電訪"
-                    ? "#F0ECF8"
-                    : "#F3F4F6",
-              color:
-                elder.living_status === "獨居"
-                  ? "#9A5B00"
-                  : elder.living_status === "電訪"
-                    ? "#654A8B"
-                    : "#4B5563",
-              fontSize: 13,
-              fontWeight: 700,
-            }}
-          >
-            {elder.living_status}
-          </div>
-        </div>
-
-        <div>
-          <div
-            style={{
-              color: colors.textLight,
-              fontSize: 12,
-            }}
-          >
-            聯絡方式
-          </div>
-
-          <div
-            style={{
-              marginTop: 5,
-              color: "#374151",
+              background: colors.primary,
+              color: "#fff",
+              border: "none",
+              borderRadius: radius.md,
+              padding: "10px 18px",
+              cursor: "pointer",
               fontWeight: 600,
+              whiteSpace: "nowrap",
             }}
           >
-            {elder.contact_method}
-          </div>
-        </div>
-      </div>
-    </div>
-
-    {/* ==================== */}
-    {/* 緊急聯絡人 */}
-    {/* ==================== */}
-
-    <div
-      style={{
-        marginTop: 14,
-        padding: 16,
-        background: "#FFFBEB",
-        borderRadius: radius.md,
-        border: "1px solid #FDE68A",
-      }}
-    >
-      <div
-        style={{
-          color: "#92400E",
-          fontSize: 15,
-          fontWeight: 700,
-          marginBottom: 12,
-        }}
-      >
-        緊急聯絡人
-      </div>
-
-      <div
-        style={{
-          display: "grid",
-          gridTemplateColumns:
-            "repeat(auto-fit, minmax(180px, 1fr))",
-          gap: 12,
-        }}
-      >
-        <div>
-          <div
-            style={{
-              color: "#92400E",
-              fontSize: 12,
-            }}
-          >
-            姓名
-          </div>
-
-          <div
-            style={{
-              marginTop: 4,
-              color: "#374151",
-              fontWeight: 600,
-            }}
-          >
-            {elder.emergency_contact_name ||
-              "未填寫"}
-          </div>
+            ＋ 新增健康紀錄
+          </button>
         </div>
 
-        <div>
-          <div
-            style={{
-              color: "#92400E",
-              fontSize: 12,
-            }}
-          >
-            與長者關係
-          </div>
-
-          <div
-            style={{
-              marginTop: 4,
-              color: "#374151",
-              fontWeight: 600,
-            }}
-          >
-            {elder.emergency_contact_relation ||
-              "未填寫"}
-          </div>
-        </div>
-
-        <div>
-          <div
-            style={{
-              color: "#92400E",
-              fontSize: 12,
-            }}
-          >
-            電話
-          </div>
-
-          <div
-            style={{
-              marginTop: 4,
-              color: "#374151",
-              fontWeight: 600,
-            }}
-          >
-            {elder.emergency_contact_phone ||
-              "未填寫"}
-          </div>
-        </div>
-      </div>
-    </div>
-  </div>
-
-  <button
-    type="button"
-    onClick={() => {
-      setEditingRecord(null);
-      setOpenModal(true);
-    }}
-    style={{
-      background: colors.primary,
-      color: "#fff",
-      border: "none",
-      borderRadius: radius.md,
-      padding: "10px 18px",
-      cursor: "pointer",
-      fontWeight: 600,
-      whiteSpace: "nowrap",
-    }}
-  >
-    ＋ 新增健康紀錄
-  </button>
-</div>
-
-           {/* ==================== */}
+        {/* ==================== */}
         {/* AI Health Summary */}
         {/* ==================== */}
 
@@ -1628,10 +1967,8 @@ useEffect(() => {
               style={{
                 display: "flex",
                 alignItems: "center",
-          
               }}
             >
-             
               <div>
                 <div
                   style={{
@@ -2149,9 +2486,10 @@ useEffect(() => {
         {/* Health Records */}
         {/* ==================== */}
 
-<HealthTrendChart
-  records={records}
-/>
+        <HealthTrendChart
+          records={records}
+        />
+
         <HealthRecordTable
           records={records}
           onEdit={handleEdit}
@@ -2174,45 +2512,297 @@ useEffect(() => {
             null
           );
         }}
-        onSave={(record) => {
-          let updatedRecords: HealthRecord[];
-
-          if (editingRecord) {
-            updatedRecords =
-              records.map(
-                (item) =>
-                  item.id ===
+        onSave={async (record) => {
+          try {
+            /*
+             * ================================
+             * 修改既有健康紀錄
+             * ================================
+             */
+            if (editingRecord) {
+              const {
+                data,
+                error,
+              } = await supabase
+                .from("health_records")
+                .update({
+                  date: record.date,
+                  systolic:
+                    Number(
+                      record.systolic
+                    ),
+                  diastolic:
+                    Number(
+                      record.diastolic
+                    ),
+                  pulse:
+                    Number(
+                      record.pulse
+                    ),
+                  height:
+                    record.height ===
+                      null ||
+                    record.height ===
+                      undefined
+                      ? null
+                      : Number(
+                          record.height
+                        ),
+                  weight:
+                    record.weight ===
+                      null ||
+                    record.weight ===
+                      undefined
+                      ? null
+                      : Number(
+                          record.weight
+                        ),
+                })
+                .eq(
+                  "id",
                   editingRecord.id
-                    ? {
-                        ...editingRecord,
-                        ...record,
-                      }
-                    : item
+                )
+                .eq(
+                  "elder_id",
+                  elder.id
+                )
+                .select(
+                  "id, elder_id, location_id, date, systolic, diastolic, pulse, height, weight, created_at"
+                )
+                .single();
+
+              if (error) {
+                throw error;
+              }
+
+              const updatedRecord: HealthRecord =
+                {
+                  id: Number(
+                    data.id
+                  ),
+                  date: String(
+                    data.date
+                  ),
+                  systolic:
+                    Number(
+                      data.systolic
+                    ),
+                  diastolic:
+                    Number(
+                      data.diastolic
+                    ),
+                  pulse:
+                    Number(
+                      data.pulse
+                    ),
+                  height:
+                    data.height ===
+                      null ||
+                    data.height ===
+                      undefined
+                      ? null
+                      : Number(
+                          data.height
+                        ),
+                  weight:
+                    data.weight ===
+                      null ||
+                    data.weight ===
+                      undefined
+                      ? null
+                      : Number(
+                          data.weight
+                        ),
+                };
+
+              const updatedRecords =
+                records.map(
+                  (item) =>
+                    item.id ===
+                    editingRecord.id
+                      ? updatedRecord
+                      : item
+                );
+
+              setRecords(
+                updatedRecords
               );
-          } else {
-            const newRecord: HealthRecord =
-              {
-                id: Date.now(),
-                ...record,
-              };
 
-            updatedRecords = [
-              newRecord,
-              ...records,
-            ];
+              console.log(
+                "HEALTH UPDATE SUCCESS:",
+                updatedRecord
+              );
+            } else {
+              /*
+               * ================================
+               * 新增健康紀錄
+               * ================================
+               *
+               * location_id 不從前端自行猜測，
+               * 直接從 elders 取得這位長者的據點。
+               */
+              const {
+                data: elderData,
+                error:
+                  elderError,
+              } = await supabase
+                .from("elders")
+                .select(
+                  "location_id"
+                )
+                .eq(
+                  "id",
+                  elder.id
+                )
+                .single();
+
+              if (elderError) {
+                throw elderError;
+              }
+
+              const locationId =
+                Number(
+                  elderData?.location_id
+                );
+
+              if (
+                !Number.isFinite(
+                  locationId
+                ) ||
+                locationId <= 0
+              ) {
+                throw new Error(
+                  "找不到這位長者的據點資料。"
+                );
+              }
+
+              const {
+                data,
+                error,
+              } = await supabase
+                .from("health_records")
+                .insert({
+                  elder_id:
+                    elder.id,
+                  location_id:
+                    locationId,
+                  date:
+                    record.date,
+                  systolic:
+                    Number(
+                      record.systolic
+                    ),
+                  diastolic:
+                    Number(
+                      record.diastolic
+                    ),
+                  pulse:
+                    Number(
+                      record.pulse
+                    ),
+                  height:
+                    record.height ===
+                      null ||
+                    record.height ===
+                      undefined
+                      ? null
+                      : Number(
+                          record.height
+                        ),
+                  weight:
+                    record.weight ===
+                      null ||
+                    record.weight ===
+                      undefined
+                      ? null
+                      : Number(
+                          record.weight
+                        ),
+                })
+                .select(
+                  "id, elder_id, location_id, date, systolic, diastolic, pulse, height, weight, created_at"
+                )
+                .single();
+
+              if (error) {
+                throw error;
+              }
+
+              const newRecord: HealthRecord =
+                {
+                  id: Number(
+                    data.id
+                  ),
+                  date: String(
+                    data.date
+                  ),
+                  systolic:
+                    Number(
+                      data.systolic
+                    ),
+                  diastolic:
+                    Number(
+                      data.diastolic
+                    ),
+                  pulse:
+                    Number(
+                      data.pulse
+                    ),
+                  height:
+                    data.height ===
+                      null ||
+                    data.height ===
+                      undefined
+                      ? null
+                      : Number(
+                          data.height
+                        ),
+                  weight:
+                    data.weight ===
+                      null ||
+                    data.weight ===
+                      undefined
+                      ? null
+                      : Number(
+                          data.weight
+                        ),
+                };
+
+              setRecords(
+                (
+                  previousRecords
+                ) => [
+                  newRecord,
+                  ...previousRecords,
+                ]
+              );
+
+              console.log(
+                "HEALTH INSERT SUCCESS:",
+                newRecord
+              );
+            }
+
+            /*
+             * 保留既有跨元件通知機制。
+             */
+            notifyStorageChanged();
+
+            setEditingRecord(
+              null
+            );
+
+            setOpenModal(false);
+          } catch (error) {
+            console.error(
+              "儲存健康紀錄失敗：",
+              error
+            );
+
+            alert(
+              "健康紀錄儲存失敗，請稍後再試。"
+            );
           }
-
-          setRecords(
-            updatedRecords
-          );
-
-          notifyStorageChanged();
-
-          setEditingRecord(
-            null
-          );
-
-          setOpenModal(false);
         }}
       />
     </>
